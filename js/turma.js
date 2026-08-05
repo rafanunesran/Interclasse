@@ -101,6 +101,12 @@ elFormSenha.addEventListener("submit", (ev) => {
     desbloqueado = true;
     sessionStorage.setItem("desbloqueado-" + turmaId, "1");
     atualizarVisibilidade();
+    // Leva o representante direto para a tela de cadastro.
+    if (!elBlocoCadastro.classList.contains("oculto")) {
+      elBlocoCadastro.scrollIntoView({ behavior: "smooth", block: "start" });
+      const inputNome = document.getElementById("nomeAluno");
+      if (inputNome) inputNome.focus();
+    }
   } else {
     mostrarMensagem(elMsgSenha, "Senha incorreta. Confira com a coordenação/organização do interclasse.", "erro");
   }
