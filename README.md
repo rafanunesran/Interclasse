@@ -84,5 +84,6 @@ Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel admini
 ## Limitações conhecidas
 
 - A proteção por senha de turma/admin é feita no site (não no banco de dados), então é uma barreira de conveniência, não uma segurança forte. Não cadastre informações sensíveis além do necessário para o pedido.
-- Exclusão de aluno é sempre "suave" (o registro fica marcado como removido, mas não desaparece do banco) — isso é proposital, para evitar perda de dados por engano, e simplifica as regras de segurança.
+- Exclusão de aluno **pelo representante** (na página da turma) é sempre "suave" (o registro fica marcado como removido, mas não desaparece do banco) — isso é proposital, para evitar perda de dados por engano.
+- No Super Admin dá para **editar** (nome e senha) e **excluir** uma turma. A exclusão da turma é definitiva: apaga a turma e todas as camisetas cadastradas nela (essa exclusão de verdade só é permitida para a conta administradora).
 - O plano gratuito do Firebase (Spark) é mais do que suficiente para o volume de um interclasse escolar.

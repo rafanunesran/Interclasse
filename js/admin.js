@@ -143,6 +143,13 @@ function renderizarTurmasAdmin() {
     const card = document.createElement("div");
     card.className = "card";
 
+    // ----- Modo edição (nome e senha da turma) -----
+    if (estadoTurmas[turmaId].editando) {
+      card.appendChild(criarFormEdicaoTurma(turmaId, turma));
+      elListaTurmasAdmin.appendChild(card);
+      return;
+    }
+
     const status = turma.fechado
       ? '<span class="badge fechado">Fechado</span>'
       : '<span class="badge aberto">Aberto</span>';
@@ -191,6 +198,21 @@ function renderizarTurmasAdmin() {
       botoes.appendChild(btnFechar);
     }
 
+    const btnEditar = document.createElement("button");
+    btnEditar.className = "secundario";
+    btnEditar.textContent = "Editar turma";
+    btnEditar.onclick = () => {
+      estadoTurmas[turmaId].editando = true;
+      renderizarTurmasAdmin();
+    };
+    botoes.appendChild(btnEditar);
+
+    const btnExcluir = document.createElement("button");
+    btnExcluir.className = "perigo";
+    btnExcluir.textContent = "Excluir turma";
+    btnExcluir.onclick = () => excluirTurma(turmaId, turma);
+    botoes.appendChild(btnExcluir);
+
     card.appendChild(botoes);
 
     if (expandido) {
@@ -230,6 +252,99 @@ function renderizarTurmasAdmin() {
 
     elListaTurmasAdmin.appendChild(card);
   });
+}
+
+// Monta o formulário inline de edição do nome e da senha da turma.
+function criarFormEdicaoTurma(turmaId, turma) {
+  const wrap = document.createElement("div");
+
+  const h2 = document.createElement("h2");
+  h2.textContent = "Editar turma";
+  wrap.appendChild(h2);
+
+  const lblNome = document.createElement("label");
+  lblNome.textContent = "Nome da turma";
+  const inNome = document.createElement("input");
+  inNome.type = "text";
+  inNome.value = turma.nome;
+
+  const lblSenha = document.createElement("label");
+  lblSenha.textContent = "Senha da turma";
+  const inSenha = document.createElement("input");
+  inSenha.type = "text";
+  inSenha.value = turma.senha;
+
+  wrap.appendChild(lblNome);
+  wrap.appendChild(inNome);
+  wrap.appendChild(lblSenha);
+  wrap.appendChild(inSenha);
+
+  const acoes = document.createElement("div");
+
+  const btnSalvar = document.createElement("button");
+  btnSalvar.className = "sucesso";
+  btnSalvar.textContent = "Salvar";
+  btnSalvar.onclick = async () => {
+    const novoNome = inNome.value.trim();
+    const novaSenha = inSenha.value.trim();
+    if (!novoNome || !novaSenha) {
+      alert("Preencha o nome e a senha da turma.");
+      return;
+    }
+    btnSalvar.disabled = true;
+    try {
+      await db.collection("turmas").doc(turmaId).update({ nome: novoNome, senha: novaSenha });
+      if (estadoTurmas[turmaId]) estadoTurmas[turmaId].editando = false;
+      // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.
+      renderizarTurmasAdmin();
+    } catch (erro) {
+      console.error(erro);
+      alert("Erro ao salvar a turma. Tente novamente.");
+      btnSalvar.disabled = false;
+    }
+  };
+
+  const btnCancelar = document.createElement("button");
+  btnCancelar.className = "secundario";
+  btnCancelar.textContent = "Cancelar";
+  btnCancelar.onclick = () => {
+    if (estadoTurmas[turmaId]) estadoTurmas[turmaId].editando = false;
+    renderizarTurmasAdmin();
+  };
+
+  acoes.appendChild(btnSalvar);
+  acoes.appendChild(btnCancelar);
+  wrap.appendChild(acoes);
+
+  return wrap;
+}
+
+// Exclui a turma de verdade: apaga os alunos (subcoleção) e depois a turma.
+async function excluirTurma(turmaId, turma) {
+  const qtd = (estadoTurmas[turmaId] && estadoTurmas[turmaId].alunos.length) || 0;
+  const aviso =
+    `Excluir a turma "${turma.nome}"?\n\n` +
+    `Isso apaga a turma e as ${qtd} camiseta(s) cadastrada(s) nela. ` +
+    `Esta ação NÃO pode ser desfeita.`;
+  if (!confirm(aviso)) return;
+
+  try {
+    // Apaga a subcoleção de alunos em lote (o Firestore não faz isso sozinho).
+    const alunosSnap = await db.collection("turmas").doc(turmaId).collection("alunos").get();
+    if (!alunosSnap.empty) {
+      const lote = db.batch();
+      alunosSnap.forEach((d) => lote.delete(d.ref));
+      await lote.commit();
+    }
+    await db.collection("turmas").doc(turmaId).delete();
+    // O onSnapshot das turmas remove o card automaticamente.
+  } catch (erro) {
+    console.error(erro);
+    alert(
+      "Erro ao excluir a turma. Verifique se as regras do Firestore permitem " +
+      "'delete' para o admin (firestore.rules) e se elas foram publicadas no console."
+    );
+  }
 }
 
 function escapeHtmlAdmin(texto) {
