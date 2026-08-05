@@ -80,6 +80,21 @@
   </div>
 </main>
 
+<div id="modalPix" class="modal-pix oculto">
+  <div class="modal-pix-conteudo">
+    <button id="fecharModalPix" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Pagamento via PIX</h3>
+    <p id="pixAluno"></p>
+    <p id="pixValor" class="pix-valor"></p>
+    <img id="pixQr" class="pix-qr" alt="QR Code para pagamento PIX" />
+    <label for="pixCodigo">PIX copia e cola</label>
+    <textarea id="pixCodigo" readonly rows="3"></textarea>
+    <button id="pixCopiar" class="primario" type="button">Copiar código</button>
+    <p id="pixCopiado" class="aviso oculto">Código copiado! Cole no app do seu banco.</p>
+    <p class="pix-ajuda">Abra o app do banco → PIX → "Pagar com QR Code" (escaneie) ou "PIX copia e cola" (cole o código).</p>
+  </div>
+</div>
+
 <p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
 <p class="rodape-admin"><a href="admin.html" class="link-admin">Área administrativa</a></p>
 

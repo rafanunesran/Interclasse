@@ -69,6 +69,27 @@
     </div>
 
     <div class="card">
+      <h2>Pagamento (PIX)</h2>
+      <p>Configure sua chave PIX e o preço por grupo de tamanho. O botão "Pagar (PIX)" aparece nas linhas das turmas com o pedido fechado.</p>
+      <form id="formPix">
+        <label for="pixChave">Chave PIX</label>
+        <input type="text" id="pixChave" placeholder="e-mail, telefone, CPF/CNPJ ou chave aleatória" />
+
+        <label for="pixNome">Nome do recebedor (máx. 25)</label>
+        <input type="text" id="pixNome" maxlength="25" placeholder="Como aparece na sua conta" />
+
+        <label for="pixCidade">Cidade do recebedor (máx. 15)</label>
+        <input type="text" id="pixCidade" maxlength="15" placeholder="Ex: SAO PAULO" />
+
+        <h3>Preço por grupo de tamanho</h3>
+        <div id="precosPorGrupo"></div>
+
+        <button type="submit" class="primario">Salvar pagamento</button>
+      </form>
+      <p id="msgPix" class="oculto"></p>
+    </div>
+
+    <div class="card">
       <h2>Exportar tudo</h2>
       <p>Gera um único CSV com os pedidos de todas as turmas, pronto para importar no CorelDraw.</p>
       <button id="btnExportarTudo" class="primario">Exportar CSV geral</button>
