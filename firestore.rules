@@ -1,0 +1,43 @@
+rules_version = '2';
+
+// ============================================================
+// REGRAS DE SEGURANÇA DO FIRESTORE
+// Cole este conteúdo em: Firebase Console > Firestore Database
+// > Regras, e clique em "Publicar".
+//
+// Modelo adotado:
+// - Leitura: pública (qualquer pessoa com o link pode ver a lista,
+//   para permitir a conferência do pedido).
+// - Escrita: exige estar autenticado (login anônimo automático do
+//   site). A proteção por senha de turma/admin acontece no site
+//   (JavaScript), não aqui — é uma barreira de conveniência para
+//   evitar edições por engano ou por curiosos, adequada para um
+//   controle de pedido de camiseta de interclasse. Não trate estes
+//   dados como sigilosos.
+// - Exclusão de aluno é sempre "suave" (campo excluido = true),
+//   nunca um delete de verdade — por isso "delete" é bloqueado.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Documento único com a senha do administrador.
+    // Criado manualmente pelo console (ver README).
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /turmas/{turmaId} {
+      allow read: if true;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+
+      match /alunos/{alunoId} {
+        allow read: if true;
+        allow create, update: if request.auth != null;
+        allow delete: if false;
+      }
+    }
+  }
+}

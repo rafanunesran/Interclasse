@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Painel Admin — Camisetas Interclasse</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="topo">
+  <h1>👕 Camisetas Interclasse</h1>
+  <nav>
+    <a href="index.html">Início</a>
+    <a href="admin.html">Painel Admin</a>
+  </nav>
+</header>
+
+<main>
+  <div class="card" id="cardAdminSenha">
+    <h2>Acesso administrativo</h2>
+    <form id="formAdminSenhaForm">
+      <label for="senhaAdmin">Senha do administrador</label>
+      <input type="password" id="senhaAdmin" required autocomplete="off" />
+      <button type="submit" class="primario">Entrar</button>
+    </form>
+    <p id="msgAdminSenha" class="oculto"></p>
+  </div>
+
+  <div class="oculto" id="painelAdmin">
+    <div class="card">
+      <h2>Criar nova turma</h2>
+      <form id="formCriarTurma">
+        <label for="nomeNovaTurma">Nome da turma</label>
+        <input type="text" id="nomeNovaTurma" placeholder="Ex: 3º Ano A - Manhã" required />
+
+        <label for="senhaNovaTurma">Senha da turma (compartilhe com o representante)</label>
+        <input type="text" id="senhaNovaTurma" required />
+
+        <button type="submit" class="primario">Criar turma</button>
+      </form>
+      <p id="msgCriarTurma" class="oculto"></p>
+    </div>
+
+    <div class="card">
+      <h2>Exportar tudo</h2>
+      <p>Gera um único CSV com os pedidos de todas as turmas, pronto para importar no CorelDraw.</p>
+      <button id="btnExportarTudo" class="primario">Exportar CSV geral</button>
+    </div>
+
+    <h2>Turmas</h2>
+    <div id="listaTurmasAdmin"></div>
+  </div>
+</main>
+
+<p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/firebase-init.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

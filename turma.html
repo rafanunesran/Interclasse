@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Turma — Camisetas Interclasse</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="topo">
+  <h1>👕 Camisetas Interclasse</h1>
+  <nav>
+    <a href="index.html">Início</a>
+    <a href="admin.html">Painel Admin</a>
+  </nav>
+</header>
+
+<main>
+  <div class="card">
+    <h2 id="nomeTurma">Carregando...</h2>
+    <span id="badgeStatus" class="badge"></span>
+    <p id="mensagemFechado" class="aviso oculto">
+      Este pedido já foi fechado. Não é mais possível editar a lista. Se precisar corrigir algo, fale com a coordenação do interclasse.
+    </p>
+  </div>
+
+  <div class="card" id="formSenha">
+    <h2>Acesso da turma</h2>
+    <p>Digite a senha da sua turma (com a coordenação/organização) para cadastrar ou editar a lista.</p>
+    <form id="formSenhaForm">
+      <label for="senhaTurma">Senha da turma</label>
+      <input type="password" id="senhaTurma" required autocomplete="off" />
+      <button type="submit" class="primario">Entrar</button>
+    </form>
+    <p id="msgSenha" class="oculto"></p>
+  </div>
+
+  <div class="card oculto" id="blocoCadastro">
+    <h2>Cadastrar aluno</h2>
+    <form id="formAluno">
+      <label for="nomeAluno">Nome do estudante</label>
+      <input type="text" id="nomeAluno" required />
+
+      <label for="tamanho">Tamanho da camiseta</label>
+      <select id="tamanho" required></select>
+
+      <label for="numeroCamiseta">Número da camiseta</label>
+      <input type="text" id="numeroCamiseta" inputmode="numeric" />
+
+      <label for="nomeCostas">Nome na camiseta (costas)</label>
+      <input type="text" id="nomeCostas" required />
+
+      <button type="submit" class="primario">Adicionar à lista</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Conferência do pedido</h2>
+    <p id="avisoDuplicado" class="oculto"></p>
+    <div id="resumoTamanhos" class="resumo-tamanhos"></div>
+
+    <table id="tabelaAlunos">
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Tamanho</th>
+          <th>Número</th>
+          <th>Nome na camiseta</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <button id="btnExportar" class="secundario">Exportar CSV desta turma</button>
+    <button id="btnFechar" class="sucesso oculto">Fechar pedido da turma</button>
+  </div>
+</main>
+
+<p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/firebase-init.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/turma.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Camisetas Interclasse</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="topo">
+  <h1>👕 Camisetas Interclasse</h1>
+  <nav>
+    <a href="index.html">Início</a>
+    <a href="admin.html">Painel Admin</a>
+  </nav>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Turmas</h2>
+    <p>Selecione sua turma para cadastrar a lista de camisetas.</p>
+    <p id="carregando">Carregando turmas...</p>
+    <div id="listaTurmas" class="lista-turmas"></div>
+  </div>
+</main>
+
+<p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/firebase-init.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>
