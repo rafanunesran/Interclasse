@@ -8,7 +8,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 
 - **`index.html`** — lista as turmas cadastradas.
 - **`turma.html?id=NOME-DA-TURMA`** — página do representante: digita a senha da turma, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
-- **`admin.html`** — painel do administrador: cria turmas (com senha própria para cada uma), acompanha status, reabre pedidos fechados, edita qualquer turma e exporta o CSV geral de todas as turmas.
+- **`admin.html`** — painel do administrador: cria turmas (com senha própria para cada uma), acompanha status, reabre pedidos fechados, edita qualquer turma e exporta o CSV geral de todas as turmas. Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). O acesso ao painel fica num link discreto no rodapé de cada página ("Área administrativa").
 
 Nenhuma senha aqui é criptografada — é uma proteção simples para evitar edições por engano ou por curiosos, adequada para esse tipo de uso (não é um sistema com dados sigilosos).
 
@@ -65,11 +65,15 @@ As regras impedem que a senha do admin seja criada pelo próprio site (por segur
 
 ## Tamanhos disponíveis
 
+Tamanhos padrão (usados enquanto nada foi salvo no painel):
+
 - Infantil: 10, 12, 14, 16
 - Normal: P, M, G, GG
 - Plus Size: G1, G2, G3, G4
 
-Para alterar essa lista, edite o array `GRUPOS_TAMANHO` no arquivo `js/utils.js`.
+Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel administrativo (`admin.html`): dá para criar/remover grupos, adicionar/remover tamanhos e restaurar o padrão. O que for salvo fica em `config/tamanhos` no Firestore e passa a valer no cadastro de todas as turmas. O array `TAMANHOS_PADRAO` em `js/utils.js` continua servindo como fallback caso nada tenha sido salvo ainda.
+
+> **Importante:** o painel grava em `config/geral` e `config/tamanhos`. Se você configurou o Firestore antes desta versão, republique as regras (`firestore.rules`) no console do Firebase — a versão anterior bloqueava toda escrita em `config/`.
 
 ## Limitações conhecidas
 

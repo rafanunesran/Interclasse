@@ -12,7 +12,6 @@
   <h1>👕 Camisetas Interclasse</h1>
   <nav>
     <a href="index.html">Início</a>
-    <a href="admin.html">Painel Admin</a>
   </nav>
 </header>
 
@@ -22,6 +21,9 @@
     <span id="badgeStatus" class="badge"></span>
     <p id="mensagemFechado" class="aviso oculto">
       Este pedido já foi fechado. Não é mais possível editar a lista. Se precisar corrigir algo, fale com a coordenação do interclasse.
+    </p>
+    <p id="mensagemGlobalFechado" class="aviso oculto">
+      Os cadastros estão temporariamente fechados pela organização do interclasse. Tente novamente mais tarde.
     </p>
   </div>
 
@@ -79,6 +81,7 @@
 </main>
 
 <p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
+<p class="rodape-admin"><a href="admin.html" class="link-admin">Área administrativa</a></p>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>

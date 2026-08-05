@@ -21,11 +21,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Documento único com a senha do administrador.
-    // Criado manualmente pelo console (ver README).
+    // Documentos de configuração do site (config/...).
+    // - config/admin: senha do administrador. Criado manualmente pelo
+    //   console (ver README) e nunca gravável pelo site.
+    // - config/geral e config/tamanhos: editáveis pelo painel administrativo
+    //   (mesma barreira de conveniência das turmas: exige login anônimo).
     match /config/{docId} {
       allow read: if true;
-      allow write: if false;
+      allow create, update: if request.auth != null
+        && (docId == "geral" || docId == "tamanhos");
+      allow delete: if false;
     }
 
     match /turmas/{turmaId} {

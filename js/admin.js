@@ -25,6 +25,7 @@ async function iniciar() {
     elCardAdminSenha.classList.add("oculto");
     elPainel.classList.remove("oculto");
     escutarTurmas();
+    carregarPainelConfig();
   }
 }
 
@@ -49,6 +50,7 @@ elFormAdminSenha.addEventListener("submit", async (ev) => {
       elCardAdminSenha.classList.add("oculto");
       elPainel.classList.remove("oculto");
       escutarTurmas();
+      carregarPainelConfig();
     } else {
       mostrarMensagem(elMsgAdminSenha, "Senha incorreta.", "erro");
     }
@@ -274,4 +276,218 @@ elBtnExportarTudo.addEventListener("click", () => {
     return;
   }
   baixarCSV("pedido-interclasse-geral.csv", linhas);
+});
+
+// ============================================================
+// CONFIGURAÇÕES GERAIS E TAMANHOS
+// ============================================================
+
+const elFormConfigGeral = document.getElementById("formConfigGeral");
+const elTituloEvento = document.getElementById("tituloEvento");
+const elRodapeTexto = document.getElementById("rodapeTexto");
+const elCadastrosAbertos = document.getElementById("cadastrosAbertos");
+const elMsgConfigGeral = document.getElementById("msgConfigGeral");
+
+const elEditorTamanhos = document.getElementById("editorTamanhos");
+const elBtnAddGrupo = document.getElementById("btnAddGrupo");
+const elBtnSalvarTamanhos = document.getElementById("btnSalvarTamanhos");
+const elBtnRestaurarTamanhos = document.getElementById("btnRestaurarTamanhos");
+const elMsgTamanhos = document.getElementById("msgTamanhos");
+
+let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
+let painelConfigCarregado = false;
+
+// Carrega as configurações gerais e os tamanhos nos respectivos formulários.
+// Chamado uma vez quando o painel é desbloqueado.
+async function carregarPainelConfig() {
+  if (painelConfigCarregado) return;
+  painelConfigCarregado = true;
+
+  const cfg = await carregarConfigGeral();
+  aplicarConfigGeral(cfg);
+  elTituloEvento.value = cfg.tituloEvento || "";
+  elRodapeTexto.value = cfg.rodape || "";
+  elCadastrosAbertos.checked = cfg.cadastrosAbertos !== false; // padrão: aberto
+
+  await carregarTamanhos();
+  gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
+  renderizarEditorTamanhos();
+}
+
+// ---------------- Configurações gerais ----------------
+
+elFormConfigGeral.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  esconderMensagem(elMsgConfigGeral);
+
+  const dados = {
+    tituloEvento: elTituloEvento.value.trim(),
+    rodape: elRodapeTexto.value.trim(),
+    cadastrosAbertos: elCadastrosAbertos.checked
+  };
+
+  try {
+    await db.collection("config").doc("geral").set(dados, { merge: true });
+    aplicarConfigGeral(dados);
+    mostrarMensagem(elMsgConfigGeral, "Configurações salvas.", "aviso");
+  } catch (erro) {
+    console.error(erro);
+    mostrarMensagem(
+      elMsgConfigGeral,
+      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral (ver firestore.rules).",
+      "erro"
+    );
+  }
+});
+
+// ---------------- Editor de tamanhos ----------------
+
+function renderizarEditorTamanhos() {
+  elEditorTamanhos.innerHTML = "";
+
+  gruposTamanhoEdit.forEach((grupo, iGrupo) => {
+    const box = document.createElement("div");
+    box.className = "grupo-tamanho";
+
+    // Cabeçalho: nome do grupo + remover grupo
+    const cabecalho = document.createElement("div");
+    cabecalho.className = "linha-add-tamanho";
+
+    const inputNome = document.createElement("input");
+    inputNome.type = "text";
+    inputNome.value = grupo.grupo;
+    inputNome.placeholder = "Nome do grupo (ex: Normal)";
+    inputNome.oninput = () => {
+      gruposTamanhoEdit[iGrupo].grupo = inputNome.value;
+    };
+    cabecalho.appendChild(inputNome);
+
+    const btnRemoverGrupo = document.createElement("button");
+    btnRemoverGrupo.type = "button";
+    btnRemoverGrupo.className = "perigo";
+    btnRemoverGrupo.textContent = "Remover grupo";
+    btnRemoverGrupo.onclick = () => {
+      gruposTamanhoEdit.splice(iGrupo, 1);
+      renderizarEditorTamanhos();
+    };
+    cabecalho.appendChild(btnRemoverGrupo);
+
+    box.appendChild(cabecalho);
+
+    // Chips de tamanhos
+    const chips = document.createElement("div");
+    chips.className = "chips-tamanho";
+    grupo.tamanhos.forEach((tam, iTam) => {
+      const chip = document.createElement("span");
+      chip.className = "chip-tamanho";
+      chip.appendChild(document.createTextNode(tam));
+
+      const btnX = document.createElement("button");
+      btnX.type = "button";
+      btnX.textContent = "×";
+      btnX.title = "Remover tamanho";
+      btnX.onclick = () => {
+        gruposTamanhoEdit[iGrupo].tamanhos.splice(iTam, 1);
+        renderizarEditorTamanhos();
+      };
+      chip.appendChild(btnX);
+      chips.appendChild(chip);
+    });
+    if (grupo.tamanhos.length === 0) {
+      const vazio = document.createElement("span");
+      vazio.style.color = "#6b7280";
+      vazio.style.fontSize = "0.85rem";
+      vazio.textContent = "Nenhum tamanho neste grupo ainda.";
+      chips.appendChild(vazio);
+    }
+    box.appendChild(chips);
+
+    // Linha para adicionar tamanho
+    const linhaAdd = document.createElement("div");
+    linhaAdd.className = "linha-add-tamanho";
+
+    const inputNovo = document.createElement("input");
+    inputNovo.type = "text";
+    inputNovo.placeholder = "Novo tamanho (ex: XG)";
+
+    const adicionar = () => {
+      const valor = inputNovo.value.trim();
+      if (!valor) return;
+      if (gruposTamanhoEdit[iGrupo].tamanhos.includes(valor)) {
+        inputNovo.value = "";
+        return;
+      }
+      gruposTamanhoEdit[iGrupo].tamanhos.push(valor);
+      renderizarEditorTamanhos();
+    };
+
+    inputNovo.onkeydown = (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        adicionar();
+      }
+    };
+    linhaAdd.appendChild(inputNovo);
+
+    const btnAddTam = document.createElement("button");
+    btnAddTam.type = "button";
+    btnAddTam.className = "secundario";
+    btnAddTam.textContent = "Adicionar";
+    btnAddTam.onclick = adicionar;
+    linhaAdd.appendChild(btnAddTam);
+
+    box.appendChild(linhaAdd);
+    elEditorTamanhos.appendChild(box);
+  });
+
+  if (gruposTamanhoEdit.length === 0) {
+    const p = document.createElement("p");
+    p.textContent = "Nenhum grupo. Clique em \"Adicionar grupo\" para começar.";
+    elEditorTamanhos.appendChild(p);
+  }
+}
+
+elBtnAddGrupo.addEventListener("click", () => {
+  gruposTamanhoEdit.push({ grupo: "Novo grupo", tamanhos: [] });
+  renderizarEditorTamanhos();
+});
+
+elBtnRestaurarTamanhos.addEventListener("click", () => {
+  if (!confirm("Restaurar os tamanhos para o padrão? As alterações não salvas serão perdidas.")) return;
+  gruposTamanhoEdit = clonarGrupos(TAMANHOS_PADRAO);
+  renderizarEditorTamanhos();
+});
+
+elBtnSalvarTamanhos.addEventListener("click", async () => {
+  esconderMensagem(elMsgTamanhos);
+
+  // Limpa e valida: remove tamanhos/grupos vazios e nomes em branco.
+  const grupos = gruposTamanhoEdit
+    .map((g) => ({
+      grupo: g.grupo.trim(),
+      tamanhos: g.tamanhos.map((t) => t.trim()).filter(Boolean)
+    }))
+    .filter((g) => g.grupo && g.tamanhos.length > 0);
+
+  if (grupos.length === 0) {
+    mostrarMensagem(elMsgTamanhos, "Cadastre pelo menos um grupo com um tamanho.", "erro");
+    return;
+  }
+
+  try {
+    await db.collection("config").doc("tamanhos").set({ grupos });
+    // Atualiza o estado local para refletir o que foi salvo (removidos os vazios).
+    gruposTamanhoEdit = clonarGrupos(grupos);
+    GRUPOS_TAMANHO = clonarGrupos(grupos);
+    TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
+    renderizarEditorTamanhos();
+    mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro das turmas.", "aviso");
+  } catch (erro) {
+    console.error(erro);
+    mostrarMensagem(
+      elMsgTamanhos,
+      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/tamanhos (ver firestore.rules).",
+      "erro"
+    );
+  }
 });

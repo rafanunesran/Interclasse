@@ -8,6 +8,7 @@ async function carregarTurmas() {
 
   try {
     await authPronta;
+    aplicarConfigGeral(await carregarConfigGeral());
     const snap = await db.collection("turmas").orderBy("nome").get();
 
     carregando.classList.add("oculto");

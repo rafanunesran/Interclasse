@@ -43,6 +43,38 @@
     </div>
 
     <div class="card">
+      <h2>Configurações gerais</h2>
+      <p>Opções que valem para o site inteiro.</p>
+      <form id="formConfigGeral">
+        <label for="tituloEvento">Título do evento</label>
+        <input type="text" id="tituloEvento" placeholder="Ex: Camisetas Interclasse 2026" />
+
+        <label for="rodapeTexto">Texto do rodapé</label>
+        <input type="text" id="rodapeTexto" placeholder="Ex: Organização do Interclasse — 2026" />
+
+        <label class="checkbox-inline">
+          <input type="checkbox" id="cadastrosAbertos" />
+          Cadastros abertos (ao desmarcar, nenhuma turma consegue editar a lista)
+        </label>
+
+        <button type="submit" class="primario">Salvar configurações</button>
+      </form>
+      <p id="msgConfigGeral" class="oculto"></p>
+    </div>
+
+    <div class="card">
+      <h2>Tamanhos de camiseta</h2>
+      <p>Organize os tamanhos em grupos (ex.: Infantil, Normal, Plus Size). Eles aparecem no cadastro de cada turma.</p>
+      <div id="editorTamanhos"></div>
+      <button type="button" id="btnAddGrupo" class="secundario">+ Adicionar grupo</button>
+      <div>
+        <button type="button" id="btnSalvarTamanhos" class="primario">Salvar tamanhos</button>
+        <button type="button" id="btnRestaurarTamanhos" class="secundario">Restaurar padrão</button>
+      </div>
+      <p id="msgTamanhos" class="oculto"></p>
+    </div>
+
+    <div class="card">
       <h2>Exportar tudo</h2>
       <p>Gera um único CSV com os pedidos de todas as turmas, pronto para importar no CorelDraw.</p>
       <button id="btnExportarTudo" class="primario">Exportar CSV geral</button>
