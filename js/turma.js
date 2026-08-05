@@ -164,17 +164,21 @@ function renderizarTabela() {
       tr.classList.add("duplicado");
     }
 
+    const marca = aluno.ajusteSolicitado
+      ? '<span class="marca-ajuste" title="Ajuste solicitado à organização">!</span> '
+      : "";
+
     tr.innerHTML = `
-      <td>${escapeHtml(aluno.nome)}</td>
+      <td>${marca}${escapeHtml(aluno.nome)}</td>
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
       <td class="acoes-linha"></td>
     `;
 
-    if (podeEditar) {
-      const tdAcoes = tr.querySelector(".acoes-linha");
+    const tdAcoes = tr.querySelector(".acoes-linha");
 
+    if (podeEditar) {
       const btnEditar = document.createElement("button");
       btnEditar.textContent = "Editar";
       btnEditar.className = "secundario";
@@ -187,6 +191,21 @@ function renderizarTabela() {
 
       tdAcoes.appendChild(btnEditar);
       tdAcoes.appendChild(btnExcluir);
+    } else if (turmaAtual.fechado) {
+      // Pedido fechado: o representante não edita mais, mas pode pedir um
+      // ajuste à organização (marca a linha com "!" para o Super Admin).
+      const btnAjuste = document.createElement("button");
+      btnAjuste.className = "secundario";
+      if (aluno.ajusteSolicitado) {
+        btnAjuste.textContent = "Ajuste solicitado ✓";
+        btnAjuste.disabled = true;
+      } else {
+        btnAjuste.textContent = "Solicitar ajuste";
+        btnAjuste.onclick = () => solicitarAjuste(aluno);
+      }
+      tdAcoes.appendChild(btnAjuste);
+
+      // NOTE: o botão de pagamento (PIX) entra aqui, ao lado, quando configurado.
     }
 
     elTabelaCorpo.appendChild(tr);
@@ -334,6 +353,28 @@ async function excluirAluno(aluno) {
   } catch (erro) {
     console.error(erro);
     alert("Erro ao remover. Tente novamente.");
+  }
+}
+
+// ---------------- Solicitar ajuste (pedido fechado) ----------------
+
+async function solicitarAjuste(aluno) {
+  const motivo = prompt(
+    `O que precisa ser corrigido em "${aluno.nome}"?\n` +
+    `Ex.: tamanho errado, número, nome na camiseta.`
+  );
+  if (motivo === null) return; // usuário cancelou
+
+  try {
+    await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+      ajusteSolicitado: true,
+      ajusteMotivo: motivo.trim(),
+      ajusteSolicitadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    alert("Pedido de ajuste enviado para a organização. Eles vão avaliar a correção.");
+  } catch (erro) {
+    console.error(erro);
+    alert("Não foi possível enviar o pedido de ajuste. Tente novamente.");
   }
 }
 

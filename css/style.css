@@ -317,3 +317,29 @@ tr.duplicado td { background: #fef3c7; }
   padding: 6px 10px;
   font-size: 0.8rem;
 }
+
+/* Marcação "!" vermelha de ajuste solicitado. */
+.marca-ajuste {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--vermelho);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.8rem;
+  line-height: 1;
+  vertical-align: middle;
+}
+.motivo-ajuste { color: var(--vermelho); }
+tr.linha-ajuste td { background: #fef2f2; }
+.aviso-ajustes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--vermelho);
+  font-weight: 600;
+  margin: 6px 0 0;
+}

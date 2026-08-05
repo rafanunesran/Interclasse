@@ -154,10 +154,16 @@ function renderizarTurmasAdmin() {
       ? '<span class="badge fechado">Fechado</span>'
       : '<span class="badge aberto">Aberto</span>';
 
+    const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
+    const avisoAjustes = nAjustes > 0
+      ? `<p class="aviso-ajustes"><span class="marca-ajuste">!</span> ${nAjustes} ajuste(s) solicitado(s) — abra a lista para ver e corrigir.</p>`
+      : "";
+
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(turma.nome)} ${status}</h2>
       <p>Senha da turma: <code>${escapeHtmlAdmin(turma.senha)}</code> &middot; Link: <code>turma.html?id=${turmaId}</code></p>
       <p>${alunos.length} camiseta(s) cadastrada(s)</p>
+      ${avisoAjustes}
     `;
 
     const botoes = document.createElement("div");
@@ -227,14 +233,43 @@ function renderizarTurmasAdmin() {
 
       alunos.forEach((aluno) => {
         const tr = document.createElement("tr");
+        if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
+
+        const marca = aluno.ajusteSolicitado
+          ? '<span class="marca-ajuste" title="Ajuste solicitado">!</span> '
+          : "";
+        const motivo = aluno.ajusteSolicitado && aluno.ajusteMotivo
+          ? `<br><small class="motivo-ajuste">Ajuste pedido: ${escapeHtmlAdmin(aluno.ajusteMotivo)}</small>`
+          : "";
+
         tr.innerHTML = `
-          <td>${escapeHtmlAdmin(aluno.nome)}</td>
+          <td>${marca}${escapeHtmlAdmin(aluno.nome)}${motivo}</td>
           <td>${escapeHtmlAdmin(aluno.tamanho)}</td>
           <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
           <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
           <td class="acoes-linha"></td>
         `;
         const tdAcoes = tr.querySelector(".acoes-linha");
+
+        const btnEditar = document.createElement("button");
+        btnEditar.className = "secundario";
+        btnEditar.textContent = "Editar";
+        btnEditar.onclick = () => editarAlunoAdmin(tr, turmaId, aluno);
+        tdAcoes.appendChild(btnEditar);
+
+        if (aluno.ajusteSolicitado) {
+          const btnResolver = document.createElement("button");
+          btnResolver.className = "sucesso";
+          btnResolver.textContent = "Resolver";
+          btnResolver.title = "Marcar o ajuste como resolvido";
+          btnResolver.onclick = () => {
+            db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+              ajusteSolicitado: false
+            });
+          };
+          tdAcoes.appendChild(btnResolver);
+        }
+
         const btnExcluir = document.createElement("button");
         btnExcluir.className = "perigo";
         btnExcluir.textContent = "Excluir";
@@ -345,6 +380,81 @@ async function excluirTurma(turmaId, turma) {
       "'delete' para o admin (firestore.rules) e se elas foram publicadas no console."
     );
   }
+}
+
+// Edição inline de um aluno no Super Admin (permite corrigir a linha mesmo
+// com o pedido fechado). Ao salvar, resolve o pedido de ajuste, se houver.
+function editarAlunoAdmin(tr, turmaId, aluno) {
+  tr.innerHTML = "";
+
+  const tdNome = document.createElement("td");
+  const inputNome = document.createElement("input");
+  inputNome.type = "text";
+  inputNome.value = aluno.nome;
+  tdNome.appendChild(inputNome);
+
+  const tdTamanho = document.createElement("td");
+  const selectTamanho = document.createElement("select");
+  preencherSelectTamanhos(selectTamanho);
+  selectTamanho.value = aluno.tamanho;
+  tdTamanho.appendChild(selectTamanho);
+
+  const tdNumero = document.createElement("td");
+  const inputNumero = document.createElement("input");
+  inputNumero.type = "text";
+  inputNumero.value = aluno.numero || "";
+  tdNumero.appendChild(inputNumero);
+
+  const tdCostas = document.createElement("td");
+  const inputCostas = document.createElement("input");
+  inputCostas.type = "text";
+  inputCostas.value = aluno.nomeCamiseta || "";
+  tdCostas.appendChild(inputCostas);
+
+  const tdAcoes = document.createElement("td");
+  tdAcoes.className = "acoes-linha";
+
+  const btnSalvar = document.createElement("button");
+  btnSalvar.className = "sucesso";
+  btnSalvar.textContent = "Salvar";
+  btnSalvar.onclick = async () => {
+    const novoNome = inputNome.value.trim();
+    const novoCostas = inputCostas.value.trim();
+    if (!novoNome || !selectTamanho.value || !novoCostas) {
+      alert("Preencha nome, tamanho e nome para a camiseta.");
+      return;
+    }
+    btnSalvar.disabled = true;
+    try {
+      const dados = {
+        nome: novoNome,
+        tamanho: selectTamanho.value,
+        numero: inputNumero.value.trim(),
+        nomeCamiseta: novoCostas
+      };
+      if (aluno.ajusteSolicitado) dados.ajusteSolicitado = false; // corrigiu = resolveu
+      await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update(dados);
+      // O onSnapshot dos alunos re-renderiza a lista automaticamente.
+    } catch (erro) {
+      console.error(erro);
+      alert("Erro ao salvar. Tente novamente.");
+      btnSalvar.disabled = false;
+    }
+  };
+
+  const btnCancelar = document.createElement("button");
+  btnCancelar.className = "secundario";
+  btnCancelar.textContent = "Cancelar";
+  btnCancelar.onclick = () => renderizarTurmasAdmin();
+
+  tdAcoes.appendChild(btnSalvar);
+  tdAcoes.appendChild(btnCancelar);
+
+  tr.appendChild(tdNome);
+  tr.appendChild(tdTamanho);
+  tr.appendChild(tdNumero);
+  tr.appendChild(tdCostas);
+  tr.appendChild(tdAcoes);
 }
 
 function escapeHtmlAdmin(texto) {
