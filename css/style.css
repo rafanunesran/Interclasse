@@ -178,6 +178,97 @@ tr.duplicado td { background: #fef3c7; }
   margin-top: 30px;
 }
 
+/* Link discreto para a área administrativa, no rodapé. */
+.rodape-admin {
+  text-align: center;
+  margin: 6px 0 24px;
+}
+.link-admin {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-decoration: none;
+  opacity: 0.7;
+}
+.link-admin:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* Barra superior do painel administrativo (identificação + sair). */
+.barra-admin {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+.barra-admin button {
+  margin-top: 0;
+  margin-right: 0;
+}
+
+/* Checkbox alinhado ao lado do texto (configurações gerais). */
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-top: 14px;
+}
+.checkbox-inline input {
+  width: auto;
+  margin: 0;
+}
+
+/* Editor de tamanhos (painel administrativo). */
+.grupo-tamanho {
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.chips-tamanho {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.chip-tamanho {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--cinza-bg);
+  border: 1px solid var(--cinza-borda);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+.chip-tamanho button {
+  margin: 0;
+  padding: 0;
+  background: none;
+  color: var(--vermelho);
+  font-size: 1.1rem;
+  line-height: 1;
+  font-weight: 700;
+}
+.linha-add-tamanho {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.linha-add-tamanho input {
+  flex: 1;
+}
+.linha-add-tamanho button {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
 .acoes-linha button {
   margin-top: 0;
   padding: 6px 10px;

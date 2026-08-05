@@ -8,9 +8,10 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 
 - **`index.html`** — lista as turmas cadastradas.
 - **`turma.html?id=NOME-DA-TURMA`** — página do representante: digita a senha da turma, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
-- **`admin.html`** — painel do administrador: cria turmas (com senha própria para cada uma), acompanha status, reabre pedidos fechados, edita qualquer turma e exporta o CSV geral de todas as turmas.
+- **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
+- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), acompanha status, reabre pedidos fechados, edita qualquer turma e exporta o CSV geral. Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
-Nenhuma senha aqui é criptografada — é uma proteção simples para evitar edições por engano ou por curiosos, adequada para esse tipo de uso (não é um sistema com dados sigilosos).
+O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar turmas e alterar tamanhos/configurações. Já a **senha de cada turma** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
 ## Passo a passo da configuração
 
@@ -18,7 +19,9 @@ Nenhuma senha aqui é criptografada — é uma proteção simples para evitar ed
 
 1. Acesse [console.firebase.google.com](https://console.firebase.google.com) e crie um projeto novo (pode desativar o Google Analytics, não é necessário).
 2. No menu lateral, vá em **Compilação > Firestore Database** → **Criar banco de dados** → escolha **modo de produção** → selecione uma localização (ex: `southamerica-east1`).
-3. Ainda no menu lateral, vá em **Compilação > Authentication** → aba **Sign-in method** → ative o provedor **Anônimo**.
+3. Ainda no menu lateral, vá em **Compilação > Authentication** → aba **Sign-in method** e ative **dois** provedores:
+   - **Anônimo** — usado automaticamente pelas páginas do aluno (início e turma) para gravar os pedidos.
+   - **E-mail/senha** — usado no login do painel administrativo.
 
 ### 2. Conectar o site ao seu projeto Firebase
 
@@ -33,26 +36,29 @@ Nenhuma senha aqui é criptografada — é uma proteção simples para evitar ed
 2. Apague o conteúdo e cole o conteúdo do arquivo **`firestore.rules`** deste projeto.
 3. Clique em **Publicar**.
 
-### 4. Criar a senha do administrador
+### 4. Criar a conta do administrador (e-mail/senha)
 
-As regras impedem que a senha do admin seja criada pelo próprio site (por segurança), então você cria manualmente uma única vez:
+O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha). A senha fica guardada com segurança no Firebase — nunca no código do site. Crie a conta uma única vez:
 
-1. No console do Firebase, vá em **Firestore Database > Dados**.
-2. Clique em **Iniciar coleção**. ID da coleção: `config`.
-3. ID do documento: `admin`.
-4. Adicione um campo: nome `senha`, tipo `string`, valor = a senha que você quer usar no painel administrativo (ex: `interclasse2026`).
-5. Salve.
+1. No console do Firebase, vá em **Compilação > Authentication > Users**.
+2. Clique em **Adicionar usuário**.
+3. Informe o **e-mail** e a **senha** do administrador e salve.
+4. Esse e-mail precisa ser o mesmo em dois lugares do projeto (já configurado neste repositório, mas confira se você mudar de e-mail):
+   - a constante `MASTER_EMAIL` em **`js/admin.js`**;
+   - a função `ehAdmin()` em **`firestore.rules`** (e republique as regras depois de alterar).
+
+> Para trocar a senha depois, use **Authentication > Users** (menu de cada usuário) ou o link "Esqueci a senha". Não há senha no código para editar.
 
 ### 5. Publicar no GitHub Pages
 
-1. Crie um repositório novo no GitHub e suba todos os arquivos deste projeto (`index.html`, `turma.html`, `admin.html`, as pastas `css/` e `js/`).
+1. Crie um repositório novo no GitHub e suba todos os arquivos deste projeto (`index.html`, `turma.html`, `admin.html`, `superadmin.html`, as pastas `css/` e `js/`).
 2. No repositório, vá em **Settings > Pages**.
 3. Em **Source**, selecione **Deploy from a branch**, branch `main`, pasta `/ (root)`. Salve.
 4. Aguarde alguns minutos — o GitHub vai mostrar o link do site publicado (algo como `https://seuusuario.github.io/nome-do-repositorio/`).
 
 ### 6. Criar as turmas e começar a usar
 
-1. Acesse `SEU-SITE/admin.html`, entre com a senha do administrador (a que você criou no passo 4).
+1. Acesse `SEU-SITE/admin.html` (ou clique em "Área administrativa" no rodapé) e entre com o **e-mail e a senha** do administrador (a conta que você criou no passo 4). O site leva você automaticamente para o **Super Admin** (`superadmin.html`).
 2. Em **Criar nova turma**, cadastre cada turma com um nome (ex: "3º Ano A - Manhã") e uma senha própria para ela.
 3. Compartilhe com cada representante o link da turma (`SEU-SITE/turma.html?id=ID-DA-TURMA`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`), que lista todas as turmas.
 4. Cada representante cadastra os alunos, confere a lista (o site avisa se houver números de camiseta duplicados) e clica em **Fechar pedido da turma** quando terminar.
@@ -65,11 +71,15 @@ As regras impedem que a senha do admin seja criada pelo próprio site (por segur
 
 ## Tamanhos disponíveis
 
+Tamanhos padrão (usados enquanto nada foi salvo no painel):
+
 - Infantil: 10, 12, 14, 16
 - Normal: P, M, G, GG
 - Plus Size: G1, G2, G3, G4
 
-Para alterar essa lista, edite o array `GRUPOS_TAMANHO` no arquivo `js/utils.js`.
+Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel administrativo (`admin.html`): dá para criar/remover grupos, adicionar/remover tamanhos e restaurar o padrão. O que for salvo fica em `config/tamanhos` no Firestore e passa a valer no cadastro de todas as turmas. O array `TAMANHOS_PADRAO` em `js/utils.js` continua servindo como fallback caso nada tenha sido salvo ainda.
+
+> **Importante:** o painel grava em `config/geral` e `config/tamanhos`. Se você configurou o Firestore antes desta versão, republique as regras (`firestore.rules`) no console do Firebase — a versão anterior bloqueava toda escrita em `config/`.
 
 ## Limitações conhecidas
 

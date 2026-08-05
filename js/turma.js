@@ -8,6 +8,7 @@ const turmaId = params.get("id");
 let turmaAtual = null;
 let desbloqueado = false;
 let alunosAtuais = []; // cache da última leitura, para exportar/resumir
+let cadastrosGlobaisAbertos = true; // controlado nas configurações gerais (admin)
 
 // Elementos
 const elNomeTurma = document.getElementById("nomeTurma");
@@ -23,6 +24,7 @@ const elAvisoDuplicado = document.getElementById("avisoDuplicado");
 const elBtnFechar = document.getElementById("btnFechar");
 const elBtnExportar = document.getElementById("btnExportar");
 const elMensagemFechado = document.getElementById("mensagemFechado");
+const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
 
 if (!turmaId) {
   elNomeTurma.textContent = "Turma não especificada.";
@@ -31,9 +33,15 @@ if (!turmaId) {
 }
 
 async function iniciar() {
-  preencherSelectTamanhos(document.getElementById("tamanho"));
+  await entrarAnonimo();
 
-  await authPronta;
+  // Carrega tamanhos e configurações gerais antes de montar a tela.
+  await carregarTamanhos();
+  const cfgGeral = await carregarConfigGeral();
+  aplicarConfigGeral(cfgGeral);
+  cadastrosGlobaisAbertos = cfgGeral.cadastrosAbertos !== false;
+
+  preencherSelectTamanhos(document.getElementById("tamanho"));
 
   const doc = await db.collection("turmas").doc(turmaId).get();
   if (!doc.exists) {
@@ -68,12 +76,16 @@ function atualizarBadge() {
 }
 
 function atualizarVisibilidade() {
-  const podeEditar = desbloqueado && !turmaAtual.fechado;
+  const podeEditar = desbloqueado && !turmaAtual.fechado && cadastrosGlobaisAbertos;
 
   elCardSenha.classList.toggle("oculto", desbloqueado);
   elBlocoCadastro.classList.toggle("oculto", !podeEditar);
-  elBtnFechar.classList.toggle("oculto", !(desbloqueado && !turmaAtual.fechado));
+  elBtnFechar.classList.toggle("oculto", !(desbloqueado && !turmaAtual.fechado && cadastrosGlobaisAbertos));
   elMensagemFechado.classList.toggle("oculto", !turmaAtual.fechado);
+  if (elMensagemGlobalFechado) {
+    // Só mostra o aviso global quando a turma em si não está fechada (para não duplicar avisos).
+    elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || turmaAtual.fechado);
+  }
 
   renderizarTabela(); // re-render para mostrar/esconder botões de ação
 }
