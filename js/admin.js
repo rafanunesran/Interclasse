@@ -2,16 +2,19 @@
 // PAINEL ADMINISTRATIVO
 // ============================================================
 
-// E-mail da conta administradora (master). É apenas um identificador; a
-// segurança vem da senha, guardada no Firebase Authentication (não no código).
-const MASTER_EMAIL = "rafaelnf93@gmail.com";
+// ============================================================
+// SUPER ADMIN (superadmin.html)
+// Página protegida: só a conta administradora (ver auth-admin.js) entra.
+// O login em si é feito na página admin.html (js/login.js). Quem chegar aqui
+// sem estar logado como admin é mandado de volta para o login.
+// ============================================================
+
+const PAGINA_LOGIN = "admin.html";
 
 const estadoTurmas = {}; // turmaId -> { turma, alunos, expandido }
 
-const elFormAdminSenha = document.getElementById("formAdminSenhaForm");
-const elCardAdminSenha = document.getElementById("cardAdminSenha");
-const elMsgAdminSenha = document.getElementById("msgAdminSenha");
 const elPainel = document.getElementById("painelAdmin");
+const elEmailLogado = document.getElementById("emailLogado");
 const elFormCriarTurma = document.getElementById("formCriarTurma");
 const elListaTurmasAdmin = document.getElementById("listaTurmasAdmin");
 const elBtnExportarTudo = document.getElementById("btnExportarTudo");
@@ -20,14 +23,12 @@ const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 
 let painelIniciado = false;
 
-// A autenticação usa o Firebase Authentication (e-mail/senha). O Firebase
-// mantém a sessão salva no navegador: quem já entrou continua logado ao
-// recarregar a página, até clicar em "Sair".
+// Guarda de acesso: o Firebase mantém a sessão salva no navegador, então
+// quem já entrou continua logado ao recarregar. Se não for a conta admin,
+// volta para a página de login.
 auth.onAuthStateChanged((user) => {
-  const ehAdmin = !!user && !user.isAnonymous && user.email === MASTER_EMAIL;
-
-  if (ehAdmin) {
-    elCardAdminSenha.classList.add("oculto");
+  if (ehContaAdmin(user)) {
+    if (elEmailLogado) elEmailLogado.textContent = user.email;
     elPainel.classList.remove("oculto");
     if (!painelIniciado) {
       painelIniciado = true;
@@ -36,43 +37,15 @@ auth.onAuthStateChanged((user) => {
     }
   } else {
     elPainel.classList.add("oculto");
-    elCardAdminSenha.classList.remove("oculto");
-  }
-});
-
-elFormAdminSenha.addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  esconderMensagem(elMsgAdminSenha);
-
-  const email = document.getElementById("emailAdmin").value.trim();
-  const senha = document.getElementById("senhaAdmin").value;
-  const botao = elFormAdminSenha.querySelector("button[type=submit]");
-  botao.disabled = true;
-
-  try {
-    const cred = await auth.signInWithEmailAndPassword(email, senha);
-    if (cred.user.email !== MASTER_EMAIL) {
-      // Conta válida no Firebase, mas não é a conta administradora.
-      await auth.signOut();
-      mostrarMensagem(elMsgAdminSenha, "Esta conta não tem acesso administrativo.", "erro");
-    }
-    // Caso contrário, o onAuthStateChanged acima cuida de mostrar o painel.
-  } catch (erro) {
-    console.error(erro);
-    let msg = "Não foi possível entrar. Confira o e-mail e a senha.";
-    if (erro.code === "auth/operation-not-allowed") {
-      msg = "O login por e-mail/senha ainda não foi ativado no Firebase (Authentication > Sign-in method).";
-    } else if (erro.code === "auth/too-many-requests") {
-      msg = "Muitas tentativas seguidas. Aguarde um pouco e tente novamente.";
-    }
-    mostrarMensagem(elMsgAdminSenha, msg, "erro");
-  } finally {
-    botao.disabled = false;
+    window.location.replace(PAGINA_LOGIN);
   }
 });
 
 if (elBtnSairAdmin) {
-  elBtnSairAdmin.addEventListener("click", () => auth.signOut());
+  elBtnSairAdmin.addEventListener("click", async () => {
+    await auth.signOut();
+    window.location.replace(PAGINA_LOGIN);
+  });
 }
 
 // ---------------- Criar turma ----------------
