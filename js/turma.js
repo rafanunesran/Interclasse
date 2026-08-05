@@ -174,6 +174,7 @@ function renderizarTabela() {
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
+      <td>${badgePagamentoHtml(aluno)}</td>
       <td class="acoes-linha"></td>
     `;
 
@@ -345,10 +346,13 @@ function editarLinha(tr, aluno) {
   tdAcoes.appendChild(btnSalvar);
   tdAcoes.appendChild(btnCancelar);
 
+  const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
+
   tr.appendChild(tdNome);
   tr.appendChild(tdTamanho);
   tr.appendChild(tdNumero);
   tr.appendChild(tdCostas);
+  tr.appendChild(tdPagamento);
   tr.appendChild(tdAcoes);
 }
 
@@ -396,8 +400,13 @@ const elPixCodigo = document.getElementById("pixCodigo");
 const elPixCopiar = document.getElementById("pixCopiar");
 const elPixCopiado = document.getElementById("pixCopiado");
 const elPixFechar = document.getElementById("fecharModalPix");
+const elPixJaPaguei = document.getElementById("pixJaPaguei");
+const elPixDeclarado = document.getElementById("pixDeclarado");
+
+let pixAlunoAtual = null; // aluno aberto no modal de pagamento
 
 function abrirPagamentoPix(aluno) {
+  pixAlunoAtual = aluno;
   const valor = precoDoTamanho(aluno.tamanho, configGeral.precosPorGrupo);
 
   const codigo = pixCopiaECola({
@@ -418,6 +427,9 @@ function abrirPagamentoPix(aluno) {
     encodeURIComponent(codigo);
 
   elPixCopiado.classList.add("oculto");
+  elPixDeclarado.classList.add("oculto");
+  // Se já foi declarado/pago, não mostra o botão de novo.
+  if (elPixJaPaguei) elPixJaPaguei.classList.toggle("oculto", !!(aluno.pago || aluno.pagamentoDeclarado));
   elModalPix.classList.remove("oculto");
 }
 
@@ -443,6 +455,26 @@ if (elPixCopiar) {
       document.execCommand("copy");
     }
     elPixCopiado.classList.remove("oculto");
+  });
+}
+if (elPixJaPaguei) {
+  elPixJaPaguei.addEventListener("click", async () => {
+    if (!pixAlunoAtual) return;
+    elPixJaPaguei.disabled = true;
+    try {
+      await db.collection("turmas").doc(turmaId).collection("alunos").doc(pixAlunoAtual.id).update({
+        pagamentoDeclarado: true,
+        pagamentoForma: "pix",
+        pagamentoDeclaradoEm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      elPixJaPaguei.classList.add("oculto");
+      elPixDeclarado.classList.remove("oculto");
+    } catch (erro) {
+      console.error(erro);
+      alert("Não foi possível registrar. Tente novamente.");
+    } finally {
+      elPixJaPaguei.disabled = false;
+    }
   });
 }
 
@@ -474,9 +506,9 @@ elBtnExportar.addEventListener("click", () => {
     alert("Não há alunos cadastrados para exportar.");
     return;
   }
-  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta"]];
+  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
   alunosAtuais.forEach((a) => {
-    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || ""]);
+    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
   });
   baixarCSV(`pedido-${slugify(turmaAtual.nome)}.csv`, linhas);
 });

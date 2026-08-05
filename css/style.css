@@ -121,6 +121,9 @@ tr.duplicado td { background: #fef3c7; }
 }
 .badge.aberto { background: #dcfce7; color: #166534; }
 .badge.fechado { background: #fee2e2; color: #991b1b; }
+.badge.pago { background: #dcfce7; color: #166534; }
+.badge.aguardando { background: #fef3c7; color: #92400e; }
+.badge.pendente { background: #e5e7eb; color: #374151; }
 
 .aviso {
   background: #fef3c7;
@@ -235,6 +238,38 @@ tr.duplicado td { background: #fef3c7; }
 .link-admin:hover {
   opacity: 1;
   text-decoration: underline;
+}
+
+/* Abas do Super Admin. */
+.abas-admin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+  border-bottom: 2px solid var(--cinza-borda);
+}
+.abas-admin .aba {
+  margin: 0;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--texto);
+  font-weight: 600;
+  padding: 10px 16px;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+.abas-admin .aba:hover { background: var(--cinza-bg); }
+.abas-admin .aba.ativa {
+  color: var(--azul);
+  border-bottom-color: var(--azul);
+}
+
+/* Seletor de status de pagamento por linha (admin). */
+.select-pagamento {
+  margin-top: 6px;
+  padding: 4px 6px;
+  font-size: 0.8rem;
 }
 
 /* Barra superior do painel administrativo (identificação + sair). */
@@ -408,4 +443,9 @@ tr.linha-ajuste td { background: #fef2f2; }
   font-size: 0.8rem;
   color: #6b7280;
   margin-top: 12px;
+}
+.pix-divisor {
+  border: none;
+  border-top: 1px solid var(--cinza-borda);
+  margin: 16px 0 12px;
 }
