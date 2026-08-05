@@ -82,6 +82,16 @@
           <h3>Preço por grupo de tamanho</h3>
           <div id="precosPorGrupo"></div>
 
+          <h3>Confirmação automática (Mercado Pago)</h3>
+          <p class="pix-ajuda">Opcional. Quando ativo, o botão "Pagar (PIX)" gera a cobrança pelo Mercado Pago e o status vira "Pago" sozinho quando o pagamento cai. Requer o backend na Vercel (ver mp-backend/README.md).</p>
+          <label class="checkbox-inline">
+            <input type="checkbox" id="mpAtivo" />
+            Ativar confirmação automática via Mercado Pago
+          </label>
+
+          <label for="mpBackendUrl">URL do backend (Vercel)</label>
+          <input type="url" id="mpBackendUrl" placeholder="https://seu-projeto.vercel.app" />
+
           <button type="submit" class="primario">Salvar pagamento</button>
         </form>
         <p id="msgPix" class="oculto"></p>

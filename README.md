@@ -99,7 +99,19 @@ Cada aluno tem um status: **Pendente**, **Aguardando confirmação** ou **Pago (
 - **Pagamento por PIX:** como o PIX estático não avisa o site automaticamente, o pagante clica em **"Já fiz o pagamento"** no modal do PIX (fica *Aguardando confirmação*); você confere na sua conta e confirma marcando **Pago (PIX)** no seletor.
 - O CSV exportado inclui as colunas `Pago` e `Forma Pagto`.
 
-> Confirmação **automática** de PIX (sem clique) exige um provedor de pagamento (Mercado Pago, Efí etc.) com PIX dinâmico + webhook e um backend (Firebase Cloud Functions, plano Blaze). É um projeto à parte.
+### Confirmação automática (Mercado Pago) — opcional
+
+Dá para o status virar **Pago** sozinho quando o PIX cai, sem clique. Para isso há um backend
+serverless em [`mp-backend/`](mp-backend/README.md) (roda de graça na Vercel, sem cartão) que
+cria a cobrança no **Mercado Pago** e recebe o **webhook** de confirmação, gravando o
+pagamento no Firestore.
+
+- Ative em **Super Admin → Pagamentos** marcando "Ativar confirmação automática (Mercado
+  Pago)" e informando a URL do backend na Vercel. O passo a passo completo (Mercado Pago,
+  service account do Firebase e deploy na Vercel) está em `mp-backend/README.md`.
+- **Desligado** (padrão), continua tudo como antes: PIX estático direto (grátis, sem taxa) +
+  auto-declaração + confirmação manual.
+- **Ligado**, o Mercado Pago cobra ~0,99% por PIX recebido e o dinheiro passa pela conta MP.
 
 O Super Admin é organizado em abas: **Inicial** (criar turmas e lista de turmas), **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
 

@@ -133,6 +133,7 @@ function escutarAlunos() {
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
         renderizarTabela();
+        verificarConfirmacaoPix();
       },
       (erro) => console.error("Erro ao carregar alunos:", erro)
     );
@@ -402,13 +403,54 @@ const elPixCopiado = document.getElementById("pixCopiado");
 const elPixFechar = document.getElementById("fecharModalPix");
 const elPixJaPaguei = document.getElementById("pixJaPaguei");
 const elPixDeclarado = document.getElementById("pixDeclarado");
+const elPixStatus = document.getElementById("pixStatus");
 
 let pixAlunoAtual = null; // aluno aberto no modal de pagamento
 
+function definirStatusPix(texto, tipo) {
+  if (!elPixStatus) return;
+  if (!texto) {
+    elPixStatus.classList.add("oculto");
+    elPixStatus.textContent = "";
+    return;
+  }
+  elPixStatus.textContent = texto;
+  elPixStatus.className =
+    tipo === "erro" ? "erro" :
+    tipo === "aguardando" ? "aviso" :
+    tipo === "pago" ? "pix-ok" : "pix-ajuda";
+}
+
 function abrirPagamentoPix(aluno) {
   pixAlunoAtual = aluno;
-  const valor = precoDoTamanho(aluno.tamanho, configGeral.precosPorGrupo);
 
+  elPixAluno.textContent = `${aluno.nome} — tamanho ${aluno.tamanho}`;
+  elPixCopiado.classList.add("oculto");
+  elPixDeclarado.classList.add("oculto");
+  definirStatusPix("", "");
+  elModalPix.classList.remove("oculto");
+
+  const usarMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
+
+  // O botão de auto-declaração só faz sentido no modo estático (sem MP).
+  if (elPixJaPaguei) {
+    elPixJaPaguei.classList.toggle("oculto", usarMp || !!(aluno.pago || aluno.pagamentoDeclarado));
+  }
+
+  if (aluno.pago) {
+    definirStatusPix("Pagamento confirmado! ✅", "pago");
+  }
+
+  if (usarMp) {
+    gerarPagamentoMp(aluno);
+  } else {
+    gerarPagamentoEstatico(aluno);
+  }
+}
+
+// Modo padrão: PIX estático gerado no próprio site (chave direta, sem taxa).
+function gerarPagamentoEstatico(aluno) {
+  const valor = precoDoTamanho(aluno.tamanho, configGeral.precosPorGrupo);
   const codigo = pixCopiaECola({
     chave: configGeral.pixChave,
     nome: configGeral.pixNome,
@@ -416,21 +458,55 @@ function abrirPagamentoPix(aluno) {
     valor: valor
   });
 
-  elPixAluno.textContent = `${aluno.nome} — tamanho ${aluno.tamanho}`;
   elPixValor.textContent = valor
     ? formatarReais(valor)
     : "Valor não definido para este tamanho — digite no app do banco.";
-
   elPixCodigo.value = codigo;
   elPixQr.src =
     "https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=" +
     encodeURIComponent(codigo);
+}
 
-  elPixCopiado.classList.add("oculto");
-  elPixDeclarado.classList.add("oculto");
-  // Se já foi declarado/pago, não mostra o botão de novo.
-  if (elPixJaPaguei) elPixJaPaguei.classList.toggle("oculto", !!(aluno.pago || aluno.pagamentoDeclarado));
-  elModalPix.classList.remove("oculto");
+// Modo Mercado Pago: pede a cobrança ao backend; o status vira "Pago" sozinho
+// (webhook -> Firestore -> onSnapshot).
+async function gerarPagamentoMp(aluno) {
+  elPixValor.textContent = "";
+  elPixCodigo.value = "";
+  elPixQr.removeAttribute("src");
+  if (!aluno.pago) definirStatusPix("Gerando pagamento…", "");
+
+  try {
+    const url = configGeral.mpBackendUrl.replace(/\/$/, "") + "/api/criar-pagamento";
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turmaId: turmaId, alunoId: aluno.id })
+    });
+    const dados = await resp.json();
+    if (!resp.ok) throw new Error(dados && dados.erro ? dados.erro : "Falha ao gerar pagamento");
+
+    elPixValor.textContent = dados.valor ? formatarReais(dados.valor) : "";
+    elPixCodigo.value = dados.qrCode || "";
+    if (dados.qrCodeBase64) elPixQr.src = "data:image/png;base64," + dados.qrCodeBase64;
+
+    if (!aluno.pago) {
+      definirStatusPix("Aguardando pagamento… o status muda para Pago sozinho quando o PIX cair.", "aguardando");
+    }
+  } catch (erro) {
+    console.error(erro);
+    definirStatusPix("Não foi possível gerar o pagamento automático. Tente de novo ou fale com a organização.", "erro");
+  }
+}
+
+// Se o pagamento do aluno aberto no modal for confirmado (em tempo real),
+// mostra a confirmação sem precisar recarregar.
+function verificarConfirmacaoPix() {
+  if (!pixAlunoAtual || !elModalPix || elModalPix.classList.contains("oculto")) return;
+  const atual = alunosAtuais.find((a) => a.id === pixAlunoAtual.id);
+  if (atual && atual.pago) {
+    definirStatusPix("Pagamento confirmado! ✅", "pago");
+    if (elPixJaPaguei) elPixJaPaguei.classList.add("oculto");
+  }
 }
 
 function fecharPagamentoPix() {
