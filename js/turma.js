@@ -33,7 +33,7 @@ if (!turmaId) {
 }
 
 async function iniciar() {
-  await authPronta;
+  await entrarAnonimo();
 
   // Carrega tamanhos e configurações gerais antes de montar a tela.
   await carregarTamanhos();

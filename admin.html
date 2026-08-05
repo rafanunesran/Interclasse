@@ -20,14 +20,23 @@
   <div class="card" id="cardAdminSenha">
     <h2>Acesso administrativo</h2>
     <form id="formAdminSenhaForm">
-      <label for="senhaAdmin">Senha do administrador</label>
-      <input type="password" id="senhaAdmin" required autocomplete="off" />
+      <label for="emailAdmin">E-mail</label>
+      <input type="email" id="emailAdmin" required autocomplete="username" />
+
+      <label for="senhaAdmin">Senha</label>
+      <input type="password" id="senhaAdmin" required autocomplete="current-password" />
+
       <button type="submit" class="primario">Entrar</button>
     </form>
     <p id="msgAdminSenha" class="oculto"></p>
   </div>
 
   <div class="oculto" id="painelAdmin">
+    <div class="barra-admin">
+      <span>Painel administrativo</span>
+      <button type="button" id="btnSairAdmin" class="secundario">Sair</button>
+    </div>
+
     <div class="card">
       <h2>Criar nova turma</h2>
       <form id="formCriarTurma">

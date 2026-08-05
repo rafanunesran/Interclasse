@@ -2,8 +2,10 @@
 // PAINEL ADMINISTRATIVO
 // ============================================================
 
-let adminDesbloqueado = false;
-let senhaAdminValida = null;
+// E-mail da conta administradora (master). É apenas um identificador; a
+// segurança vem da senha, guardada no Firebase Authentication (não no código).
+const MASTER_EMAIL = "rafaelnf93@gmail.com";
+
 const estadoTurmas = {}; // turmaId -> { turma, alunos, expandido }
 
 const elFormAdminSenha = document.getElementById("formAdminSenhaForm");
@@ -14,51 +16,64 @@ const elFormCriarTurma = document.getElementById("formCriarTurma");
 const elListaTurmasAdmin = document.getElementById("listaTurmasAdmin");
 const elBtnExportarTudo = document.getElementById("btnExportarTudo");
 const elMsgCriarTurma = document.getElementById("msgCriarTurma");
+const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 
-iniciar();
+let painelIniciado = false;
 
-async function iniciar() {
-  await authPronta;
+// A autenticação usa o Firebase Authentication (e-mail/senha). O Firebase
+// mantém a sessão salva no navegador: quem já entrou continua logado ao
+// recarregar a página, até clicar em "Sair".
+auth.onAuthStateChanged((user) => {
+  const ehAdmin = !!user && !user.isAnonymous && user.email === MASTER_EMAIL;
 
-  if (sessionStorage.getItem("admin-desbloqueado") === "1") {
-    adminDesbloqueado = true;
+  if (ehAdmin) {
     elCardAdminSenha.classList.add("oculto");
     elPainel.classList.remove("oculto");
-    escutarTurmas();
-    carregarPainelConfig();
+    if (!painelIniciado) {
+      painelIniciado = true;
+      escutarTurmas();
+      carregarPainelConfig();
+    }
+  } else {
+    elPainel.classList.add("oculto");
+    elCardAdminSenha.classList.remove("oculto");
   }
-}
+});
 
 elFormAdminSenha.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   esconderMensagem(elMsgAdminSenha);
-  const valor = document.getElementById("senhaAdmin").value.trim();
+
+  const email = document.getElementById("emailAdmin").value.trim();
+  const senha = document.getElementById("senhaAdmin").value;
+  const botao = elFormAdminSenha.querySelector("button[type=submit]");
+  botao.disabled = true;
 
   try {
-    const doc = await db.collection("config").doc("admin").get();
-    if (!doc.exists) {
-      mostrarMensagem(
-        elMsgAdminSenha,
-        "O documento de senha do admin ainda não foi criado no Firestore (config/admin). Veja o README.",
-        "erro"
-      );
-      return;
+    const cred = await auth.signInWithEmailAndPassword(email, senha);
+    if (cred.user.email !== MASTER_EMAIL) {
+      // Conta válida no Firebase, mas não é a conta administradora.
+      await auth.signOut();
+      mostrarMensagem(elMsgAdminSenha, "Esta conta não tem acesso administrativo.", "erro");
     }
-    if (valor === doc.data().senha) {
-      adminDesbloqueado = true;
-      sessionStorage.setItem("admin-desbloqueado", "1");
-      elCardAdminSenha.classList.add("oculto");
-      elPainel.classList.remove("oculto");
-      escutarTurmas();
-      carregarPainelConfig();
-    } else {
-      mostrarMensagem(elMsgAdminSenha, "Senha incorreta.", "erro");
-    }
+    // Caso contrário, o onAuthStateChanged acima cuida de mostrar o painel.
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(elMsgAdminSenha, "Erro ao verificar senha.", "erro");
+    let msg = "Não foi possível entrar. Confira o e-mail e a senha.";
+    if (erro.code === "auth/operation-not-allowed") {
+      msg = "O login por e-mail/senha ainda não foi ativado no Firebase (Authentication > Sign-in method).";
+    } else if (erro.code === "auth/too-many-requests") {
+      msg = "Muitas tentativas seguidas. Aguarde um pouco e tente novamente.";
+    }
+    mostrarMensagem(elMsgAdminSenha, msg, "erro");
+  } finally {
+    botao.disabled = false;
   }
 });
+
+if (elBtnSairAdmin) {
+  elBtnSairAdmin.addEventListener("click", () => auth.signOut());
+}
 
 // ---------------- Criar turma ----------------
 

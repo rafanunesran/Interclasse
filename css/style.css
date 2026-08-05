@@ -194,6 +194,21 @@ tr.duplicado td { background: #fef3c7; }
   text-decoration: underline;
 }
 
+/* Barra superior do painel administrativo (identificação + sair). */
+.barra-admin {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+.barra-admin button {
+  margin-top: 0;
+  margin-right: 0;
+}
+
 /* Checkbox alinhado ao lado do texto (configurações gerais). */
 .checkbox-inline {
   display: flex;

@@ -7,7 +7,7 @@ async function carregarTurmas() {
   const carregando = document.getElementById("carregando");
 
   try {
-    await authPronta;
+    await entrarAnonimo();
     aplicarConfigGeral(await carregarConfigGeral());
     const snap = await db.collection("turmas").orderBy("nome").get();
 

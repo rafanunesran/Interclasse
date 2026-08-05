@@ -20,16 +20,22 @@ if (typeof firebase.analytics === "function") {
   }
 }
 
-// Login anônimo: necessário para poder gravar dados (ver firestore.rules).
-// Isso não pede nada ao usuário, é automático e silencioso.
-const authPronta = new Promise((resolve, reject) => {
-  auth.onAuthStateChanged((user) => {
-    if (user) {
-      resolve(user);
+// Login anônimo para as PÁGINAS PÚBLICAS (início e turma): necessário para
+// gravar dados (ver firestore.rules). É automático e silencioso, não pede
+// nada ao usuário. Retorna uma Promise que resolve quando há sessão.
+//
+// A página de administração NÃO usa isto: ela faz login com e-mail/senha
+// pelo Firebase Authentication (ver js/admin.js).
+function entrarAnonimo() {
+  return new Promise((resolve, reject) => {
+    auth.onAuthStateChanged((user) => {
+      if (user) resolve(user);
+    });
+    if (!auth.currentUser) {
+      auth.signInAnonymously().catch((erro) => {
+        console.error("Erro no login anônimo do Firebase:", erro);
+        reject(erro);
+      });
     }
   });
-  auth.signInAnonymously().catch((erro) => {
-    console.error("Erro no login anônimo do Firebase:", erro);
-    reject(erro);
-  });
-});
+}

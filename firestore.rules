@@ -8,12 +8,12 @@ rules_version = '2';
 // Modelo adotado:
 // - Leitura: pública (qualquer pessoa com o link pode ver a lista,
 //   para permitir a conferência do pedido).
-// - Escrita: exige estar autenticado (login anônimo automático do
-//   site). A proteção por senha de turma/admin acontece no site
-//   (JavaScript), não aqui — é uma barreira de conveniência para
-//   evitar edições por engano ou por curiosos, adequada para um
-//   controle de pedido de camiseta de interclasse. Não trate estes
-//   dados como sigilosos.
+// - Alunos e o "fechar pedido" das turmas: exigem estar autenticado
+//   (login anônimo automático do site). A senha da turma é conferida no
+//   site (JavaScript) — é uma barreira de conveniência, não um sigilo.
+// - Ações administrativas (criar turmas, editar tamanhos e configurações):
+//   exigem estar logado com a conta administradora (e-mail/senha do
+//   Firebase Authentication). Ver a função ehAdmin() abaixo.
 // - Exclusão de aluno é sempre "suave" (campo excluido = true),
 //   nunca um delete de verdade — por isso "delete" é bloqueado.
 // ============================================================
@@ -21,21 +21,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Verdadeiro apenas para a conta administradora (master), logada por
+    // e-mail/senha no Firebase Authentication. Mantenha este e-mail igual
+    // ao MASTER_EMAIL definido em js/admin.js.
+    function ehAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "rafaelnf93@gmail.com";
+    }
+
     // Documentos de configuração do site (config/...).
-    // - config/admin: senha do administrador. Criado manualmente pelo
-    //   console (ver README) e nunca gravável pelo site.
-    // - config/geral e config/tamanhos: editáveis pelo painel administrativo
-    //   (mesma barreira de conveniência das turmas: exige login anônimo).
+    // - config/geral e config/tamanhos: só o admin pode gravar.
     match /config/{docId} {
       allow read: if true;
-      allow create, update: if request.auth != null
-        && (docId == "geral" || docId == "tamanhos");
+      allow create, update: if ehAdmin() && (docId == "geral" || docId == "tamanhos");
       allow delete: if false;
     }
 
     match /turmas/{turmaId} {
       allow read: if true;
-      allow create, update: if request.auth != null;
+      // Criar turma é ação administrativa; atualizar (ex.: fechar/reabrir
+      // o pedido) pode ser feito pelo representante autenticado da turma.
+      allow create: if ehAdmin();
+      allow update: if request.auth != null;
       allow delete: if false;
 
       match /alunos/{alunoId} {
