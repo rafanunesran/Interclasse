@@ -1,0 +1,12 @@
+{
+  "name": "interclasse-mp-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend serverless (Vercel) para confirmação automática de PIX via Mercado Pago no Interclasse.",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

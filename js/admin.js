@@ -594,6 +594,8 @@ const elPixChave = document.getElementById("pixChave");
 const elPixNome = document.getElementById("pixNome");
 const elPixCidade = document.getElementById("pixCidade");
 const elPrecosPorGrupo = document.getElementById("precosPorGrupo");
+const elMpAtivo = document.getElementById("mpAtivo");
+const elMpBackendUrl = document.getElementById("mpBackendUrl");
 const elMsgPix = document.getElementById("msgPix");
 
 let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
@@ -619,6 +621,8 @@ async function carregarPainelConfig() {
   elPixChave.value = cfg.pixChave || "";
   elPixNome.value = cfg.pixNome || "";
   elPixCidade.value = cfg.pixCidade || "";
+  elMpAtivo.checked = cfg.mpAtivo === true;
+  elMpBackendUrl.value = cfg.mpBackendUrl || "";
   renderizarPrecosPorGrupo(cfg.precosPorGrupo || {});
 }
 
@@ -660,7 +664,9 @@ elFormPix.addEventListener("submit", async (ev) => {
     pixChave: elPixChave.value.trim(),
     pixNome: elPixNome.value.trim(),
     pixCidade: elPixCidade.value.trim(),
-    precosPorGrupo
+    precosPorGrupo,
+    mpAtivo: elMpAtivo.checked,
+    mpBackendUrl: elMpBackendUrl.value.trim().replace(/\/$/, "")
   };
 
   try {

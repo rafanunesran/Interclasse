@@ -449,3 +449,8 @@ tr.linha-ajuste td { background: #fef2f2; }
   border-top: 1px solid var(--cinza-borda);
   margin: 16px 0 12px;
 }
+.pix-ok {
+  color: var(--verde);
+  font-weight: 700;
+  margin-top: 8px;
+}
