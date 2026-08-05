@@ -91,6 +91,18 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 - **Nome do recebedor** (máx. 25 caracteres) e **Cidade** (máx. 15) — como no seu cadastro bancário.
 - **Preço por grupo de tamanho** — um valor para cada grupo (ex.: Normal R$ 45, Plus Size R$ 55). O valor cobrado em cada linha é o do grupo do tamanho daquele aluno. Se um grupo ficar sem preço, o PIX é gerado sem valor (o pagador digita no app).
 
+### Status de pagamento
+
+Cada aluno tem um status: **Pendente**, **Aguardando confirmação** ou **Pago (PIX/dinheiro)**.
+
+- **Pagamento em dinheiro:** você marca manualmente no Super Admin, na lista da turma (aba **Inicial** → "Ver lista"), pelo seletor de pagamento de cada linha.
+- **Pagamento por PIX:** como o PIX estático não avisa o site automaticamente, o pagante clica em **"Já fiz o pagamento"** no modal do PIX (fica *Aguardando confirmação*); você confere na sua conta e confirma marcando **Pago (PIX)** no seletor.
+- O CSV exportado inclui as colunas `Pago` e `Forma Pagto`.
+
+> Confirmação **automática** de PIX (sem clique) exige um provedor de pagamento (Mercado Pago, Efí etc.) com PIX dinâmico + webhook e um backend (Firebase Cloud Functions, plano Blaze). É um projeto à parte.
+
+O Super Admin é organizado em abas: **Inicial** (criar turmas e lista de turmas), **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
+
 Detalhes técnicos:
 
 - O código PIX ("copia e cola") é gerado **no próprio site** (padrão EMV/BR Code do Banco Central, com CRC16) — nenhum dado de pagamento passa por terceiros.

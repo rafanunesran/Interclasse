@@ -48,6 +48,18 @@ if (elBtnSairAdmin) {
   });
 }
 
+// ---------------- Abas (Inicial / Tamanhos / Pagamentos / Configurações) ----------------
+
+document.querySelectorAll(".aba").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".aba").forEach((b) => b.classList.remove("ativa"));
+    btn.classList.add("ativa");
+    document.querySelectorAll(".secao-aba").forEach((s) => s.classList.add("oculto"));
+    const secao = document.getElementById("aba-" + btn.dataset.aba);
+    if (secao) secao.classList.remove("oculto");
+  });
+});
+
 // ---------------- Criar turma ----------------
 
 elFormCriarTurma.addEventListener("submit", async (ev) => {
@@ -159,10 +171,12 @@ function renderizarTurmasAdmin() {
       ? `<p class="aviso-ajustes"><span class="marca-ajuste">!</span> ${nAjustes} ajuste(s) solicitado(s) — abra a lista para ver e corrigir.</p>`
       : "";
 
+    const nPagos = alunos.filter((a) => a.pago).length;
+
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(turma.nome)} ${status}</h2>
       <p>Senha da turma: <code>${escapeHtmlAdmin(turma.senha)}</code> &middot; Link: <code>turma.html?id=${turmaId}</code></p>
-      <p>${alunos.length} camiseta(s) cadastrada(s)</p>
+      <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
       ${avisoAjustes}
     `;
 
@@ -225,7 +239,7 @@ function renderizarTurmasAdmin() {
       const tabela = document.createElement("table");
       tabela.innerHTML = `
         <thead>
-          <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Ações</th></tr>
+          <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Pagamento</th><th>Ações</th></tr>
         </thead>
         <tbody></tbody>
       `;
@@ -247,8 +261,29 @@ function renderizarTurmasAdmin() {
           <td>${escapeHtmlAdmin(aluno.tamanho)}</td>
           <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
           <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
+          <td class="cel-pagamento"></td>
           <td class="acoes-linha"></td>
         `;
+
+        // Coluna de pagamento: badge + seletor de status.
+        const tdPag = tr.querySelector(".cel-pagamento");
+        tdPag.innerHTML = badgePagamentoHtml(aluno);
+        const selPag = document.createElement("select");
+        selPag.className = "select-pagamento";
+        selPag.innerHTML =
+          '<option value="pendente">Pendente</option>' +
+          '<option value="pix">Pago (PIX)</option>' +
+          '<option value="dinheiro">Pago (dinheiro)</option>';
+        selPag.value = aluno.pago ? (aluno.pagamentoForma === "dinheiro" ? "dinheiro" : "pix") : "pendente";
+        selPag.onchange = () => atualizarPagamento(turmaId, aluno.id, selPag.value);
+        tdPag.appendChild(selPag);
+        if (aluno.pagamentoDeclarado && !aluno.pago) {
+          const nota = document.createElement("small");
+          nota.className = "motivo-ajuste";
+          nota.textContent = "Pagante marcou PIX — confirme.";
+          tdPag.appendChild(nota);
+        }
+
         const tdAcoes = tr.querySelector(".acoes-linha");
 
         const btnEditar = document.createElement("button");
@@ -287,6 +322,48 @@ function renderizarTurmasAdmin() {
 
     elListaTurmasAdmin.appendChild(card);
   });
+
+  renderizarResumoPagamentos();
+}
+
+// Atualiza o status de pagamento de um aluno (usado no seletor por linha).
+function atualizarPagamento(turmaId, alunoId, valor) {
+  const ref = db.collection("turmas").doc(turmaId).collection("alunos").doc(alunoId);
+  if (valor === "pendente") {
+    ref.update({ pago: false, pagamentoForma: "", pagamentoDeclarado: false });
+  } else {
+    ref.update({
+      pago: true,
+      pagamentoForma: valor, // "pix" ou "dinheiro"
+      pagamentoDeclarado: false,
+      pagamentoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+}
+
+// Resumo geral de pagamentos (aba Pagamentos).
+function renderizarResumoPagamentos() {
+  const el = document.getElementById("resumoPagamentos");
+  if (!el) return;
+
+  let total = 0, pagos = 0, aguardando = 0;
+  Object.values(estadoTurmas).forEach(({ alunos }) => {
+    alunos.forEach((a) => {
+      total++;
+      if (a.pago) pagos++;
+      else if (a.pagamentoDeclarado) aguardando++;
+    });
+  });
+  const pendentes = total - pagos - aguardando;
+
+  el.innerHTML = `
+    <div class="resumo-tamanhos">
+      <span><strong>Total: ${total}</strong></span>
+      <span class="badge pago">Pagos: ${pagos}</span>
+      <span class="badge aguardando">Aguardando: ${aguardando}</span>
+      <span class="badge pendente">Pendentes: ${pendentes}</span>
+    </div>
+  `;
 }
 
 // Monta o formulário inline de edição do nome e da senha da turma.
@@ -450,10 +527,13 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
   tdAcoes.appendChild(btnSalvar);
   tdAcoes.appendChild(btnCancelar);
 
+  const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
+
   tr.appendChild(tdNome);
   tr.appendChild(tdTamanho);
   tr.appendChild(tdNumero);
   tr.appendChild(tdCostas);
+  tr.appendChild(tdPagamento);
   tr.appendChild(tdAcoes);
 }
 
@@ -470,17 +550,19 @@ function exportarTurma(turma, alunos) {
     alert("Essa turma não tem alunos cadastrados.");
     return;
   }
-  const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta"]];
-  alunos.forEach((a) => linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || ""]));
+  const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+  alunos.forEach((a) =>
+    linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
+  );
   baixarCSV(`pedido-${slugify(turma.nome)}.csv`, linhas);
 }
 
 elBtnExportarTudo.addEventListener("click", () => {
-  const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta"]];
+  const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
   let total = 0;
   Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
     alunos.forEach((a) => {
-      linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || ""]);
+      linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
       total++;
     });
   });

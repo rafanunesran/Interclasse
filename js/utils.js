@@ -199,6 +199,20 @@ function formatarReais(valor) {
   return "R$ " + Number(valor || 0).toFixed(2).replace(".", ",");
 }
 
+// Retorna o HTML do badge de status de pagamento de um aluno.
+function badgePagamentoHtml(aluno) {
+  if (aluno.pago) {
+    const forma =
+      aluno.pagamentoForma === "pix" ? " (PIX)" :
+      aluno.pagamentoForma === "dinheiro" ? " (dinheiro)" : "";
+    return `<span class="badge pago">Pago${forma}</span>`;
+  }
+  if (aluno.pagamentoDeclarado) {
+    return '<span class="badge aguardando">Aguardando confirmação</span>';
+  }
+  return '<span class="badge pendente">Pendente</span>';
+}
+
 function mostrarMensagem(elemento, texto, tipo) {
   elemento.textContent = texto;
   elemento.className = tipo; // "aviso" ou "erro"
