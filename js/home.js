@@ -7,8 +7,22 @@ async function carregarTurmas() {
   const carregando = document.getElementById("carregando");
 
   try {
-    await entrarAnonimo();
-    aplicarConfigGeral(await carregarConfigGeral());
+    // O login anônimo é necessário apenas para GRAVAR (na página da turma).
+    // A leitura das turmas é pública, então se o login anônimo falhar aqui
+    // (ex.: provedor "Anônimo" não ativado no Firebase) seguimos mesmo assim
+    // e ainda listamos as turmas normalmente.
+    try {
+      await entrarAnonimo();
+    } catch (e) {
+      console.warn("Login anônimo indisponível; listando as turmas mesmo assim.", e);
+    }
+
+    try {
+      aplicarConfigGeral(await carregarConfigGeral());
+    } catch (e) {
+      console.warn("Não foi possível aplicar as configurações gerais.", e);
+    }
+
     const snap = await db.collection("turmas").orderBy("nome").get();
 
     carregando.classList.add("oculto");

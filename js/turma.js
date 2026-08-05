@@ -33,7 +33,14 @@ if (!turmaId) {
 }
 
 async function iniciar() {
-  await entrarAnonimo();
+  // Login anônimo é necessário para GRAVAR (cadastrar/editar). Ler é público,
+  // então não travamos a tela se ele falhar — apenas a gravação exigirá que o
+  // provedor "Anônimo" esteja ativado no Firebase.
+  try {
+    await entrarAnonimo();
+  } catch (e) {
+    console.warn("Login anônimo indisponível; a página abre, mas cadastrar exige o provedor Anônimo ativo.", e);
+  }
 
   // Carrega tamanhos e configurações gerais antes de montar a tela.
   await carregarTamanhos();
