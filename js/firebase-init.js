@@ -8,6 +8,18 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
+// Google Analytics (opcional). Só é inicializado se o SDK de analytics
+// estiver carregado na página. Em ambientes sem suporte (ex.: abrir o
+// arquivo via file://) ele pode falhar, então protegemos com try/catch.
+let analytics = null;
+if (typeof firebase.analytics === "function") {
+  try {
+    analytics = firebase.analytics();
+  } catch (erro) {
+    console.warn("Firebase Analytics não pôde ser inicializado:", erro);
+  }
+}
+
 // Login anônimo: necessário para poder gravar dados (ver firestore.rules).
 // Isso não pede nada ao usuário, é automático e silencioso.
 const authPronta = new Promise((resolve, reject) => {
