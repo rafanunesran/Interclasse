@@ -76,6 +76,14 @@ function preencherSelectTamanhos(selectEl) {
   });
 }
 
+// Escapa texto para inserir com segurança em HTML (evita quebrar o layout
+// ou injetar marcação a partir de nomes de turma digitados no admin).
+function escaparHtml(texto) {
+  const div = document.createElement("div");
+  div.textContent = texto ?? "";
+  return div.innerHTML;
+}
+
 function slugify(texto) {
   const marcasDiacriticas = new RegExp("[" + "̀" + "-" + "ͯ" + "]", "g");
   return texto

@@ -22,13 +22,22 @@ async function carregarTurmas() {
     snap.forEach((doc) => {
       const turma = doc.data();
       const item = document.createElement("a");
+      item.className = "turma-card";
       item.href = "turma.html?id=" + encodeURIComponent(doc.id);
 
       const status = turma.fechado
         ? '<span class="badge fechado">Fechado</span>'
         : '<span class="badge aberto">Aberto</span>';
 
-      item.innerHTML = `<span>${turma.nome}</span>${status}`;
+      const acao = turma.fechado ? "Ver conferência" : "Cadastrar lista →";
+
+      item.innerHTML = `
+        <span class="turma-card-topo">
+          <span class="turma-card-nome">${escaparHtml(turma.nome)}</span>
+          ${status}
+        </span>
+        <span class="turma-card-acao">${acao}</span>
+      `;
       lista.appendChild(item);
     });
   } catch (erro) {
