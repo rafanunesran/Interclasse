@@ -81,6 +81,22 @@ Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel admini
 
 > **Importante:** o painel grava em `config/geral` e `config/tamanhos`. Se você configurou o Firestore antes desta versão, republique as regras (`firestore.rules`) no console do Firebase — a versão anterior bloqueava toda escrita em `config/`.
 
+## Pagamento por PIX
+
+Nas turmas com o **pedido fechado**, cada linha ganha um botão **"Pagar (PIX)"** que abre um QR Code + o código "copia e cola", já com o valor da camiseta.
+
+Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
+
+- **Chave PIX** — e-mail, telefone, CPF/CNPJ ou chave aleatória da conta que vai receber.
+- **Nome do recebedor** (máx. 25 caracteres) e **Cidade** (máx. 15) — como no seu cadastro bancário.
+- **Preço por grupo de tamanho** — um valor para cada grupo (ex.: Normal R$ 45, Plus Size R$ 55). O valor cobrado em cada linha é o do grupo do tamanho daquele aluno. Se um grupo ficar sem preço, o PIX é gerado sem valor (o pagador digita no app).
+
+Detalhes técnicos:
+
+- O código PIX ("copia e cola") é gerado **no próprio site** (padrão EMV/BR Code do Banco Central, com CRC16) — nenhum dado de pagamento passa por terceiros.
+- A **imagem** do QR Code é renderizada por um serviço externo (`api.qrserver.com`) apenas para desenhar o quadradinho; se preferir 100% offline, dá para trocar por uma biblioteca embutida — é só pedir.
+- Os dados de pagamento ficam em `config/geral` (só o admin grava; leitura é pública, como o resto).
+
 ## Limitações conhecidas
 
 - A proteção por senha de turma/admin é feita no site (não no banco de dados), então é uma barreira de conveniência, não uma segurança forte. Não cadastre informações sensíveis além do necessário para o pedido.

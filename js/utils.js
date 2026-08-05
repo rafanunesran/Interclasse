@@ -128,6 +128,77 @@ function baixarCSV(nomeArquivo, linhas) {
   URL.revokeObjectURL(url);
 }
 
+// ============================================================
+// PIX — gera o "copia e cola" (BR Code / padrão EMV do Banco Central)
+// ============================================================
+
+// Monta um campo TLV: id + tamanho(2 dígitos) + valor.
+function pixCampo(id, valor) {
+  return id + String(valor.length).padStart(2, "0") + valor;
+}
+
+// Limpa texto para os campos de nome/cidade (sem acentos, só ASCII, maiúsculo).
+function pixLimparTexto(txt, max) {
+  return (txt || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .toUpperCase()
+    .slice(0, max)
+    .trim();
+}
+
+// CRC16-CCITT (polinômio 0x1021, início 0xFFFF) exigido pelo padrão PIX.
+function pixCrc16(str) {
+  let crc = 0xffff;
+  for (let i = 0; i < str.length; i++) {
+    crc ^= str.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+      crc &= 0xffff;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+// Gera o código "copia e cola" do PIX. `valor` em reais (número) ou null/0
+// para não embutir valor (o pagador digita no app do banco).
+function pixCopiaECola({ chave, nome, cidade, valor }) {
+  const nomeLimpo = pixLimparTexto(nome, 25) || "RECEBEDOR";
+  const cidadeLimpa = pixLimparTexto(cidade, 15) || "CIDADE";
+
+  const mai = pixCampo("26", pixCampo("00", "br.gov.bcb.pix") + pixCampo("01", chave));
+  const valorCampo = valor && Number(valor) > 0 ? pixCampo("54", Number(valor).toFixed(2)) : "";
+  const adicional = pixCampo("62", pixCampo("05", "***"));
+
+  const semCrc =
+    pixCampo("00", "01") +
+    mai +
+    pixCampo("52", "0000") +
+    pixCampo("53", "986") +
+    valorCampo +
+    pixCampo("58", "BR") +
+    pixCampo("59", nomeLimpo) +
+    pixCampo("60", cidadeLimpa) +
+    adicional +
+    "6304";
+
+  return semCrc + pixCrc16(semCrc);
+}
+
+// Descobre o preço de um tamanho a partir do mapa preços-por-grupo.
+function precoDoTamanho(tamanho, precosPorGrupo) {
+  if (!precosPorGrupo) return null;
+  const grupo = GRUPOS_TAMANHO.find((g) => g.tamanhos.includes(tamanho));
+  if (grupo && precosPorGrupo[grupo.grupo] != null) return Number(precosPorGrupo[grupo.grupo]);
+  return null;
+}
+
+// Formata um número como moeda BRL (ex.: 45 -> "R$ 45,00").
+function formatarReais(valor) {
+  return "R$ " + Number(valor || 0).toFixed(2).replace(".", ",");
+}
+
 function mostrarMensagem(elemento, texto, tipo) {
   elemento.textContent = texto;
   elemento.className = tipo; // "aviso" ou "erro"

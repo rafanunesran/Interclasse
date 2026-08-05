@@ -507,6 +507,13 @@ const elBtnSalvarTamanhos = document.getElementById("btnSalvarTamanhos");
 const elBtnRestaurarTamanhos = document.getElementById("btnRestaurarTamanhos");
 const elMsgTamanhos = document.getElementById("msgTamanhos");
 
+const elFormPix = document.getElementById("formPix");
+const elPixChave = document.getElementById("pixChave");
+const elPixNome = document.getElementById("pixNome");
+const elPixCidade = document.getElementById("pixCidade");
+const elPrecosPorGrupo = document.getElementById("precosPorGrupo");
+const elMsgPix = document.getElementById("msgPix");
+
 let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 
@@ -525,7 +532,67 @@ async function carregarPainelConfig() {
   await carregarTamanhos();
   gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
   renderizarEditorTamanhos();
+
+  // Pagamento (PIX)
+  elPixChave.value = cfg.pixChave || "";
+  elPixNome.value = cfg.pixNome || "";
+  elPixCidade.value = cfg.pixCidade || "";
+  renderizarPrecosPorGrupo(cfg.precosPorGrupo || {});
 }
+
+// ---------------- Pagamento (PIX) ----------------
+
+// Renderiza um campo de preço para cada grupo de tamanho atual.
+function renderizarPrecosPorGrupo(precos) {
+  elPrecosPorGrupo.innerHTML = "";
+  if (GRUPOS_TAMANHO.length === 0) {
+    elPrecosPorGrupo.innerHTML = "<p>Cadastre os tamanhos primeiro.</p>";
+    return;
+  }
+  GRUPOS_TAMANHO.forEach((g) => {
+    const lbl = document.createElement("label");
+    lbl.textContent = `${g.grupo} — R$`;
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.min = "0";
+    inp.placeholder = "0,00";
+    inp.dataset.grupo = g.grupo;
+    inp.value = precos[g.grupo] != null ? precos[g.grupo] : "";
+    elPrecosPorGrupo.appendChild(lbl);
+    elPrecosPorGrupo.appendChild(inp);
+  });
+}
+
+elFormPix.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  esconderMensagem(elMsgPix);
+
+  const precosPorGrupo = {};
+  elPrecosPorGrupo.querySelectorAll("input").forEach((inp) => {
+    const v = parseFloat(inp.value);
+    if (!isNaN(v) && v >= 0) precosPorGrupo[inp.dataset.grupo] = v;
+  });
+
+  const dados = {
+    pixChave: elPixChave.value.trim(),
+    pixNome: elPixNome.value.trim(),
+    pixCidade: elPixCidade.value.trim(),
+    precosPorGrupo
+  };
+
+  try {
+    await db.collection("config").doc("geral").set(dados, { merge: true });
+    mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
+  } catch (erro) {
+    console.error(erro);
+    mostrarMensagem(
+      elMsgPix,
+      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
+      "erro"
+    );
+  }
+});
 
 // ---------------- Configurações gerais ----------------
 

@@ -9,6 +9,7 @@ let turmaAtual = null;
 let desbloqueado = false;
 let alunosAtuais = []; // cache da última leitura, para exportar/resumir
 let cadastrosGlobaisAbertos = true; // controlado nas configurações gerais (admin)
+let configGeral = {}; // config/geral (inclui dados de PIX e preços)
 
 // Elementos
 const elNomeTurma = document.getElementById("nomeTurma");
@@ -44,9 +45,9 @@ async function iniciar() {
 
   // Carrega tamanhos e configurações gerais antes de montar a tela.
   await carregarTamanhos();
-  const cfgGeral = await carregarConfigGeral();
-  aplicarConfigGeral(cfgGeral);
-  cadastrosGlobaisAbertos = cfgGeral.cadastrosAbertos !== false;
+  configGeral = await carregarConfigGeral();
+  aplicarConfigGeral(configGeral);
+  cadastrosGlobaisAbertos = configGeral.cadastrosAbertos !== false;
 
   preencherSelectTamanhos(document.getElementById("tamanho"));
 
@@ -205,7 +206,14 @@ function renderizarTabela() {
       }
       tdAcoes.appendChild(btnAjuste);
 
-      // NOTE: o botão de pagamento (PIX) entra aqui, ao lado, quando configurado.
+      // Botão de pagamento (PIX), quando a chave PIX está configurada no admin.
+      if (configGeral.pixChave) {
+        const btnPagar = document.createElement("button");
+        btnPagar.className = "primario";
+        btnPagar.textContent = "Pagar (PIX)";
+        btnPagar.onclick = () => abrirPagamentoPix(aluno);
+        tdAcoes.appendChild(btnPagar);
+      }
     }
 
     elTabelaCorpo.appendChild(tr);
@@ -376,6 +384,66 @@ async function solicitarAjuste(aluno) {
     console.error(erro);
     alert("Não foi possível enviar o pedido de ajuste. Tente novamente.");
   }
+}
+
+// ---------------- Pagamento via PIX ----------------
+
+const elModalPix = document.getElementById("modalPix");
+const elPixAluno = document.getElementById("pixAluno");
+const elPixValor = document.getElementById("pixValor");
+const elPixQr = document.getElementById("pixQr");
+const elPixCodigo = document.getElementById("pixCodigo");
+const elPixCopiar = document.getElementById("pixCopiar");
+const elPixCopiado = document.getElementById("pixCopiado");
+const elPixFechar = document.getElementById("fecharModalPix");
+
+function abrirPagamentoPix(aluno) {
+  const valor = precoDoTamanho(aluno.tamanho, configGeral.precosPorGrupo);
+
+  const codigo = pixCopiaECola({
+    chave: configGeral.pixChave,
+    nome: configGeral.pixNome,
+    cidade: configGeral.pixCidade,
+    valor: valor
+  });
+
+  elPixAluno.textContent = `${aluno.nome} — tamanho ${aluno.tamanho}`;
+  elPixValor.textContent = valor
+    ? formatarReais(valor)
+    : "Valor não definido para este tamanho — digite no app do banco.";
+
+  elPixCodigo.value = codigo;
+  elPixQr.src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=" +
+    encodeURIComponent(codigo);
+
+  elPixCopiado.classList.add("oculto");
+  elModalPix.classList.remove("oculto");
+}
+
+function fecharPagamentoPix() {
+  elModalPix.classList.add("oculto");
+}
+
+if (elPixFechar) elPixFechar.addEventListener("click", fecharPagamentoPix);
+if (elModalPix) {
+  // Fecha ao clicar fora do conteúdo (no fundo escuro).
+  elModalPix.addEventListener("click", (ev) => {
+    if (ev.target === elModalPix) fecharPagamentoPix();
+  });
+}
+if (elPixCopiar) {
+  elPixCopiar.addEventListener("click", async () => {
+    const texto = elPixCodigo.value;
+    try {
+      await navigator.clipboard.writeText(texto);
+    } catch (e) {
+      // Fallback para navegadores sem clipboard API.
+      elPixCodigo.select();
+      document.execCommand("copy");
+    }
+    elPixCopiado.classList.remove("oculto");
+  });
 }
 
 // ---------------- Fechar pedido ----------------
