@@ -208,8 +208,10 @@ function renderizarTabela() {
       }
       tdAcoes.appendChild(btnAjuste);
 
-      // Botão de pagamento (PIX), quando a chave PIX está configurada no admin.
-      if (configGeral.pixChave) {
+      // Botão de pagamento: aparece se houver PIX estático configurado OU
+      // se o Mercado Pago estiver ativo.
+      const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
+      if (configGeral.pixChave || temMp) {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
         btnPagar.textContent = "Pagar (PIX)";
@@ -404,6 +406,7 @@ const elPixFechar = document.getElementById("fecharModalPix");
 const elPixJaPaguei = document.getElementById("pixJaPaguei");
 const elPixDeclarado = document.getElementById("pixDeclarado");
 const elPixStatus = document.getElementById("pixStatus");
+const elPixConteudo = document.getElementById("pixConteudo");
 
 let pixAlunoAtual = null; // aluno aberto no modal de pagamento
 
@@ -432,20 +435,24 @@ function abrirPagamentoPix(aluno) {
 
   const usarMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
 
-  // O botão de auto-declaração só faz sentido no modo estático (sem MP).
-  if (elPixJaPaguei) {
-    elPixJaPaguei.classList.toggle("oculto", usarMp || !!(aluno.pago || aluno.pagamentoDeclarado));
-  }
-
-  if (aluno.pago) {
-    definirStatusPix("Pagamento confirmado! ✅", "pago");
-  }
-
   if (usarMp) {
-    gerarPagamentoMp(aluno);
-  } else {
-    gerarPagamentoEstatico(aluno);
+    // Checkout Pro: o conteúdo de PIX estático não é usado (vamos redirecionar).
+    if (elPixConteudo) elPixConteudo.classList.add("oculto");
+    if (aluno.pago) {
+      definirStatusPix("Pagamento confirmado! ✅", "pago");
+    } else {
+      irParaCheckoutMp(aluno);
+    }
+    return;
   }
+
+  // Modo PIX estático (no próprio site).
+  if (elPixConteudo) elPixConteudo.classList.remove("oculto");
+  if (elPixJaPaguei) {
+    elPixJaPaguei.classList.toggle("oculto", !!(aluno.pago || aluno.pagamentoDeclarado));
+  }
+  if (aluno.pago) definirStatusPix("Pagamento confirmado! ✅", "pago");
+  gerarPagamentoEstatico(aluno);
 }
 
 // Modo padrão: PIX estático gerado no próprio site (chave direta, sem taxa).
@@ -467,34 +474,30 @@ function gerarPagamentoEstatico(aluno) {
     encodeURIComponent(codigo);
 }
 
-// Modo Mercado Pago: pede a cobrança ao backend; o status vira "Pago" sozinho
-// (webhook -> Firestore -> onSnapshot).
-async function gerarPagamentoMp(aluno) {
-  elPixValor.textContent = "";
-  elPixCodigo.value = "";
-  elPixQr.removeAttribute("src");
-  if (!aluno.pago) definirStatusPix("Gerando pagamento…", "");
-
+// Modo Mercado Pago (Checkout Pro): pede a preferência ao backend e redireciona
+// para a página hospedada do Mercado Pago. Depois de pagar, o pagador volta ao
+// site e o status vira "Pago" sozinho (webhook -> Firestore -> onSnapshot).
+async function irParaCheckoutMp(aluno) {
+  definirStatusPix("Abrindo o Mercado Pago…", "");
   try {
-    const url = configGeral.mpBackendUrl.replace(/\/$/, "") + "/api/criar-pagamento";
+    const url = configGeral.mpBackendUrl.replace(/\/$/, "") + "/api/criar-preferencia";
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ turmaId: turmaId, alunoId: aluno.id })
+      body: JSON.stringify({
+        turmaId: turmaId,
+        alunoId: aluno.id,
+        retornoUrl: window.location.href
+      })
     });
     const dados = await resp.json();
-    if (!resp.ok) throw new Error(dados && dados.erro ? dados.erro : "Falha ao gerar pagamento");
-
-    elPixValor.textContent = dados.valor ? formatarReais(dados.valor) : "";
-    elPixCodigo.value = dados.qrCode || "";
-    if (dados.qrCodeBase64) elPixQr.src = "data:image/png;base64," + dados.qrCodeBase64;
-
-    if (!aluno.pago) {
-      definirStatusPix("Aguardando pagamento… o status muda para Pago sozinho quando o PIX cair.", "aguardando");
+    if (!resp.ok || !dados.initPoint) {
+      throw new Error((dados && (dados.detalhe || dados.erro)) || "Falha ao gerar pagamento");
     }
+    window.location.href = dados.initPoint;
   } catch (erro) {
     console.error(erro);
-    definirStatusPix("Não foi possível gerar o pagamento automático. Tente de novo ou fale com a organização.", "erro");
+    definirStatusPix("Não foi possível abrir o Mercado Pago: " + erro.message, "erro");
   }
 }
 
