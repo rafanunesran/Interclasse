@@ -13,6 +13,8 @@ Roda de graça na **Vercel** (plano Hobby, sem cartão). Funções:
   assinatura e grava `pago: true` no aluno.
 - `api/criar-pagamento.js` — alternativa "transparente" (QR dentro do próprio site). Não é usada
   pelo padrão atual, fica disponível se quiser trocar.
+- `api/status.js` — health check. A raiz `/` é redirecionada para cá (via `vercel.json`), então
+  abrir a URL base mostra um JSON confirmando que o backend está no ar (em vez de um 404).
 
 > ⚠️ **Use as credenciais de PRODUÇÃO** (`MP_ACCESS_TOKEN`) para receber pagamentos de verdade.
 > Com o **Access Token de teste**, o QR/cobrança só pode ser pago por um **usuário de teste** do
@@ -46,10 +48,29 @@ Roda de graça na **Vercel** (plano Hobby, sem cartão). Funções:
    `MP_EMAIL_PAGADOR`.
 4. **Deploy**. Anote a URL final (ex.: `https://interclasse-mp.vercel.app`).
 
+### 3.1. Conferir se o deploy funcionou
+Abra a **URL base** no navegador (ex.: `https://interclasse-mp.vercel.app/`). Deve aparecer
+um JSON de status, tipo:
+
+```json
+{ "ok": true, "service": "interclasse-mp-backend", "env": { "MP_ACCESS_TOKEN": true, ... } }
+```
+
+- Se aparecer esse JSON, o backend está no ar. Confira que as variáveis em `env` estão
+  `true` (as que estiverem `false` não foram cadastradas nas Environment Variables).
+- Se aparecer o **404 NOT_FOUND da Vercel**, quase sempre o **Root Directory** não está como
+  `mp-backend`. Corrija em **Project → Settings → Build & Deployment → Root Directory =
+  `mp-backend`** e refaça o deploy.
+
+> Um jeito rápido de testar as funções por fora: `curl -X POST .../api/criar-preferencia`
+> (sem corpo) deve responder **400** ("Informe turmaId e alunoId."). Se responder **404**, o
+> Root Directory está errado.
+
 ### 4. Ligar no site
 No **Super Admin → aba Pagamentos**, marque **"Ativar confirmação automática (Mercado Pago)"**
-e cole a **URL da Vercel**. Salve. Pronto — o botão "Pagar (PIX)" passa a usar o Mercado Pago
-e o status vira "Pago" automaticamente.
+e cole a **URL da Vercel**. Use só a **URL base** (`https://seu-projeto.vercel.app`), **sem**
+`/api/...` no final — o site já acrescenta o caminho. Salve. Pronto — o botão "Pagar (PIX)"
+passa a usar o Mercado Pago e o status vira "Pago" automaticamente.
 
 ## Testar (sandbox)
 Use o **Access Token de teste** e um **usuário de teste** do MP para simular um PIX aprovado
