@@ -4,12 +4,20 @@ Backend serverless que dá **confirmação automática de PIX**: quando o pagame
 Mercado Pago avisa este backend (webhook), que marca o aluno como **Pago** no Firestore.
 O site então atualiza o status sozinho, sem recarregar.
 
-Roda de graça na **Vercel** (plano Hobby, sem cartão). São duas funções:
+Roda de graça na **Vercel** (plano Hobby, sem cartão). Funções:
 
-- `api/criar-pagamento.js` — cria a cobrança PIX (QR + copia e cola). O valor é calculado
-  aqui pelo tamanho do aluno (nunca vem do cliente).
-- `api/webhook-mp.js` — recebe o aviso do Mercado Pago, valida a assinatura e grava
-  `pago: true` no aluno.
+- `api/criar-preferencia.js` — **Checkout Pro** (padrão): cria uma preferência e devolve a URL
+  da página hospedada do Mercado Pago; o site redireciona o pagador para lá (com o layout do MP,
+  QR gerado pelo próprio MP). O valor é calculado aqui pelo tamanho do aluno (nunca vem do cliente).
+- `api/webhook-mp.js` — recebe o aviso do Mercado Pago (payment e merchant_order), valida a
+  assinatura e grava `pago: true` no aluno.
+- `api/criar-pagamento.js` — alternativa "transparente" (QR dentro do próprio site). Não é usada
+  pelo padrão atual, fica disponível se quiser trocar.
+
+> ⚠️ **Use as credenciais de PRODUÇÃO** (`MP_ACCESS_TOKEN`) para receber pagamentos de verdade.
+> Com o **Access Token de teste**, o QR/cobrança só pode ser pago por um **usuário de teste** do
+> Mercado Pago (sandbox) — o app de um banco real acusa **"não encontrado"**. Para testar sem
+> dinheiro, use um usuário de teste do MP; para valer, troque para produção e refaça o deploy.
 
 > As credenciais (Access Token do MP, secret do webhook, chave da service account do
 > Firebase) ficam **só nas variáveis de ambiente da Vercel** — nunca no site nem no Git.

@@ -20,25 +20,47 @@ module.exports = async (req, res) => {
       return res.status(401).end();
     }
 
-    // Só tratamos notificações de pagamento.
-    if (tipo !== "payment" || !dataId) return res.status(200).end();
-
+    if (!dataId) return res.status(200).end();
     if (!process.env.MP_ACCESS_TOKEN) {
       console.error("Webhook sem MP_ACCESS_TOKEN configurado.");
       return res.status(200).end();
     }
 
-    const resp = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
-      headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` }
-    });
-    const pg = await resp.json();
-    if (!resp.ok) {
-      console.error("Erro ao consultar pagamento no MP:", pg);
+    // Descobre a referência externa e se está aprovado, a partir do tipo de aviso.
+    let externalReference = null;
+    let pagamentoId = null;
+
+    if (tipo === "payment") {
+      // Payments API e Checkout Pro (o pagamento herda o external_reference).
+      const resp = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
+        headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` }
+      });
+      const pg = await resp.json();
+      if (!resp.ok) { console.error("Erro ao consultar pagamento no MP:", pg); return res.status(200).end(); }
+      if (pg.status === "approved") {
+        externalReference = pg.external_reference;
+        pagamentoId = pg.id;
+      }
+    } else if (tipo === "merchant_order") {
+      // Checkout Pro também notifica por merchant_order.
+      const resp = await fetch(`https://api.mercadopago.com/merchant_orders/${dataId}`, {
+        headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` }
+      });
+      const mo = await resp.json();
+      if (!resp.ok) { console.error("Erro ao consultar merchant_order no MP:", mo); return res.status(200).end(); }
+      const aprovado = Array.isArray(mo.payments) && mo.payments.some((p) => p.status === "approved");
+      if (aprovado || mo.order_status === "paid") {
+        externalReference = mo.external_reference;
+        const pagoAprovado = (mo.payments || []).find((p) => p.status === "approved");
+        pagamentoId = pagoAprovado ? pagoAprovado.id : null;
+      }
+    } else {
+      // Outros tipos de aviso: ignorar.
       return res.status(200).end();
     }
 
-    if (pg.status === "approved" && pg.external_reference) {
-      const [turmaId, alunoId] = String(pg.external_reference).split("__");
+    if (externalReference) {
+      const [turmaId, alunoId] = String(externalReference).split("__");
       if (turmaId && alunoId) {
         await db
           .collection("turmas").doc(turmaId)
@@ -47,7 +69,7 @@ module.exports = async (req, res) => {
             pago: true,
             pagamentoForma: "pix",
             pagamentoDeclarado: false,
-            pagamentoMpId: String(pg.id),
+            pagamentoMpId: pagamentoId ? String(pagamentoId) : admin.firestore.FieldValue.delete(),
             pagamentoEm: admin.firestore.FieldValue.serverTimestamp()
           });
         console.log(`Pagamento aprovado: turma ${turmaId}, aluno ${alunoId}.`);
