@@ -54,8 +54,21 @@ module.exports = async (req, res) => {
         const pagoAprovado = (mo.payments || []).find((p) => p.status === "approved");
         pagamentoId = pagoAprovado ? pagoAprovado.id : null;
       }
+    } else if (tipo === "order") {
+      // Orders API: notifica com type "order" (status "processed" = pago).
+      const resp = await fetch(`https://api.mercadopago.com/v1/orders/${dataId}`, {
+        headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` }
+      });
+      const ordem = await resp.json();
+      if (!resp.ok) { console.error("Erro ao consultar order no MP:", ordem); return res.status(200).end(); }
+      const pagamentos = (ordem.transactions && ordem.transactions.payments) || [];
+      const pgOk = pagamentos.find((p) => p.status === "processed" || p.status === "approved");
+      if (ordem.status === "processed" || pgOk) {
+        externalReference = ordem.external_reference;
+        pagamentoId = pgOk ? pgOk.id : null;
+      }
     } else {
-      // Outros tipos de aviso: ignorar.
+      // Outros tipos de aviso: ignorar (respondendo 200 para o MP aceitar).
       return res.status(200).end();
     }
 
