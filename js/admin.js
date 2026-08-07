@@ -251,6 +251,9 @@ function renderizarTurmasAdmin() {
     }
     card.appendChild(linhaData);
 
+    // Imagem da camiseta (Google Drive via Apps Script).
+    card.appendChild(criarBlocoImagemTurma(turmaId, turma));
+
     const botoes = document.createElement("div");
 
     const btnExpandir = document.createElement("button");
@@ -587,6 +590,72 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
   tr.appendChild(tdAcoes);
 }
 
+// Bloco de imagem da camiseta no card do Super Admin (enviar/trocar/remover).
+function criarBlocoImagemTurma(turmaId, turma) {
+  const bloco = document.createElement("div");
+  bloco.className = "bloco-imagem-admin";
+
+  if (turma.imagemUrl) {
+    const thumb = document.createElement("img");
+    thumb.className = "thumb-camiseta";
+    thumb.src = turma.imagemUrl;
+    thumb.alt = "Imagem da camiseta";
+    bloco.appendChild(thumb);
+  }
+
+  const inputImg = document.createElement("input");
+  inputImg.type = "file";
+  inputImg.accept = "image/*";
+  inputImg.style.display = "none";
+
+  const btnImg = document.createElement("button");
+  btnImg.className = "secundario";
+  btnImg.textContent = turma.imagemUrl ? "Trocar imagem" : "Enviar imagem da camiseta";
+  btnImg.onclick = () => {
+    if (!driveScriptUrl) {
+      alert("Configure a URL do Apps Script na aba Configurações antes de enviar imagens.");
+      return;
+    }
+    inputImg.click();
+  };
+
+  inputImg.onchange = async () => {
+    const file = inputImg.files[0];
+    if (!file) return;
+    btnImg.disabled = true;
+    const antes = btnImg.textContent;
+    btnImg.textContent = "Enviando…";
+    try {
+      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file);
+      await db.collection("turmas").doc(turmaId).update({ imagemUrl: url });
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao enviar a imagem: " + e.message);
+    } finally {
+      btnImg.disabled = false;
+      btnImg.textContent = antes;
+      inputImg.value = "";
+    }
+  };
+
+  bloco.appendChild(btnImg);
+
+  if (turma.imagemUrl) {
+    const btnRemover = document.createElement("button");
+    btnRemover.className = "perigo";
+    btnRemover.textContent = "Remover imagem";
+    btnRemover.onclick = () => {
+      if (confirm("Remover a imagem da camiseta desta turma?")) {
+        db.collection("turmas").doc(turmaId).update({ imagemUrl: firebase.firestore.FieldValue.delete() });
+      }
+    };
+    bloco.appendChild(btnRemover);
+  }
+
+  bloco.appendChild(inputImg);
+  return bloco;
+}
+
 function escapeHtmlAdmin(texto) {
   const div = document.createElement("div");
   div.textContent = texto ?? "";
@@ -631,6 +700,7 @@ const elFormConfigGeral = document.getElementById("formConfigGeral");
 const elTituloEvento = document.getElementById("tituloEvento");
 const elRodapeTexto = document.getElementById("rodapeTexto");
 const elCadastrosAbertos = document.getElementById("cadastrosAbertos");
+const elDriveScriptUrl = document.getElementById("driveScriptUrl");
 const elMsgConfigGeral = document.getElementById("msgConfigGeral");
 
 const elEditorTamanhos = document.getElementById("editorTamanhos");
@@ -650,6 +720,7 @@ const elMsgPix = document.getElementById("msgPix");
 
 let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
+let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -662,6 +733,8 @@ async function carregarPainelConfig() {
   elTituloEvento.value = cfg.tituloEvento || "";
   elRodapeTexto.value = cfg.rodape || "";
   elCadastrosAbertos.checked = cfg.cadastrosAbertos !== false; // padrão: aberto
+  if (elDriveScriptUrl) elDriveScriptUrl.value = cfg.driveScriptUrl || "";
+  driveScriptUrl = cfg.driveScriptUrl || "";
 
   await carregarTamanhos();
   gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
@@ -741,12 +814,14 @@ elFormConfigGeral.addEventListener("submit", async (ev) => {
   const dados = {
     tituloEvento: elTituloEvento.value.trim(),
     rodape: elRodapeTexto.value.trim(),
-    cadastrosAbertos: elCadastrosAbertos.checked
+    cadastrosAbertos: elCadastrosAbertos.checked,
+    driveScriptUrl: elDriveScriptUrl ? elDriveScriptUrl.value.trim() : ""
   };
 
   try {
     await db.collection("config").doc("geral").set(dados, { merge: true });
     aplicarConfigGeral(dados);
+    driveScriptUrl = dados.driveScriptUrl;
     mostrarMensagem(elMsgConfigGeral, "Configurações salvas.", "aviso");
   } catch (erro) {
     console.error(erro);
