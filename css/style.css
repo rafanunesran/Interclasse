@@ -319,6 +319,10 @@ tr.duplicado td { background: #fef3c7; }
   min-width: 220px;
   padding: 6px 8px;
 }
+.input-data-limite {
+  width: auto;
+  padding: 6px 8px;
+}
 
 /* Barra superior do painel administrativo (identificação + sair). */
 .barra-admin {

@@ -227,6 +227,30 @@ function renderizarTurmasAdmin() {
     linhaStatus.appendChild(selStatus);
     card.appendChild(linhaStatus);
 
+    // Data limite para pagamento (o Super Admin também vê e edita).
+    const linhaData = document.createElement("div");
+    linhaData.className = "linha-status-admin";
+    const lblData = document.createElement("label");
+    lblData.textContent = "Data limite p/ pagamento:";
+    const inputData = document.createElement("input");
+    inputData.type = "date";
+    inputData.className = "input-data-limite";
+    inputData.value = turma.dataLimite || "";
+    inputData.onchange = () => {
+      db.collection("turmas").doc(turmaId).update({
+        dataLimite: inputData.value || firebase.firestore.FieldValue.delete()
+      });
+    };
+    linhaData.appendChild(lblData);
+    linhaData.appendChild(inputData);
+    if (!turma.dataLimite) {
+      const semData = document.createElement("small");
+      semData.className = "pix-ajuda";
+      semData.textContent = "(sem data — fica aberto até você fechar)";
+      linhaData.appendChild(semData);
+    }
+    card.appendChild(linhaData);
+
     const botoes = document.createElement("div");
 
     const btnExpandir = document.createElement("button");
