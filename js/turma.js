@@ -22,10 +22,15 @@ const elFormAluno = document.getElementById("formAluno");
 const elTabelaCorpo = document.querySelector("#tabelaAlunos tbody");
 const elResumo = document.getElementById("resumoTamanhos");
 const elAvisoDuplicado = document.getElementById("avisoDuplicado");
-const elBtnFechar = document.getElementById("btnFechar");
 const elBtnExportar = document.getElementById("btnExportar");
 const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
+const elBarraStatus = document.getElementById("barraStatus");
+const elInfoDataLimite = document.getElementById("infoDataLimite");
+const elBlocoDataLimite = document.getElementById("blocoDataLimite");
+const elDataLimite = document.getElementById("dataLimite");
+const elBtnSalvarDataLimite = document.getElementById("btnSalvarDataLimite");
+const elMsgDataLimite = document.getElementById("msgDataLimite");
 
 if (!turmaId) {
   elNomeTurma.textContent = "Turma não especificada.";
@@ -58,6 +63,7 @@ async function iniciar() {
   }
   turmaAtual = doc.data();
   elNomeTurma.textContent = turmaAtual.nome;
+  await aplicarFechamentoAutomatico();
   atualizarBadge();
 
   // Se já desbloqueou nesta aba antes, não pede senha de novo.
@@ -68,31 +74,73 @@ async function iniciar() {
 
   escutarAlunos();
 
-  // Mantém o status da turma (aberto/fechado) atualizado em tempo real
-  db.collection("turmas").doc(turmaId).onSnapshot((snap) => {
+  // Mantém o status da turma atualizado em tempo real.
+  db.collection("turmas").doc(turmaId).onSnapshot(async (snap) => {
     if (snap.exists) {
       turmaAtual = snap.data();
+      await aplicarFechamentoAutomatico();
       atualizarBadge();
       atualizarVisibilidade();
     }
   });
 }
 
+// Fecha o pedido automaticamente quando a data limite passa (aberto -> fechado).
+// Esta é a única mudança de status feita fora do Super Admin.
+async function aplicarFechamentoAutomatico() {
+  const novo = statusAutoPorData(turmaAtual);
+  if (!novo) return;
+  try {
+    await db.collection("turmas").doc(turmaId).update({
+      statusPedido: novo,
+      fechado: true,
+      fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    turmaAtual.statusPedido = novo;
+    turmaAtual.fechado = true;
+  } catch (e) {
+    console.warn("Não foi possível aplicar o fechamento automático por data.", e);
+  }
+}
+
 function atualizarBadge() {
-  elBadgeStatus.textContent = turmaAtual.fechado ? "Fechado" : "Aberto";
-  elBadgeStatus.className = "badge " + (turmaAtual.fechado ? "fechado" : "aberto");
+  const statusId = statusPedidoDe(turmaAtual);
+  elBadgeStatus.textContent = labelStatus(statusId);
+  elBadgeStatus.className =
+    "badge " + (statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado");
+
+  renderizarBarraStatus(elBarraStatus, statusId);
+
+  // Info da data limite.
+  if (elInfoDataLimite) {
+    if (turmaAtual.dataLimite) {
+      const d = new Date(turmaAtual.dataLimite + "T00:00:00");
+      const txt = isNaN(d.getTime()) ? turmaAtual.dataLimite : d.toLocaleDateString("pt-BR");
+      elInfoDataLimite.textContent = "Data limite para pagamento: " + txt;
+      elInfoDataLimite.classList.remove("oculto");
+    } else {
+      elInfoDataLimite.classList.add("oculto");
+    }
+  }
 }
 
 function atualizarVisibilidade() {
-  const podeEditar = desbloqueado && !turmaAtual.fechado && cadastrosGlobaisAbertos;
+  const aberto = pedidoAberto(turmaAtual);
+  const podeEditar = desbloqueado && aberto && cadastrosGlobaisAbertos;
 
   elCardSenha.classList.toggle("oculto", desbloqueado);
   elBlocoCadastro.classList.toggle("oculto", !podeEditar);
-  elBtnFechar.classList.toggle("oculto", !(desbloqueado && !turmaAtual.fechado && cadastrosGlobaisAbertos));
-  elMensagemFechado.classList.toggle("oculto", !turmaAtual.fechado);
+  // Data limite: o representante define enquanto o pedido está aberto.
+  if (elBlocoDataLimite) {
+    elBlocoDataLimite.classList.toggle("oculto", !(desbloqueado && aberto));
+    if (elDataLimite && document.activeElement !== elDataLimite) {
+      elDataLimite.value = turmaAtual.dataLimite || "";
+    }
+  }
+  elMensagemFechado.classList.toggle("oculto", aberto);
   if (elMensagemGlobalFechado) {
-    // Só mostra o aviso global quando a turma em si não está fechada (para não duplicar avisos).
-    elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || turmaAtual.fechado);
+    // Só mostra o aviso global quando a turma em si está aberta (para não duplicar avisos).
+    elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || !aberto);
   }
 
   renderizarTabela(); // re-render para mostrar/esconder botões de ação
@@ -140,7 +188,7 @@ function escutarAlunos() {
 }
 
 function renderizarTabela() {
-  const podeEditar = desbloqueado && !turmaAtual.fechado;
+  const podeEditar = desbloqueado && pedidoAberto(turmaAtual) && cadastrosGlobaisAbertos;
 
   // Conta ocorrências de cada número (ignorando vazios) para destacar duplicados
   const contagemNumero = {};
@@ -194,27 +242,29 @@ function renderizarTabela() {
 
       tdAcoes.appendChild(btnEditar);
       tdAcoes.appendChild(btnExcluir);
-    } else if (turmaAtual.fechado) {
-      // Pedido fechado: o representante não edita mais, mas pode pedir um
-      // ajuste à organização (marca a linha com "!" para o Super Admin).
-      const btnAjuste = document.createElement("button");
-      btnAjuste.className = "secundario";
-      if (aluno.ajusteSolicitado) {
-        btnAjuste.textContent = "Ajuste solicitado ✓";
-        btnAjuste.disabled = true;
-      } else {
-        btnAjuste.textContent = "Solicitar ajuste";
-        btnAjuste.onclick = () => solicitarAjuste(aluno);
+    } else if (!pedidoAberto(turmaAtual)) {
+      // Pedido fechado: o representante não edita mais.
+      // "Solicitar ajuste" só enquanto NÃO estiver pago.
+      if (!aluno.pago) {
+        const btnAjuste = document.createElement("button");
+        btnAjuste.className = "secundario";
+        if (aluno.ajusteSolicitado) {
+          btnAjuste.textContent = "Ajuste solicitado ✓";
+          btnAjuste.disabled = true;
+        } else {
+          btnAjuste.textContent = "Solicitar ajuste";
+          btnAjuste.onclick = () => solicitarAjuste(aluno);
+        }
+        tdAcoes.appendChild(btnAjuste);
       }
-      tdAcoes.appendChild(btnAjuste);
 
       // Botão de pagamento: aparece se houver PIX estático configurado OU
-      // se o Mercado Pago estiver ativo.
+      // se o Mercado Pago estiver ativo, e o aluno ainda não estiver pago.
       const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
-      if (configGeral.pixChave || temMp) {
+      if (!aluno.pago && (configGeral.pixChave || temMp)) {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
-        btnPagar.textContent = "Pagar (PIX)";
+        btnPagar.textContent = "Pagar";
         btnPagar.onclick = () => abrirPagamentoPix(aluno);
         tdAcoes.appendChild(btnPagar);
       }
@@ -557,26 +607,27 @@ if (elPixJaPaguei) {
   });
 }
 
-// ---------------- Fechar pedido ----------------
+// ---------------- Data limite para pagamento ----------------
 
-elBtnFechar.addEventListener("click", async () => {
-  if (alunosAtuais.length === 0) {
-    alert("Cadastre pelo menos um aluno antes de fechar o pedido.");
-    return;
-  }
-  if (!confirm(`Fechar o pedido de ${turmaAtual.nome} com ${alunosAtuais.length} camiseta(s)? Depois de fechado, a lista não poderá mais ser editada (só a coordenação pode reabrir).`)) {
-    return;
-  }
-  try {
-    await db.collection("turmas").doc(turmaId).update({
-      fechado: true,
-      fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  } catch (erro) {
-    console.error(erro);
-    alert("Erro ao fechar pedido. Tente novamente.");
-  }
-});
+if (elBtnSalvarDataLimite) {
+  elBtnSalvarDataLimite.addEventListener("click", async () => {
+    esconderMensagem(elMsgDataLimite);
+    const valor = elDataLimite.value; // "YYYY-MM-DD" ou ""
+    try {
+      await db.collection("turmas").doc(turmaId).update({
+        dataLimite: valor || firebase.firestore.FieldValue.delete()
+      });
+      mostrarMensagem(
+        elMsgDataLimite,
+        valor ? "Data limite salva. O pedido fecha sozinho ao passar dessa data." : "Data limite removida. O pedido fica aberto até a organização fechar.",
+        "aviso"
+      );
+    } catch (erro) {
+      console.error(erro);
+      mostrarMensagem(elMsgDataLimite, "Erro ao salvar a data limite. Tente novamente.", "erro");
+    }
+  });
+}
 
 // ---------------- Exportar CSV ----------------
 

@@ -39,11 +39,11 @@ async function carregarTurmas() {
       item.className = "turma-card";
       item.href = "turma.html?id=" + encodeURIComponent(doc.id);
 
-      const status = turma.fechado
-        ? '<span class="badge fechado">Fechado</span>'
-        : '<span class="badge aberto">Aberto</span>';
+      const statusId = statusPedidoDe(turma);
+      const classeBadge = statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado";
+      const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
 
-      const acao = turma.fechado ? "Ver conferência" : "Cadastrar lista →";
+      const acao = statusId === "aberto" ? "Cadastrar lista →" : "Ver detalhes";
 
       item.innerHTML = `
         <span class="turma-card-topo">

@@ -9,7 +9,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`index.html`** — lista as turmas cadastradas.
 - **`turma.html?id=NOME-DA-TURMA`** — página do representante: digita a senha da turma, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
-- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), acompanha status, reabre pedidos fechados, edita qualquer turma e exporta o CSV geral. Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada turma, edita qualquer turma e exporta o CSV geral. Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar turmas e alterar tamanhos/configurações. Já a **senha de cada turma** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -61,7 +61,7 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 1. Acesse `SEU-SITE/admin.html` (ou clique em "Área administrativa" no rodapé) e entre com o **e-mail e a senha** do administrador (a conta que você criou no passo 4). O site leva você automaticamente para o **Super Admin** (`superadmin.html`).
 2. Em **Criar nova turma**, cadastre cada turma com um nome (ex: "3º Ano A - Manhã") e uma senha própria para ela.
 3. Compartilhe com cada representante o link da turma (`SEU-SITE/turma.html?id=ID-DA-TURMA`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`), que lista todas as turmas.
-4. Cada representante cadastra os alunos, confere a lista (o site avisa se houver números de camiseta duplicados) e clica em **Fechar pedido da turma** quando terminar.
+4. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, a turma fica **Aberta** até o Super Admin fechar/avançar o status.
 5. No painel admin, acompanhe o status de todas as turmas. Quando todas estiverem fechadas (ou quando quiser), clique em **Exportar CSV geral** para baixar um único arquivo com todos os pedidos.
 
 ## Sobre o CSV exportado
@@ -83,7 +83,7 @@ Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel admini
 
 ## Pagamento por PIX
 
-Nas turmas com o **pedido fechado**, cada linha ganha um botão **"Pagar (PIX)"** que abre um QR Code + o código "copia e cola", já com o valor da camiseta.
+Nas turmas com o **pedido fechado**, cada linha (ainda não paga) ganha um botão **"Pagar"** que abre o pagamento PIX com o valor da camiseta.
 
 Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 
