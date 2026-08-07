@@ -19,6 +19,8 @@
   <div class="card">
     <h2 id="nomeTurma">Carregando...</h2>
     <span id="badgeStatus" class="badge"></span>
+    <p id="infoDataLimite" class="pix-ajuda oculto"></p>
+    <div id="barraStatus"></div>
     <p id="mensagemFechado" class="aviso oculto">
       Este pedido já foi fechado. Não é mais possível editar a lista. Se precisar corrigir algo, fale com a coordenação do interclasse.
     </p>
@@ -36,6 +38,15 @@
       <button type="submit" class="primario">Entrar</button>
     </form>
     <p id="msgSenha" class="oculto"></p>
+  </div>
+
+  <div class="card oculto" id="blocoDataLimite">
+    <h2>Data limite para pagamento</h2>
+    <p>Defina até quando a turma pode pagar. Ao passar a data, o pedido fecha automaticamente. Se deixar em branco, fica aberto até a organização fechar.</p>
+    <label for="dataLimite">Data limite</label>
+    <input type="date" id="dataLimite" />
+    <button type="button" id="btnSalvarDataLimite" class="primario">Salvar data limite</button>
+    <p id="msgDataLimite" class="oculto"></p>
   </div>
 
   <div class="card oculto" id="blocoCadastro">
@@ -77,7 +88,6 @@
     </table>
 
     <button id="btnExportar" class="secundario">Exportar CSV desta turma</button>
-    <button id="btnFechar" class="sucesso oculto">Fechar pedido da turma</button>
   </div>
 </main>
 

@@ -213,6 +213,63 @@ function badgePagamentoHtml(aluno) {
   return '<span class="badge pendente">Pendente</span>';
 }
 
+// ============================================================
+// STATUS DO PEDIDO (etapas da turma)
+// ============================================================
+const STATUS_PEDIDO = [
+  { id: "aberto", label: "Aberto" },
+  { id: "fechado", label: "Fechado" },
+  { id: "pagamento_andamento", label: "Pagamento em andamento" },
+  { id: "pagamento_encerrado", label: "Pagamento encerrado" },
+  { id: "impressao", label: "Impressão" },
+  { id: "costura", label: "Costura" },
+  { id: "logistica", label: "Logística" },
+  { id: "entregue", label: "Entregue ao representante" }
+];
+
+// Status atual da turma (com compatibilidade para turmas antigas que só têm `fechado`).
+function statusPedidoDe(turma) {
+  if (turma && turma.statusPedido) return turma.statusPedido;
+  return turma && turma.fechado ? "fechado" : "aberto";
+}
+
+function indiceStatus(id) {
+  return STATUS_PEDIDO.findIndex((s) => s.id === id);
+}
+
+function labelStatus(id) {
+  const s = STATUS_PEDIDO.find((x) => x.id === id);
+  return s ? s.label : id;
+}
+
+// A turma está aberta para o representante editar quando o status é "aberto".
+function pedidoAberto(turma) {
+  return statusPedidoDe(turma) === "aberto";
+}
+
+// Se a turma tem data limite (string "YYYY-MM-DD") vencida e ainda está "aberto",
+// retorna "fechado" (fechamento automático). Caso contrário, null (sem mudança).
+function statusAutoPorData(turma) {
+  if (statusPedidoDe(turma) !== "aberto" || !turma.dataLimite) return null;
+  const limite = new Date(turma.dataLimite + "T23:59:59");
+  if (isNaN(limite.getTime())) return null;
+  return Date.now() > limite.getTime() ? "fechado" : null;
+}
+
+// Renderiza a barra de acompanhamento (etapas do pedido) em `container`.
+function renderizarBarraStatus(container, statusId) {
+  if (!container) return;
+  const atual = indiceStatus(statusId);
+  container.className = "barra-status";
+  container.innerHTML = "";
+  STATUS_PEDIDO.forEach((s, i) => {
+    const etapa = document.createElement("span");
+    etapa.className = "status-etapa" + (i < atual ? " concluida" : i === atual ? " atual" : "");
+    etapa.textContent = s.label;
+    container.appendChild(etapa);
+  });
+}
+
 function mostrarMensagem(elemento, texto, tipo) {
   elemento.textContent = texto;
   elemento.className = tipo; // "aviso" ou "erro"

@@ -117,10 +117,28 @@ function escutarTurmas() {
         Object.keys(estadoTurmas).forEach((id) => {
           if (!idsAtuais.has(id)) delete estadoTurmas[id];
         });
+        aplicarFechamentoAutomatico();
         renderizarTurmasAdmin();
       },
       (erro) => console.error("Erro ao carregar turmas:", erro)
     );
+}
+
+// Fecha automaticamente as turmas cuja data limite já passou (aberto -> fechado).
+// Única mudança de status automática; as demais são manuais (seletor de status).
+function aplicarFechamentoAutomatico() {
+  Object.keys(estadoTurmas).forEach((turmaId) => {
+    const turma = estadoTurmas[turmaId].turma;
+    if (statusAutoPorData(turma) === "fechado") {
+      estadoTurmas[turmaId].turma.statusPedido = "fechado";
+      estadoTurmas[turmaId].turma.fechado = true;
+      db.collection("turmas").doc(turmaId).update({
+        statusPedido: "fechado",
+        fechado: true,
+        fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch((e) => console.warn("Falha no fechamento automático:", e));
+    }
+  });
 }
 
 function escutarAlunosDaTurma(turmaId) {
@@ -162,9 +180,9 @@ function renderizarTurmasAdmin() {
       return;
     }
 
-    const status = turma.fechado
-      ? '<span class="badge fechado">Fechado</span>'
-      : '<span class="badge aberto">Aberto</span>';
+    const statusId = statusPedidoDe(turma);
+    const classeBadge = statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado";
+    const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
 
     const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
     const avisoAjustes = nAjustes > 0
@@ -179,6 +197,35 @@ function renderizarTurmasAdmin() {
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
       ${avisoAjustes}
     `;
+
+    // Barra de acompanhamento das etapas do pedido.
+    const barra = document.createElement("div");
+    renderizarBarraStatus(barra, statusId);
+    card.appendChild(barra);
+
+    // Seletor de status (só o Super Admin muda o status).
+    const linhaStatus = document.createElement("div");
+    linhaStatus.className = "linha-status-admin";
+    const lblStatus = document.createElement("label");
+    lblStatus.textContent = "Status do pedido:";
+    const selStatus = document.createElement("select");
+    selStatus.className = "select-status";
+    STATUS_PEDIDO.forEach((s) => {
+      const o = document.createElement("option");
+      o.value = s.id;
+      o.textContent = s.label;
+      selStatus.appendChild(o);
+    });
+    selStatus.value = statusId;
+    selStatus.onchange = () => {
+      const novo = selStatus.value;
+      const dados = { statusPedido: novo, fechado: novo !== "aberto" };
+      if (novo !== "aberto") dados.fechadoEm = firebase.firestore.FieldValue.serverTimestamp();
+      db.collection("turmas").doc(turmaId).update(dados);
+    };
+    linhaStatus.appendChild(lblStatus);
+    linhaStatus.appendChild(selStatus);
+    card.appendChild(linhaStatus);
 
     const botoes = document.createElement("div");
 
@@ -196,27 +243,6 @@ function renderizarTurmasAdmin() {
     btnExportar.textContent = "Exportar CSV";
     btnExportar.onclick = () => exportarTurma(turma, alunos);
     botoes.appendChild(btnExportar);
-
-    if (turma.fechado) {
-      const btnReabrir = document.createElement("button");
-      btnReabrir.className = "sucesso";
-      btnReabrir.textContent = "Reabrir pedido";
-      btnReabrir.onclick = () => db.collection("turmas").doc(turmaId).update({ fechado: false });
-      botoes.appendChild(btnReabrir);
-    } else {
-      const btnFechar = document.createElement("button");
-      btnFechar.className = "perigo";
-      btnFechar.textContent = "Fechar pedido";
-      btnFechar.onclick = () => {
-        if (confirm(`Fechar o pedido de ${turma.nome}?`)) {
-          db.collection("turmas").doc(turmaId).update({
-            fechado: true,
-            fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
-          });
-        }
-      };
-      botoes.appendChild(btnFechar);
-    }
 
     const btnEditar = document.createElement("button");
     btnEditar.className = "secundario";
