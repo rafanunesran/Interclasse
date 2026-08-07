@@ -45,7 +45,12 @@ async function carregarTurmas() {
 
       const acao = statusId === "aberto" ? "Cadastrar lista →" : "Ver detalhes";
 
+      const imagem = turma.imagemUrl
+        ? `<img class="turma-card-img" src="${encodeURI(turma.imagemUrl)}" alt="Camiseta de ${escaparHtml(turma.nome)}" />`
+        : "";
+
       item.innerHTML = `
+        ${imagem}
         <span class="turma-card-topo">
           <span class="turma-card-nome">${escaparHtml(turma.nome)}</span>
           ${status}

@@ -26,6 +26,7 @@ const elBtnExportar = document.getElementById("btnExportar");
 const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
 const elBarraStatus = document.getElementById("barraStatus");
+const elImagemTurma = document.getElementById("imagemTurma");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
@@ -110,6 +111,17 @@ function atualizarBadge() {
     "badge " + (statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado");
 
   renderizarBarraStatus(elBarraStatus, statusId);
+
+  // Imagem da camiseta (referência para os alunos).
+  if (elImagemTurma) {
+    if (turmaAtual.imagemUrl) {
+      elImagemTurma.src = turmaAtual.imagemUrl;
+      elImagemTurma.classList.remove("oculto");
+    } else {
+      elImagemTurma.classList.add("oculto");
+      elImagemTurma.removeAttribute("src");
+    }
+  }
 
   // Info da data limite.
   if (elInfoDataLimite) {

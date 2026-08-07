@@ -270,6 +270,52 @@ function renderizarBarraStatus(container, statusId) {
   });
 }
 
+// ============================================================
+// IMAGEM DA CAMISETA (Google Drive via Apps Script)
+// ============================================================
+
+// Reduz a imagem para no máximo `maxLargura` px e devolve base64 (JPEG, sem prefixo).
+function redimensionarImagemBase64(file, maxLargura) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const escala = Math.min(1, maxLargura / img.width);
+      const w = Math.max(1, Math.round(img.width * escala));
+      const h = Math.max(1, Math.round(img.height * escala));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível ler a imagem."));
+    };
+    img.src = url;
+  });
+}
+
+// Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
+async function enviarImagemDrive(scriptUrl, turmaId, file) {
+  const dataBase64 = await redimensionarImagemBase64(file, 1200);
+  const resp = await fetch(scriptUrl, {
+    method: "POST",
+    // text/plain (padrão do fetch com string) evita o preflight de CORS do Apps Script.
+    body: JSON.stringify({
+      turmaId: turmaId,
+      nome: "camiseta-" + turmaId + ".jpg",
+      mimeType: "image/jpeg",
+      dataBase64: dataBase64
+    })
+  });
+  const dados = await resp.json();
+  if (!dados || !dados.ok) throw new Error((dados && dados.erro) || "Falha ao enviar a imagem.");
+  return dados.url;
+}
+
 function mostrarMensagem(elemento, texto, tipo) {
   elemento.textContent = texto;
   elemento.className = tipo; // "aviso" ou "erro"

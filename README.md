@@ -121,6 +121,17 @@ Detalhes técnicos:
 - A **imagem** do QR Code é renderizada por um serviço externo (`api.qrserver.com`) apenas para desenhar o quadradinho; se preferir 100% offline, dá para trocar por uma biblioteca embutida — é só pedir.
 - Os dados de pagamento ficam em `config/geral` (só o admin grava; leitura é pública, como o resto).
 
+## Imagem da camiseta (Google Drive)
+
+Cada turma pode ter uma **foto da camiseta** (referência do que será produzido), que aparece no
+card da tela inicial e na página da turma. Como o Firebase Storage exige plano pago, as imagens
+ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
+
+- Publique o Apps Script e cole a URL em **Super Admin → Configurações**. Passo a passo em
+  [`apps-script/README.md`](apps-script/README.md).
+- Depois, em cada turma (Super Admin → Inicial), use **"Enviar imagem da camiseta"**.
+- No Firestore fica guardada só a **URL** da imagem; o arquivo em si fica no seu Drive.
+
 ## Limitações conhecidas
 
 - A proteção por senha de turma/admin é feita no site (não no banco de dados), então é uma barreira de conveniência, não uma segurança forte. Não cadastre informações sensíveis além do necessário para o pedido.
