@@ -598,30 +598,36 @@ function mesDoAluno(aluno) {
 function renderizarRelatorio() {
   if (!elMesRelatorio || !elRelatorioResultado) return;
 
-  // Coleta os meses que têm camisetas pagas.
+  // Coleta os meses que têm camisetas pagas (e se há pagos sem data).
   const meses = new Set();
+  let temSemData = false;
   Object.values(estadoTurmas).forEach(({ alunos }) => {
     alunos.forEach((a) => {
       if (a.pago) {
         const m = mesDoAluno(a);
         if (m) meses.add(m);
+        else temSemData = true;
       }
     });
   });
-  const listaMeses = Array.from(meses).sort().reverse();
+  const mesesComDados = Array.from(meses).sort().reverse();
   const agora = new Date();
   const mesAtual = agora.getFullYear() + "-" + String(agora.getMonth() + 1).padStart(2, "0");
-  if (!listaMeses.includes(mesAtual)) listaMeses.unshift(mesAtual);
 
+  const listaMeses = mesesComDados.slice();
+  if (!listaMeses.includes(mesAtual)) listaMeses.unshift(mesAtual);
+  if (temSemData) listaMeses.push("sem-data");
+
+  // Mês padrão: o mais recente com dados; senão "sem data"; senão o mês atual.
   if (!mesRelatorioSel || !listaMeses.includes(mesRelatorioSel)) {
-    mesRelatorioSel = listaMeses[0];
+    mesRelatorioSel = mesesComDados[0] || (temSemData ? "sem-data" : mesAtual);
   }
 
   elMesRelatorio.innerHTML = "";
   listaMeses.forEach((m) => {
     const o = document.createElement("option");
     o.value = m;
-    o.textContent = rotuloMes(m);
+    o.textContent = m === "sem-data" ? "Sem data" : rotuloMes(m);
     elMesRelatorio.appendChild(o);
   });
   elMesRelatorio.value = mesRelatorioSel;
@@ -632,7 +638,8 @@ function renderizarRelatorio() {
   Object.keys(estadoTurmas).forEach((turmaId) => {
     const { turma, alunos } = estadoTurmas[turmaId];
     alunos.forEach((a) => {
-      if (a.pago && mesDoAluno(a) === mesRelatorioSel) {
+      const noMes = mesRelatorioSel === "sem-data" ? mesDoAluno(a) === null : mesDoAluno(a) === mesRelatorioSel;
+      if (a.pago && noMes) {
         const preco = precoDoTamanho(a.tamanho, precosPorGrupo) || 0;
         const c = custoDoTamanho(a.tamanho, custosPorGrupo) || 0;
         receita += preco; custo += c; qtd++;
@@ -659,7 +666,7 @@ function renderizarRelatorio() {
       <span class="badge pendente">Custo: ${formatarReais(custo)}</span>
       <span class="badge aberto">Lucro: ${formatarReais(lucro)}</span>
     </div>
-    ${qtd === 0 ? "<p>Nenhum pagamento neste mês.</p>" : `
+    ${qtd === 0 ? "<p>Nenhum pagamento neste período.</p>" : `
     <table>
       <thead><tr><th>Turma</th><th>Qtd</th><th>Receita</th><th>Custo</th><th>Lucro</th></tr></thead>
       <tbody>${linhas}</tbody>
@@ -1256,6 +1263,11 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
     GRUPOS_TAMANHO = clonarGrupos(grupos);
     TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
     renderizarEditorTamanhos();
+    // Preços, custos, kanban e relatório dependem dos grupos: re-renderiza.
+    renderizarPrecosPorGrupo(precosPorGrupo);
+    renderizarCustosPorGrupo();
+    renderizarKanban();
+    renderizarRelatorio();
     mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro das turmas.", "aviso");
   } catch (erro) {
     console.error(erro);
