@@ -377,6 +377,100 @@ function renderizarTurmasAdmin() {
   });
 
   renderizarResumoPagamentos();
+  renderizarKanban();
+  renderizarRelatorio();
+}
+
+// ---------------- Valores da turma (preço/pago/pendente) ----------------
+function valoresDaTurma(alunos) {
+  let total = 0, pago = 0, nPago = 0;
+  alunos.forEach((a) => {
+    const preco = precoDoTamanho(a.tamanho, precosPorGrupo) || 0;
+    total += preco;
+    if (a.pago) { pago += preco; nPago++; }
+  });
+  return { total, pago, pendente: total - pago, nPago, nTotal: alunos.length };
+}
+
+// ---------------- Kanban (pedidos por status) ----------------
+function renderizarKanban() {
+  if (!elKanban) return;
+  elKanban.innerHTML = "";
+
+  STATUS_PEDIDO.forEach((s) => {
+    const coluna = document.createElement("div");
+    coluna.className = "kanban-coluna";
+    coluna.dataset.status = s.id;
+
+    const ids = Object.keys(estadoTurmas).filter(
+      (id) => statusPedidoDe(estadoTurmas[id].turma) === s.id
+    );
+
+    const titulo = document.createElement("h3");
+    titulo.className = "kanban-titulo";
+    titulo.textContent = `${s.label} (${ids.length})`;
+    coluna.appendChild(titulo);
+
+    // Permite soltar cards nesta coluna.
+    coluna.addEventListener("dragover", (ev) => { ev.preventDefault(); coluna.classList.add("arrastando-sobre"); });
+    coluna.addEventListener("dragleave", () => coluna.classList.remove("arrastando-sobre"));
+    coluna.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      coluna.classList.remove("arrastando-sobre");
+      const turmaId = ev.dataTransfer.getData("text/plain");
+      if (turmaId) mudarStatusTurma(turmaId, s.id);
+    });
+
+    ids.sort((a, b) => estadoTurmas[a].turma.nome.localeCompare(estadoTurmas[b].turma.nome, "pt-BR"));
+    ids.forEach((turmaId) => {
+      coluna.appendChild(criarCardKanban(turmaId, estadoTurmas[turmaId]));
+    });
+
+    elKanban.appendChild(coluna);
+  });
+}
+
+function criarCardKanban(turmaId, estado) {
+  const { turma, alunos } = estado;
+  const v = valoresDaTurma(alunos);
+
+  const card = document.createElement("div");
+  card.className = "kanban-card";
+  card.draggable = true;
+  card.addEventListener("dragstart", (ev) => {
+    ev.dataTransfer.setData("text/plain", turmaId);
+    card.classList.add("arrastando");
+  });
+  card.addEventListener("dragend", () => card.classList.remove("arrastando"));
+
+  card.innerHTML = `
+    <strong>${escapeHtmlAdmin(turma.nome)}</strong>
+    <div class="kanban-valores">
+      <span>Total: <b>${formatarReais(v.total)}</b></span>
+      <span class="txt-pago">Pago: ${formatarReais(v.pago)} (${v.nPago})</span>
+      <span class="txt-pendente">Pendente: ${formatarReais(v.pendente)} (${v.nTotal - v.nPago})</span>
+    </div>
+  `;
+
+  const sel = document.createElement("select");
+  sel.className = "select-status-kanban";
+  STATUS_PEDIDO.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.id;
+    o.textContent = s.label;
+    sel.appendChild(o);
+  });
+  sel.value = statusPedidoDe(turma);
+  sel.onchange = () => mudarStatusTurma(turmaId, sel.value);
+  card.appendChild(sel);
+
+  return card;
+}
+
+function mudarStatusTurma(turmaId, novo) {
+  const dados = { statusPedido: novo, fechado: novo !== "aberto" };
+  if (novo !== "aberto") dados.fechadoEm = firebase.firestore.FieldValue.serverTimestamp();
+  db.collection("turmas").doc(turmaId).update(dados);
 }
 
 // Atualiza o status de pagamento de um aluno (usado no seletor por linha).
@@ -417,6 +511,173 @@ function renderizarResumoPagamentos() {
       <span class="badge pendente">Pendentes: ${pendentes}</span>
     </div>
   `;
+}
+
+// ---------------- Custos e lucro por grupo (aba Tamanhos) ----------------
+function renderizarCustosPorGrupo() {
+  if (!elCustosPorGrupo) return;
+  elCustosPorGrupo.innerHTML = "";
+  if (GRUPOS_TAMANHO.length === 0) {
+    elCustosPorGrupo.innerHTML = "<p>Cadastre os tamanhos primeiro.</p>";
+    return;
+  }
+
+  GRUPOS_TAMANHO.forEach((g) => {
+    const preco = Number(precosPorGrupo[g.grupo]) || 0;
+    const c = custosPorGrupo[g.grupo] || {};
+
+    const box = document.createElement("div");
+    box.className = "grupo-tamanho";
+    box.innerHTML = `<strong>${escapeHtmlAdmin(g.grupo)}</strong> <small class="pix-ajuda">— preço de venda: ${formatarReais(preco)}</small>`;
+
+    const linha = document.createElement("div");
+    linha.className = "linha-custos";
+
+    const inImp = document.createElement("input");
+    inImp.type = "number"; inImp.step = "0.01"; inImp.min = "0";
+    inImp.placeholder = "Impressão"; inImp.dataset.grupo = g.grupo; inImp.dataset.tipo = "impressao";
+    inImp.value = c.impressao != null ? c.impressao : "";
+
+    const inCost = document.createElement("input");
+    inCost.type = "number"; inCost.step = "0.01"; inCost.min = "0";
+    inCost.placeholder = "Costureira"; inCost.dataset.grupo = g.grupo; inCost.dataset.tipo = "costureira";
+    inCost.value = c.costureira != null ? c.costureira : "";
+
+    const lucroSpan = document.createElement("span");
+    lucroSpan.className = "lucro-grupo";
+    const calcularLucro = () => {
+      const imp = parseFloat(inImp.value) || 0;
+      const cost = parseFloat(inCost.value) || 0;
+      lucroSpan.textContent = "Lucro: " + formatarReais(preco - imp - cost);
+    };
+    inImp.oninput = calcularLucro;
+    inCost.oninput = calcularLucro;
+    calcularLucro();
+
+    const lblImp = document.createElement("label"); lblImp.textContent = "Impressão (R$)";
+    const lblCost = document.createElement("label"); lblCost.textContent = "Costureira (R$)";
+
+    linha.appendChild(lblImp); linha.appendChild(inImp);
+    linha.appendChild(lblCost); linha.appendChild(inCost);
+    linha.appendChild(lucroSpan);
+    box.appendChild(linha);
+    elCustosPorGrupo.appendChild(box);
+  });
+}
+
+if (elBtnSalvarCustos) {
+  elBtnSalvarCustos.addEventListener("click", async () => {
+    esconderMensagem(elMsgCustos);
+    const novo = {};
+    elCustosPorGrupo.querySelectorAll("input").forEach((inp) => {
+      const grupo = inp.dataset.grupo;
+      const v = parseFloat(inp.value);
+      if (!novo[grupo]) novo[grupo] = {};
+      if (!isNaN(v) && v >= 0) novo[grupo][inp.dataset.tipo] = v;
+    });
+    try {
+      await db.collection("config").doc("geral").set({ custosPorGrupo: novo }, { merge: true });
+      custosPorGrupo = novo;
+      renderizarRelatorio();
+      mostrarMensagem(elMsgCustos, "Custos salvos.", "aviso");
+    } catch (erro) {
+      console.error(erro);
+      mostrarMensagem(elMsgCustos, "Erro ao salvar os custos.", "erro");
+    }
+  });
+}
+
+// ---------------- Relatório de faturamento por mês ----------------
+function mesDoAluno(aluno) {
+  const t = aluno.pagamentoEm;
+  if (!t || !t.toDate) return null;
+  const d = t.toDate();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+function renderizarRelatorio() {
+  if (!elMesRelatorio || !elRelatorioResultado) return;
+
+  // Coleta os meses que têm camisetas pagas.
+  const meses = new Set();
+  Object.values(estadoTurmas).forEach(({ alunos }) => {
+    alunos.forEach((a) => {
+      if (a.pago) {
+        const m = mesDoAluno(a);
+        if (m) meses.add(m);
+      }
+    });
+  });
+  const listaMeses = Array.from(meses).sort().reverse();
+  const agora = new Date();
+  const mesAtual = agora.getFullYear() + "-" + String(agora.getMonth() + 1).padStart(2, "0");
+  if (!listaMeses.includes(mesAtual)) listaMeses.unshift(mesAtual);
+
+  if (!mesRelatorioSel || !listaMeses.includes(mesRelatorioSel)) {
+    mesRelatorioSel = listaMeses[0];
+  }
+
+  elMesRelatorio.innerHTML = "";
+  listaMeses.forEach((m) => {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = rotuloMes(m);
+    elMesRelatorio.appendChild(o);
+  });
+  elMesRelatorio.value = mesRelatorioSel;
+
+  // Calcula os totais do mês selecionado (por turma).
+  let receita = 0, custo = 0, qtd = 0;
+  const porTurma = {};
+  Object.keys(estadoTurmas).forEach((turmaId) => {
+    const { turma, alunos } = estadoTurmas[turmaId];
+    alunos.forEach((a) => {
+      if (a.pago && mesDoAluno(a) === mesRelatorioSel) {
+        const preco = precoDoTamanho(a.tamanho, precosPorGrupo) || 0;
+        const c = custoDoTamanho(a.tamanho, custosPorGrupo) || 0;
+        receita += preco; custo += c; qtd++;
+        if (!porTurma[turmaId]) porTurma[turmaId] = { nome: turma.nome, receita: 0, custo: 0, qtd: 0 };
+        porTurma[turmaId].receita += preco;
+        porTurma[turmaId].custo += c;
+        porTurma[turmaId].qtd++;
+      }
+    });
+  });
+  const lucro = receita - custo;
+
+  let linhas = "";
+  Object.values(porTurma)
+    .sort((a, b) => b.receita - a.receita)
+    .forEach((t) => {
+      linhas += `<tr><td>${escapeHtmlAdmin(t.nome)}</td><td>${t.qtd}</td><td>${formatarReais(t.receita)}</td><td>${formatarReais(t.custo)}</td><td>${formatarReais(t.receita - t.custo)}</td></tr>`;
+    });
+
+  elRelatorioResultado.innerHTML = `
+    <div class="resumo-tamanhos" style="margin-top:12px">
+      <span><strong>${qtd}</strong> camiseta(s) paga(s)</span>
+      <span class="badge pago">Receita: ${formatarReais(receita)}</span>
+      <span class="badge pendente">Custo: ${formatarReais(custo)}</span>
+      <span class="badge aberto">Lucro: ${formatarReais(lucro)}</span>
+    </div>
+    ${qtd === 0 ? "<p>Nenhum pagamento neste mês.</p>" : `
+    <table>
+      <thead><tr><th>Turma</th><th>Qtd</th><th>Receita</th><th>Custo</th><th>Lucro</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>`}
+  `;
+}
+
+function rotuloMes(m) {
+  const [ano, mes] = m.split("-");
+  const nomes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return `${nomes[Number(mes) - 1]}/${ano}`;
+}
+
+if (elMesRelatorio) {
+  elMesRelatorio.addEventListener("change", () => {
+    mesRelatorioSel = elMesRelatorio.value;
+    renderizarRelatorio();
+  });
 }
 
 // Monta o formulário inline de edição do nome e da senha da turma.
@@ -718,9 +979,19 @@ const elMpAtivo = document.getElementById("mpAtivo");
 const elMpBackendUrl = document.getElementById("mpBackendUrl");
 const elMsgPix = document.getElementById("msgPix");
 
+const elKanban = document.getElementById("kanban");
+const elCustosPorGrupo = document.getElementById("custosPorGrupo");
+const elBtnSalvarCustos = document.getElementById("btnSalvarCustos");
+const elMsgCustos = document.getElementById("msgCustos");
+const elMesRelatorio = document.getElementById("mesRelatorio");
+const elRelatorioResultado = document.getElementById("relatorioResultado");
+
 let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
+let precosPorGrupo = {};  // preço de venda por grupo (config/geral)
+let custosPorGrupo = {};  // custos (impressão/costureira) por grupo (config/geral)
+let mesRelatorioSel = ""; // "YYYY-MM" selecionado no relatório
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -746,7 +1017,14 @@ async function carregarPainelConfig() {
   elPixCidade.value = cfg.pixCidade || "";
   elMpAtivo.checked = cfg.mpAtivo === true;
   elMpBackendUrl.value = cfg.mpBackendUrl || "";
-  renderizarPrecosPorGrupo(cfg.precosPorGrupo || {});
+  precosPorGrupo = cfg.precosPorGrupo || {};
+  custosPorGrupo = cfg.custosPorGrupo || {};
+  renderizarPrecosPorGrupo(precosPorGrupo);
+  renderizarCustosPorGrupo();
+
+  // Já dá para desenhar Kanban e Relatório (dependem de preços/custos).
+  renderizarKanban();
+  renderizarRelatorio();
 }
 
 // ---------------- Pagamento (PIX) ----------------
@@ -777,23 +1055,27 @@ elFormPix.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   esconderMensagem(elMsgPix);
 
-  const precosPorGrupo = {};
+  const precos = {};
   elPrecosPorGrupo.querySelectorAll("input").forEach((inp) => {
     const v = parseFloat(inp.value);
-    if (!isNaN(v) && v >= 0) precosPorGrupo[inp.dataset.grupo] = v;
+    if (!isNaN(v) && v >= 0) precos[inp.dataset.grupo] = v;
   });
 
   const dados = {
     pixChave: elPixChave.value.trim(),
     pixNome: elPixNome.value.trim(),
     pixCidade: elPixCidade.value.trim(),
-    precosPorGrupo,
+    precosPorGrupo: precos,
     mpAtivo: elMpAtivo.checked,
     mpBackendUrl: elMpBackendUrl.value.trim().replace(/\/$/, "")
   };
 
   try {
     await db.collection("config").doc("geral").set(dados, { merge: true });
+    precosPorGrupo = precos;
+    renderizarCustosPorGrupo(); // o lucro depende do preço
+    renderizarKanban();
+    renderizarRelatorio();
     mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
   } catch (erro) {
     console.error(erro);
