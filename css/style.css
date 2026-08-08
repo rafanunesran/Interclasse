@@ -357,6 +357,68 @@ tr.duplicado td { background: #fef3c7; }
 }
 .bloco-imagem-admin button { margin-top: 0; }
 
+/* Kanban de pedidos (Super Admin). */
+.kanban {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+.kanban-coluna {
+  flex: 0 0 240px;
+  background: var(--cinza-bg);
+  border: 1px solid var(--cinza-borda);
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 120px;
+}
+.kanban-coluna.arrastando-sobre {
+  border-color: var(--azul);
+  background: #eff6ff;
+}
+.kanban-titulo {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+.kanban-card {
+  background: var(--branco);
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: grab;
+}
+.kanban-card.arrastando { opacity: 0.5; }
+.kanban-valores {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+  margin: 6px 0;
+}
+.txt-pago { color: #166534; }
+.txt-pendente { color: #92400e; }
+.select-status-kanban {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 0.8rem;
+}
+
+/* Custos por grupo (aba Tamanhos). */
+.linha-custos {
+  display: grid;
+  grid-template-columns: auto 90px auto 90px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.linha-custos label { margin: 0; }
+.linha-custos input { width: 90px; }
+.lucro-grupo {
+  font-weight: 700;
+  color: var(--verde);
+}
+
 /* Barra superior do painel administrativo (identificação + sair). */
 .barra-admin {
   display: flex;
