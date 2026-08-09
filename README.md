@@ -113,7 +113,7 @@ pagamento no Firestore.
   auto-declaração + confirmação manual.
 - **Ligado**, o Mercado Pago cobra ~0,99% por PIX recebido e o dinheiro passa pela conta MP.
 
-O Super Admin é organizado em abas: **Inicial** (criar turmas e lista de turmas), **Kanban** (pedidos por status, com valores por turma e mudança de status arrastando ou pelo seletor), **Tamanhos** (grupos/tamanhos + custos e lucro por grupo), **Pagamentos**, **Relatórios** (faturamento por mês: receita, custo e lucro) e **Configurações** (gerais + exportar).
+O Super Admin é organizado em abas: **Inicial** (criar turmas e lista de turmas), **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
 
 Detalhes técnicos:
 
