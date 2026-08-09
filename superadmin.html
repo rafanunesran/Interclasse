@@ -24,6 +24,7 @@
 
     <nav class="abas-admin">
       <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
+      <button type="button" class="aba" data-aba="kanban">Kanban</button>
       <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
       <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
       <button type="button" class="aba" data-aba="config">Configurações</button>
@@ -47,6 +48,15 @@
 
       <h2>Turmas</h2>
       <div id="listaTurmasAdmin"></div>
+    </section>
+
+    <!-- ABA: KANBAN (pedidos por etapa; arraste os cards para mudar o status) -->
+    <section id="aba-kanban" class="secao-aba oculto">
+      <div class="card">
+        <h2>Kanban de pedidos</h2>
+        <p>Cada card é o pedido de uma turma. Arraste um card para outra coluna para mudar o status — ou use o seletor dentro do card (melhor no celular). A mudança vale na hora para todo o sistema.</p>
+        <div id="kanbanBoard" class="kanban-board"></div>
+      </div>
     </section>
 
     <!-- ABA: TAMANHOS -->

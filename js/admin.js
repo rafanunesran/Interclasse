@@ -221,12 +221,7 @@ function renderizarTurmasAdmin() {
       selStatus.appendChild(o);
     });
     selStatus.value = statusId;
-    selStatus.onchange = () => {
-      const novo = selStatus.value;
-      const dados = { statusPedido: novo, fechado: novo !== "aberto" };
-      if (novo !== "aberto") dados.fechadoEm = firebase.firestore.FieldValue.serverTimestamp();
-      db.collection("turmas").doc(turmaId).update(dados);
-    };
+    selStatus.onchange = () => atualizarStatusPedido(turmaId, selStatus.value);
     linhaStatus.appendChild(lblStatus);
     linhaStatus.appendChild(selStatus);
     card.appendChild(linhaStatus);
@@ -381,6 +376,167 @@ function renderizarTurmasAdmin() {
   });
 
   renderizarResumoPagamentos();
+  renderizarKanban();
+}
+
+// Atualiza o status do pedido de uma turma (usado no seletor da aba Inicial
+// e ao arrastar cards no Kanban). Mantém `fechado` em sincronia com o status.
+function atualizarStatusPedido(turmaId, novo) {
+  const dados = { statusPedido: novo, fechado: novo !== "aberto" };
+  if (novo !== "aberto") dados.fechadoEm = firebase.firestore.FieldValue.serverTimestamp();
+  // Atualiza o estado local na hora para o Kanban reagir sem esperar o snapshot.
+  if (estadoTurmas[turmaId]) {
+    estadoTurmas[turmaId].turma.statusPedido = novo;
+    estadoTurmas[turmaId].turma.fechado = novo !== "aberto";
+  }
+  db.collection("turmas").doc(turmaId).update(dados)
+    .catch((e) => console.error("Falha ao mudar status do pedido:", e));
+}
+
+// ---------------- Kanban de pedidos ----------------
+
+// Turma sendo arrastada no momento (evita re-render que quebraria o arraste).
+let kanbanArrastandoId = null;
+
+function renderizarKanban() {
+  const board = document.getElementById("kanbanBoard");
+  if (!board) return;
+  // Não redesenha durante um arraste para não remover o card em movimento.
+  if (kanbanArrastandoId) return;
+
+  board.innerHTML = "";
+
+  const ids = Object.keys(estadoTurmas);
+  if (ids.length === 0) {
+    board.innerHTML = "<p>Nenhum pedido (turma) cadastrado ainda.</p>";
+    return;
+  }
+
+  // Agrupa as turmas por status.
+  const porStatus = {};
+  STATUS_PEDIDO.forEach((s) => (porStatus[s.id] = []));
+  ids.forEach((turmaId) => {
+    const st = statusPedidoDe(estadoTurmas[turmaId].turma);
+    // Status desconhecido cai na primeira etapa para não sumir do quadro.
+    (porStatus[st] || porStatus[STATUS_PEDIDO[0].id]).push(turmaId);
+  });
+
+  STATUS_PEDIDO.forEach((etapa) => {
+    const coluna = document.createElement("div");
+    coluna.className = "kanban-coluna";
+    coluna.dataset.status = etapa.id;
+
+    const turmasDaColuna = porStatus[etapa.id] || [];
+
+    const titulo = document.createElement("div");
+    titulo.className = "kanban-coluna-titulo";
+    titulo.innerHTML =
+      `<span>${escapeHtmlAdmin(etapa.label)}</span>` +
+      `<span class="kanban-contador">${turmasDaColuna.length}</span>`;
+    coluna.appendChild(titulo);
+
+    const listaCards = document.createElement("div");
+    listaCards.className = "kanban-cards";
+
+    // Realce ao arrastar sobre a coluna.
+    listaCards.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      coluna.classList.add("kanban-dragover");
+    });
+    listaCards.addEventListener("dragleave", () => {
+      coluna.classList.remove("kanban-dragover");
+    });
+    listaCards.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      coluna.classList.remove("kanban-dragover");
+      const turmaId = ev.dataTransfer.getData("text/plain") || kanbanArrastandoId;
+      if (turmaId && estadoTurmas[turmaId] &&
+          statusPedidoDe(estadoTurmas[turmaId].turma) !== etapa.id) {
+        atualizarStatusPedido(turmaId, etapa.id);
+      }
+      kanbanArrastandoId = null;
+      renderizarKanban();
+    });
+
+    turmasDaColuna
+      .sort((a, b) =>
+        estadoTurmas[a].turma.nome.localeCompare(estadoTurmas[b].turma.nome, "pt-BR")
+      )
+      .forEach((turmaId) => listaCards.appendChild(criarCardKanban(turmaId, etapa.id)));
+
+    if (turmasDaColuna.length === 0) {
+      const vazio = document.createElement("p");
+      vazio.className = "kanban-vazio";
+      vazio.textContent = "—";
+      listaCards.appendChild(vazio);
+    }
+
+    coluna.appendChild(listaCards);
+    board.appendChild(coluna);
+  });
+}
+
+function criarCardKanban(turmaId, statusId) {
+  const { turma, alunos } = estadoTurmas[turmaId];
+
+  const card = document.createElement("div");
+  card.className = "kanban-card";
+  card.draggable = true;
+  card.dataset.turmaId = turmaId;
+
+  card.addEventListener("dragstart", (ev) => {
+    kanbanArrastandoId = turmaId;
+    ev.dataTransfer.effectAllowed = "move";
+    ev.dataTransfer.setData("text/plain", turmaId);
+    card.classList.add("kanban-card-arrastando");
+  });
+  card.addEventListener("dragend", () => {
+    card.classList.remove("kanban-card-arrastando");
+    kanbanArrastandoId = null;
+    renderizarKanban();
+  });
+
+  const nPagos = alunos.filter((a) => a.pago).length;
+  const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
+
+  const nome = document.createElement("div");
+  nome.className = "kanban-card-nome";
+  nome.textContent = turma.nome;
+  card.appendChild(nome);
+
+  const info = document.createElement("div");
+  info.className = "kanban-card-info";
+  info.textContent =
+    `${alunos.length} camiseta(s) · ${nPagos} paga(s)` +
+    (alunos.length - nPagos > 0 ? `, ${alunos.length - nPagos} pendente(s)` : "");
+  card.appendChild(info);
+
+  if (nAjustes > 0) {
+    const aviso = document.createElement("div");
+    aviso.className = "kanban-card-ajuste";
+    aviso.innerHTML = `<span class="marca-ajuste">!</span> ${nAjustes} ajuste(s) solicitado(s)`;
+    card.appendChild(aviso);
+  }
+
+  // Seletor de status embutido (alternativa ao arraste, ótimo no celular).
+  const sel = document.createElement("select");
+  sel.className = "kanban-card-status";
+  STATUS_PEDIDO.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.id;
+    o.textContent = s.label;
+    sel.appendChild(o);
+  });
+  sel.value = statusId;
+  sel.onchange = () => {
+    atualizarStatusPedido(turmaId, sel.value);
+    renderizarKanban();
+  };
+  // Evita iniciar o arraste do card ao interagir com o seletor.
+  sel.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  card.appendChild(sel);
+
+  return card;
 }
 
 // Atualiza o status de pagamento de um aluno (usado no seletor por linha).
