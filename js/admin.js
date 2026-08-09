@@ -55,10 +55,35 @@ document.querySelectorAll(".aba").forEach((btn) => {
     document.querySelectorAll(".aba").forEach((b) => b.classList.remove("ativa"));
     btn.classList.add("ativa");
     document.querySelectorAll(".secao-aba").forEach((s) => s.classList.add("oculto"));
-    const secao = document.getElementById("aba-" + btn.dataset.aba);
+    const aba = btn.dataset.aba;
+    const secao = document.getElementById("aba-" + aba);
     if (secao) secao.classList.remove("oculto");
+    // Re-renderiza o conteúdo da aba ao abrir (garante que apareça mesmo se a
+    // carga inicial não tiver populado).
+    renderizarAba(aba);
   });
 });
+
+// Desenha o conteúdo de uma aba sob demanda (idempotente).
+function renderizarAba(aba) {
+  try {
+    if (aba === "kanban") {
+      renderizarKanban();
+    } else if (aba === "tamanhos") {
+      if (!gruposTamanhoEdit || gruposTamanhoEdit.length === 0) {
+        gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
+      }
+      renderizarEditorTamanhos();
+      renderizarCustosPorGrupo();
+    } else if (aba === "pagamentos") {
+      renderizarPrecosPorGrupo(precosPorGrupo);
+    } else if (aba === "relatorios") {
+      renderizarRelatorio();
+    }
+  } catch (erro) {
+    console.error("Erro ao renderizar a aba " + aba + ":", erro);
+  }
+}
 
 // ---------------- Criar turma ----------------
 
@@ -394,8 +419,9 @@ function valoresDaTurma(alunos) {
 
 // ---------------- Kanban (pedidos por status) ----------------
 function renderizarKanban() {
-  if (!elKanban) return;
-  elKanban.innerHTML = "";
+  const cont = elKanban || document.getElementById("kanban");
+  if (!cont) return;
+  cont.innerHTML = "";
 
   STATUS_PEDIDO.forEach((s) => {
     const coluna = document.createElement("div");
@@ -426,7 +452,7 @@ function renderizarKanban() {
       coluna.appendChild(criarCardKanban(turmaId, estadoTurmas[turmaId]));
     });
 
-    elKanban.appendChild(coluna);
+    cont.appendChild(coluna);
   });
 }
 
