@@ -881,6 +881,7 @@ const elMsgPix = document.getElementById("msgPix");
 let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
+let precosPorGrupoAtual = {}; // preço de venda por grupo (aba Pagamentos) — usado p/ o lucro
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -895,6 +896,8 @@ async function carregarPainelConfig() {
   elCadastrosAbertos.checked = cfg.cadastrosAbertos !== false; // padrão: aberto
   if (elDriveScriptUrl) elDriveScriptUrl.value = cfg.driveScriptUrl || "";
   driveScriptUrl = cfg.driveScriptUrl || "";
+
+  precosPorGrupoAtual = cfg.precosPorGrupo || {};
 
   await carregarTamanhos();
   gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
@@ -954,6 +957,9 @@ elFormPix.addEventListener("submit", async (ev) => {
 
   try {
     await db.collection("config").doc("geral").set(dados, { merge: true });
+    // Mantém o lucro do editor de tamanhos em dia com o novo preço de venda.
+    precosPorGrupoAtual = precosPorGrupo;
+    renderizarEditorTamanhos();
     mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
   } catch (erro) {
     console.error(erro);
@@ -1090,6 +1096,10 @@ function renderizarEditorTamanhos() {
     linhaAdd.appendChild(btnAddTam);
 
     box.appendChild(linhaAdd);
+
+    // Custos e lucro do grupo (Impressão, Costureira e Lucro = venda − custos).
+    box.appendChild(criarBlocoCustos(grupo, iGrupo));
+
     elEditorTamanhos.appendChild(box);
   });
 
@@ -1098,6 +1108,90 @@ function renderizarEditorTamanhos() {
     p.textContent = "Nenhum grupo. Clique em \"Adicionar grupo\" para começar.";
     elEditorTamanhos.appendChild(p);
   }
+}
+
+// Bloco de custos de um grupo: Impressão, Costureira e Lucro calculado.
+// O "valor de venda" vem do preço por grupo definido na aba Pagamentos.
+function criarBlocoCustos(grupo, iGrupo) {
+  const bloco = document.createElement("div");
+  bloco.className = "bloco-custos";
+
+  const titulo = document.createElement("div");
+  titulo.className = "bloco-custos-titulo";
+  titulo.textContent = "Custos e lucro";
+  bloco.appendChild(titulo);
+
+  const linha = document.createElement("div");
+  linha.className = "linha-custos";
+
+  // Campo de custo (Impressão ou Costureira) que recalcula o lucro ao digitar.
+  const campoCusto = (rotulo, chave) => {
+    const wrap = document.createElement("div");
+    wrap.className = "campo-custo";
+    const lbl = document.createElement("label");
+    lbl.textContent = rotulo + " (R$)";
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.min = "0";
+    inp.placeholder = "0,00";
+    inp.value = grupo[chave] != null ? grupo[chave] : "";
+    inp.oninput = () => {
+      const v = parseFloat(inp.value);
+      gruposTamanhoEdit[iGrupo][chave] = isNaN(v) ? null : v;
+      atualizarLucro();
+    };
+    wrap.appendChild(lbl);
+    wrap.appendChild(inp);
+    return wrap;
+  };
+
+  linha.appendChild(campoCusto("Impressão", "custoImpressao"));
+  linha.appendChild(campoCusto("Costureira", "custoCostureira"));
+
+  // Venda (somente leitura) — definida na aba Pagamentos.
+  const venda = Number(precosPorGrupoAtual[grupo.grupo] || 0);
+  const wrapVenda = document.createElement("div");
+  wrapVenda.className = "campo-custo";
+  const lblVenda = document.createElement("label");
+  lblVenda.textContent = "Venda (R$)";
+  const valVenda = document.createElement("div");
+  valVenda.className = "valor-venda";
+  valVenda.textContent = venda > 0 ? formatarReais(venda) : "—";
+  wrapVenda.appendChild(lblVenda);
+  wrapVenda.appendChild(valVenda);
+  linha.appendChild(wrapVenda);
+
+  // Lucro (somente leitura) = venda − impressão − costureira.
+  const wrapLucro = document.createElement("div");
+  wrapLucro.className = "campo-custo";
+  const lblLucro = document.createElement("label");
+  lblLucro.textContent = "Lucro (R$)";
+  const valLucro = document.createElement("div");
+  valLucro.className = "valor-lucro";
+  wrapLucro.appendChild(lblLucro);
+  wrapLucro.appendChild(valLucro);
+  linha.appendChild(wrapLucro);
+
+  function atualizarLucro() {
+    const imp = Number(gruposTamanhoEdit[iGrupo].custoImpressao || 0);
+    const cos = Number(gruposTamanhoEdit[iGrupo].custoCostureira || 0);
+    const lucro = venda - imp - cos;
+    valLucro.textContent = formatarReais(lucro);
+    valLucro.classList.toggle("negativo", lucro < 0);
+  }
+  atualizarLucro();
+
+  bloco.appendChild(linha);
+
+  if (venda <= 0) {
+    const aviso = document.createElement("small");
+    aviso.className = "pix-ajuda";
+    aviso.textContent = "Defina o preço de venda deste grupo na aba Pagamentos para calcular o lucro.";
+    bloco.appendChild(aviso);
+  }
+
+  return bloco;
 }
 
 elBtnAddGrupo.addEventListener("click", () => {
@@ -1116,10 +1210,16 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
 
   // Limpa e valida: remove tamanhos/grupos vazios e nomes em branco.
   const grupos = gruposTamanhoEdit
-    .map((g) => ({
-      grupo: g.grupo.trim(),
-      tamanhos: g.tamanhos.map((t) => t.trim()).filter(Boolean)
-    }))
+    .map((g) => {
+      const grupo = {
+        grupo: g.grupo.trim(),
+        tamanhos: g.tamanhos.map((t) => t.trim()).filter(Boolean)
+      };
+      // Guarda os custos só quando informados (número >= 0).
+      if (g.custoImpressao != null && !isNaN(g.custoImpressao)) grupo.custoImpressao = Number(g.custoImpressao);
+      if (g.custoCostureira != null && !isNaN(g.custoCostureira)) grupo.custoCostureira = Number(g.custoCostureira);
+      return grupo;
+    })
     .filter((g) => g.grupo && g.tamanhos.length > 0);
 
   if (grupos.length === 0) {

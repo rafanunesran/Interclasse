@@ -17,9 +17,14 @@ let GRUPOS_TAMANHO = clonarGrupos(TAMANHOS_PADRAO);
 // Lista simples de todos os tamanhos, na ordem de exibição do resumo.
 let TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
 
-// Cópia profunda simples dos grupos de tamanho.
+// Cópia profunda simples dos grupos de tamanho (preserva os custos, quando houver).
 function clonarGrupos(grupos) {
-  return grupos.map((g) => ({ grupo: g.grupo, tamanhos: [...g.tamanhos] }));
+  return grupos.map((g) => {
+    const copia = { grupo: g.grupo, tamanhos: [...g.tamanhos] };
+    if (g.custoImpressao != null) copia.custoImpressao = g.custoImpressao;
+    if (g.custoCostureira != null) copia.custoCostureira = g.custoCostureira;
+    return copia;
+  });
 }
 
 // Carrega os tamanhos salvos em config/tamanhos (se existirem) e atualiza

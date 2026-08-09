@@ -438,6 +438,56 @@ tr.duplicado td { background: #fef3c7; }
   font-size: 0.8rem;
 }
 
+/* Bloco de custos e lucro por grupo (editor de tamanhos). */
+.bloco-custos {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--cinza-borda);
+}
+.bloco-custos-titulo {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+.linha-custos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+.campo-custo {
+  flex: 1 1 110px;
+  min-width: 110px;
+}
+.campo-custo label {
+  margin-top: 0;
+}
+.campo-custo input {
+  padding: 8px;
+}
+.valor-venda,
+.valor-lucro {
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 6px;
+  background: var(--cinza-bg);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.valor-lucro {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+.valor-lucro.negativo {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
 /* Marcação "!" vermelha de ajuste solicitado. */
 .marca-ajuste {
   display: inline-flex;
