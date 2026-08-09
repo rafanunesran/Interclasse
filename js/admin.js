@@ -23,23 +23,10 @@ const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 
 let painelIniciado = false;
 
-// Guarda de acesso: o Firebase mantém a sessão salva no navegador, então
-// quem já entrou continua logado ao recarregar. Se não for a conta admin,
-// volta para a página de login.
-auth.onAuthStateChanged((user) => {
-  if (ehContaAdmin(user)) {
-    if (elEmailLogado) elEmailLogado.textContent = user.email;
-    elPainel.classList.remove("oculto");
-    if (!painelIniciado) {
-      painelIniciado = true;
-      escutarTurmas();
-      carregarPainelConfig();
-    }
-  } else {
-    elPainel.classList.add("oculto");
-    window.location.replace(PAGINA_LOGIN);
-  }
-});
+// NOTE: A guarda de acesso (auth.onAuthStateChanged) fica no FIM do arquivo.
+// Motivo: com sessão salva, o callback dispara imediatamente ao registrar; se
+// registrado aqui no topo, ele rodaria antes das declarações let/const abaixo
+// (painelConfigCarregado, elKanban, etc.), causando erro de "temporal dead zone".
 
 if (elBtnSairAdmin) {
   elBtnSairAdmin.addEventListener("click", async () => {
@@ -1302,5 +1289,26 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
       "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/tamanhos (ver firestore.rules).",
       "erro"
     );
+  }
+});
+
+// ============================================================
+// GUARDA DE ACESSO (fica no FIM: ver NOTE no topo do arquivo)
+// O Firebase mantém a sessão salva; com sessão ativa, este callback dispara
+// assim que é registrado. Ficando no fim, todas as declarações let/const já
+// foram inicializadas quando ele roda.
+// ============================================================
+auth.onAuthStateChanged((user) => {
+  if (ehContaAdmin(user)) {
+    if (elEmailLogado) elEmailLogado.textContent = user.email;
+    elPainel.classList.remove("oculto");
+    if (!painelIniciado) {
+      painelIniciado = true;
+      escutarTurmas();
+      carregarPainelConfig();
+    }
+  } else {
+    elPainel.classList.add("oculto");
+    window.location.replace(PAGINA_LOGIN);
   }
 });
