@@ -23,10 +23,27 @@ const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 
 let painelIniciado = false;
 
-// NOTE: A guarda de acesso (auth.onAuthStateChanged) fica no FIM do arquivo.
-// Motivo: com sessão salva, o callback dispara imediatamente ao registrar; se
-// registrado aqui no topo, ele rodaria antes das declarações let/const abaixo
-// (painelConfigCarregado, elKanban, etc.), causando erro de "temporal dead zone".
+// Guarda de acesso: o Firebase mantém a sessão salva; com sessão ativa, este
+// callback dispara assim que é registrado. A inicialização do painel
+// (escutarTurmas/carregarPainelConfig) é adiada com setTimeout para garantir
+// que as declarações let/const do fim do arquivo (painelConfigCarregado,
+// elKanban, etc.) já estejam inicializadas quando rodarem (evita "TDZ").
+auth.onAuthStateChanged((user) => {
+  if (ehContaAdmin(user)) {
+    if (elEmailLogado) elEmailLogado.textContent = user.email;
+    elPainel.classList.remove("oculto");
+    if (!painelIniciado) {
+      painelIniciado = true;
+      setTimeout(() => {
+        escutarTurmas();
+        carregarPainelConfig();
+      }, 0);
+    }
+  } else {
+    elPainel.classList.add("oculto");
+    window.location.replace(PAGINA_LOGIN);
+  }
+});
 
 if (elBtnSairAdmin) {
   elBtnSairAdmin.addEventListener("click", async () => {
@@ -1292,23 +1309,3 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
   }
 });
 
-// ============================================================
-// GUARDA DE ACESSO (fica no FIM: ver NOTE no topo do arquivo)
-// O Firebase mantém a sessão salva; com sessão ativa, este callback dispara
-// assim que é registrado. Ficando no fim, todas as declarações let/const já
-// foram inicializadas quando ele roda.
-// ============================================================
-auth.onAuthStateChanged((user) => {
-  if (ehContaAdmin(user)) {
-    if (elEmailLogado) elEmailLogado.textContent = user.email;
-    elPainel.classList.remove("oculto");
-    if (!painelIniciado) {
-      painelIniciado = true;
-      escutarTurmas();
-      carregarPainelConfig();
-    }
-  } else {
-    elPainel.classList.add("oculto");
-    window.location.replace(PAGINA_LOGIN);
-  }
-});
