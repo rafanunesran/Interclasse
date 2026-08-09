@@ -199,17 +199,6 @@ function formatarReais(valor) {
   return "R$ " + Number(valor || 0).toFixed(2).replace(".", ",");
 }
 
-// Custo interno (impressão + costureira) do tamanho, a partir do mapa por grupo.
-function custoDoTamanho(tamanho, custosPorGrupo) {
-  if (!custosPorGrupo) return 0;
-  const grupo = GRUPOS_TAMANHO.find((g) => g.tamanhos.includes(tamanho));
-  if (grupo && custosPorGrupo[grupo.grupo]) {
-    const c = custosPorGrupo[grupo.grupo];
-    return (Number(c.impressao) || 0) + (Number(c.costureira) || 0);
-  }
-  return 0;
-}
-
 // Retorna o HTML do badge de status de pagamento de um aluno.
 function badgePagamentoHtml(aluno) {
   if (aluno.pago) {

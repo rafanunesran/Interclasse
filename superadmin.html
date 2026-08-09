@@ -24,10 +24,8 @@
 
     <nav class="abas-admin">
       <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
-      <button type="button" class="aba" data-aba="kanban">Kanban</button>
       <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
       <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
-      <button type="button" class="aba" data-aba="relatorios">Relatórios</button>
       <button type="button" class="aba" data-aba="config">Configurações</button>
     </nav>
 
@@ -51,12 +49,6 @@
       <div id="listaTurmasAdmin"></div>
     </section>
 
-    <!-- ABA: KANBAN (pedidos por status) -->
-    <section id="aba-kanban" class="secao-aba oculto">
-      <p>Arraste o card da turma entre as colunas (ou use o seletor no card) para mudar o status. Os valores consideram o preço por grupo de tamanho.</p>
-      <div id="kanban" class="kanban"></div>
-    </section>
-
     <!-- ABA: TAMANHOS -->
     <section id="aba-tamanhos" class="secao-aba oculto">
       <div class="card">
@@ -69,14 +61,6 @@
           <button type="button" id="btnRestaurarTamanhos" class="secundario">Restaurar padrão</button>
         </div>
         <p id="msgTamanhos" class="oculto"></p>
-      </div>
-
-      <div class="card">
-        <h2>Custos e lucro por grupo</h2>
-        <p>Informe o custo de <strong>Impressão</strong> e <strong>Costureira</strong> por camiseta de cada grupo. O <strong>Lucro</strong> é calculado automaticamente (preço de venda − impressão − costureira). O preço de venda é o definido na aba <strong>Pagamentos</strong>.</p>
-        <div id="custosPorGrupo"></div>
-        <button type="button" id="btnSalvarCustos" class="primario">Salvar custos</button>
-        <p id="msgCustos" class="oculto"></p>
       </div>
     </section>
 
@@ -117,17 +101,6 @@
         <h2>Status de pagamento</h2>
         <p>O status de cada aluno (Pendente / Aguardando / Pago) fica na lista de cada turma, na aba <strong>Inicial</strong> (botão "Ver lista"). Lá você marca manualmente pagamentos em dinheiro e confirma os PIX.</p>
         <div id="resumoPagamentos"></div>
-      </div>
-    </section>
-
-    <!-- ABA: RELATÓRIOS (faturamento do mês) -->
-    <section id="aba-relatorios" class="secao-aba oculto">
-      <div class="card">
-        <h2>Faturamento por mês</h2>
-        <p>Considera as camisetas <strong>pagas</strong> em cada mês (pela data de confirmação do pagamento). Receita = preço de venda; custo = impressão + costureira; lucro = receita − custo.</p>
-        <label for="mesRelatorio">Mês</label>
-        <select id="mesRelatorio"></select>
-        <div id="relatorioResultado"></div>
       </div>
     </section>
 
