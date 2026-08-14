@@ -356,6 +356,11 @@ tr.duplicado td { background: #fef3c7; }
   border: 1px solid var(--cinza-borda);
 }
 .bloco-imagem-admin button { margin-top: 0; }
+.check-marca {
+  margin-top: 0;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
 
 /* Barra superior do painel administrativo (identificação + sair). */
 .barra-admin {

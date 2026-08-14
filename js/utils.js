@@ -279,8 +279,42 @@ function renderizarBarraStatus(container, statusId) {
 // IMAGEM DA CAMISETA (Google Drive via Apps Script)
 // ============================================================
 
+// Desenha uma marca d'água diagonal repetida sobre o canvas (para a imagem
+// de referência). Texto branco semitransparente com contorno escuro para
+// ficar legível em qualquer fundo.
+function desenharMarcaDagua(ctx, w, h, texto) {
+  texto = (texto || "REFERÊNCIA").toUpperCase();
+  ctx.save();
+  const fonte = Math.max(16, Math.round(w / 14));
+  ctx.font = `700 ${fonte}px -apple-system, "Segoe UI", Roboto, Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
+  ctx.lineWidth = Math.max(1, fonte / 12);
+
+  // Gira em torno do centro para o texto ficar na diagonal.
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 6); // -30 graus
+  ctx.translate(-w / 2, -h / 2);
+
+  const passoX = ctx.measureText(texto).width + fonte * 2;
+  const passoY = fonte * 3;
+  // Cobre uma área maior que o canvas para preencher os cantos após girar.
+  for (let y = -h; y < h * 2; y += passoY) {
+    for (let x = -w; x < w * 2; x += passoX) {
+      ctx.strokeText(texto, x, y);
+      ctx.fillText(texto, x, y);
+    }
+  }
+  ctx.restore();
+}
+
 // Reduz a imagem para no máximo `maxLargura` px e devolve base64 (JPEG, sem prefixo).
-function redimensionarImagemBase64(file, maxLargura) {
+// `opcoes.marcaDagua` (bool) aplica a marca d'água; `opcoes.textoMarca` personaliza o texto.
+function redimensionarImagemBase64(file, maxLargura, opcoes) {
+  opcoes = opcoes || {};
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -292,7 +326,9 @@ function redimensionarImagemBase64(file, maxLargura) {
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      if (opcoes.marcaDagua) desenharMarcaDagua(ctx, w, h, opcoes.textoMarca);
       resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
     };
     img.onerror = () => {
@@ -304,8 +340,9 @@ function redimensionarImagemBase64(file, maxLargura) {
 }
 
 // Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
-async function enviarImagemDrive(scriptUrl, turmaId, file) {
-  const dataBase64 = await redimensionarImagemBase64(file, 1200);
+// `opcoes` é repassado ao redimensionamento (ex.: { marcaDagua: true }).
+async function enviarImagemDrive(scriptUrl, turmaId, file, opcoes) {
+  const dataBase64 = await redimensionarImagemBase64(file, 1200, opcoes);
   const resp = await fetch(scriptUrl, {
     method: "POST",
     // text/plain (padrão do fetch com string) evita o preflight de CORS do Apps Script.
