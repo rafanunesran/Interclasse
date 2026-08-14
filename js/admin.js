@@ -768,6 +768,16 @@ function criarBlocoImagemTurma(turmaId, turma) {
   inputImg.accept = "image/*";
   inputImg.style.display = "none";
 
+  // Checkbox: marca d'água para a imagem de referência. Marcado por padrão;
+  // desmarque antes de enviar a imagem oficial para subir sem marca.
+  const lblMarca = document.createElement("label");
+  lblMarca.className = "checkbox-inline check-marca";
+  const chkMarca = document.createElement("input");
+  chkMarca.type = "checkbox";
+  chkMarca.checked = true;
+  lblMarca.appendChild(chkMarca);
+  lblMarca.appendChild(document.createTextNode(" Marca d'água (imagem de referência)"));
+
   const btnImg = document.createElement("button");
   btnImg.className = "secundario";
   btnImg.textContent = turma.imagemUrl ? "Trocar imagem" : "Enviar imagem da camiseta";
@@ -782,11 +792,12 @@ function criarBlocoImagemTurma(turmaId, turma) {
   inputImg.onchange = async () => {
     const file = inputImg.files[0];
     if (!file) return;
+    const comMarca = chkMarca.checked;
     btnImg.disabled = true;
     const antes = btnImg.textContent;
-    btnImg.textContent = "Enviando…";
+    btnImg.textContent = comMarca ? "Enviando (com marca)…" : "Enviando…";
     try {
-      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file);
+      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file, { marcaDagua: comMarca });
       await db.collection("turmas").doc(turmaId).update({ imagemUrl: url });
     } catch (e) {
       console.error(e);
@@ -798,6 +809,7 @@ function criarBlocoImagemTurma(turmaId, turma) {
     }
   };
 
+  bloco.appendChild(lblMarca);
   bloco.appendChild(btnImg);
 
   if (turma.imagemUrl) {
