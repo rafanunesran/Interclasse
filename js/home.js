@@ -45,8 +45,14 @@ async function carregarTurmas() {
 
       const acao = statusId === "aberto" ? "Cadastrar lista →" : "Ver detalhes";
 
+      const marcaOverlay = turma.marcaDagua === true
+        ? '<span class="marca-overlay" aria-hidden="true"></span>'
+        : "";
       const imagem = turma.imagemUrl
-        ? `<img class="turma-card-img" src="${encodeURI(turma.imagemUrl)}" alt="Camiseta de ${escaparHtml(turma.nome)}" />`
+        ? `<span class="wrap-imagem wrap-imagem-card">
+             <img class="turma-card-img img-na-marca" src="${encodeURI(turma.imagemUrl)}" alt="Camiseta de ${escaparHtml(turma.nome)}" />
+             ${marcaOverlay}
+           </span>`
         : "";
 
       item.innerHTML = `
