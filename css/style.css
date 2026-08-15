@@ -125,6 +125,7 @@ tr.duplicado td { background: #fef3c7; }
 .badge.aguardando { background: #fef3c7; color: #92400e; }
 .badge.pendente { background: #e5e7eb; color: #374151; }
 .badge.suspenso { background: #ffedd5; color: #9a3412; }
+.badge.interno { background: #ede9fe; color: #5b21b6; }
 
 /* Barra de acompanhamento do pedido (etapas). */
 .barra-status {
@@ -746,6 +747,7 @@ tr.linha-ajuste td { background: #fef2f2; }
 .fin-card-azul { border-left: 5px solid var(--azul); }
 .fin-card-verde { border-left: 5px solid var(--verde); }
 .fin-card-vermelho { border-left: 5px solid var(--vermelho); }
+.fin-card-interno { border-left: 5px solid #7c3aed; }
 .fin-rotulo {
   font-size: 0.78rem;
   font-weight: 700;
