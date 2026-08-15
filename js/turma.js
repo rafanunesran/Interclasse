@@ -145,7 +145,8 @@ function atualizarBadge() {
 function atualizarVisibilidade() {
   const aberto = pedidoAberto(turmaAtual);
   const suspenso = pedidoSuspenso(turmaAtual);
-  const podeEditar = desbloqueado && aberto && cadastrosGlobaisAbertos;
+  const aceitaCadastro = pedidoAceitaCadastro(turmaAtual); // aberto/fechado/pagamento
+  const podeEditar = desbloqueado && aceitaCadastro && cadastrosGlobaisAbertos;
 
   elCardSenha.classList.toggle("oculto", desbloqueado);
   elBlocoCadastro.classList.toggle("oculto", !podeEditar);
@@ -156,12 +157,13 @@ function atualizarVisibilidade() {
       elDataLimite.value = turmaAtual.dataLimite || "";
     }
   }
-  // Mensagem de suspenso tem prioridade sobre a de "fechado".
+  // Mensagem de suspenso tem prioridade sobre a de "lista travada".
   if (elMensagemSuspenso) elMensagemSuspenso.classList.toggle("oculto", !suspenso);
-  elMensagemFechado.classList.toggle("oculto", aberto || suspenso);
+  // "Não é mais possível editar" só quando a lista realmente travou (pagamento encerrado+).
+  elMensagemFechado.classList.toggle("oculto", aceitaCadastro || suspenso);
   if (elMensagemGlobalFechado) {
-    // Só mostra o aviso global quando a turma em si está aberta (para não duplicar avisos).
-    elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || !aberto);
+    // Aviso global só quando a turma aceitaria cadastro, mas o admin fechou tudo.
+    elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || !aceitaCadastro);
   }
 
   renderizarTabela(); // re-render para mostrar/esconder botões de ação
@@ -209,7 +211,7 @@ function escutarAlunos() {
 }
 
 function renderizarTabela() {
-  const podeEditar = desbloqueado && pedidoAberto(turmaAtual) && cadastrosGlobaisAbertos;
+  const podeEditar = desbloqueado && pedidoAceitaCadastro(turmaAtual) && cadastrosGlobaisAbertos;
 
   // Conta ocorrências de cada número (ignorando vazios) para destacar duplicados
   const contagemNumero = {};
@@ -250,24 +252,38 @@ function renderizarTabela() {
 
     const tdAcoes = tr.querySelector(".acoes-linha");
 
-    if (podeEditar) {
-      const btnEditar = document.createElement("button");
-      btnEditar.textContent = "Editar";
-      btnEditar.className = "secundario";
-      btnEditar.onclick = () => editarLinha(tr, aluno);
+    if (!pedidoSuspenso(turmaAtual)) {
+      // Editar/excluir: liberado enquanto a lista aceita cadastro
+      // (aberto, fechado e pagamento em andamento).
+      if (podeEditar) {
+        const btnEditar = document.createElement("button");
+        btnEditar.textContent = "Editar";
+        btnEditar.className = "secundario";
+        btnEditar.onclick = () => editarLinha(tr, aluno);
 
-      const btnExcluir = document.createElement("button");
-      btnExcluir.textContent = "Excluir";
-      btnExcluir.className = "perigo";
-      btnExcluir.onclick = () => excluirAluno(aluno);
+        const btnExcluir = document.createElement("button");
+        btnExcluir.textContent = "Excluir";
+        btnExcluir.className = "perigo";
+        btnExcluir.onclick = () => excluirAluno(aluno);
 
-      tdAcoes.appendChild(btnEditar);
-      tdAcoes.appendChild(btnExcluir);
-    } else if (!pedidoAberto(turmaAtual) && !pedidoSuspenso(turmaAtual)) {
-      // Pedido fechado (mas não suspenso): o representante não edita mais, porém
-      // ainda pode solicitar ajuste e pagar. Suspenso bloqueia tudo isso.
-      // "Solicitar ajuste" só enquanto NÃO estiver pago.
-      if (!aluno.pago) {
+        tdAcoes.appendChild(btnEditar);
+        tdAcoes.appendChild(btnExcluir);
+      }
+
+      // Pagar: disponível nas etapas de pagamento (fechado / em andamento),
+      // se houver PIX estático ou Mercado Pago e o aluno ainda não estiver pago.
+      const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
+      if (pedidoAceitaPagamento(turmaAtual) && !aluno.pago && (configGeral.pixChave || temMp)) {
+        const btnPagar = document.createElement("button");
+        btnPagar.className = "primario";
+        btnPagar.textContent = "Pagar";
+        btnPagar.onclick = () => abrirPagamentoPix(aluno);
+        tdAcoes.appendChild(btnPagar);
+      }
+
+      // Solicitar ajuste: só quando a lista já travou (pagamento encerrado+)
+      // e o aluno ainda não está pago — pois aí não dá mais para editar direto.
+      if (!pedidoAceitaCadastro(turmaAtual) && !aluno.pago) {
         const btnAjuste = document.createElement("button");
         btnAjuste.className = "secundario";
         if (aluno.ajusteSolicitado) {
@@ -278,17 +294,6 @@ function renderizarTabela() {
           btnAjuste.onclick = () => solicitarAjuste(aluno);
         }
         tdAcoes.appendChild(btnAjuste);
-      }
-
-      // Botão de pagamento: aparece se houver PIX estático configurado OU
-      // se o Mercado Pago estiver ativo, e o aluno ainda não estiver pago.
-      const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
-      if (!aluno.pago && (configGeral.pixChave || temMp)) {
-        const btnPagar = document.createElement("button");
-        btnPagar.className = "primario";
-        btnPagar.textContent = "Pagar";
-        btnPagar.onclick = () => abrirPagamentoPix(aluno);
-        tdAcoes.appendChild(btnPagar);
       }
     }
 
@@ -326,8 +331,9 @@ function escapeHtml(texto) {
 elFormAluno.addEventListener("submit", async (ev) => {
   ev.preventDefault();
 
-  // Segurança: só cadastra com o pedido aberto e cadastros liberados.
-  if (!pedidoAberto(turmaAtual) || !cadastrosGlobaisAbertos) {
+  // Segurança: só cadastra enquanto a lista aceita nomes (aberto/fechado/
+  // pagamento em andamento) e os cadastros globais estão liberados.
+  if (!pedidoAceitaCadastro(turmaAtual) || !cadastrosGlobaisAbertos) {
     alert("Os cadastros estão fechados para esta turma no momento.");
     return;
   }

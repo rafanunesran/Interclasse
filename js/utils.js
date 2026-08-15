@@ -260,6 +260,20 @@ function pedidoSuspenso(turma) {
   return statusPedidoDe(turma) === "suspenso";
 }
 
+// Etapas em que o representante ainda pode ADICIONAR/EDITAR nomes na lista.
+// A lista só trava de verdade quando o pagamento encerra (pagamento_encerrado
+// em diante). "Suspenso" fica de fora (bloqueia tudo).
+function pedidoAceitaCadastro(turma) {
+  const s = statusPedidoDe(turma);
+  return s === "aberto" || s === "fechado" || s === "pagamento_andamento";
+}
+
+// Etapas em que o representante pode PAGAR (fechado e pagamento em andamento).
+function pedidoAceitaPagamento(turma) {
+  const s = statusPedidoDe(turma);
+  return s === "fechado" || s === "pagamento_andamento";
+}
+
 // Classe CSS do badge conforme o status (usada em todas as telas).
 function classeBadgeStatus(statusId) {
   if (statusId === "aberto") return "aberto";
