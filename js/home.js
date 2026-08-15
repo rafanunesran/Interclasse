@@ -40,7 +40,7 @@ async function carregarTurmas() {
       item.href = "turma.html?id=" + encodeURIComponent(doc.id);
 
       const statusId = statusPedidoDe(turma);
-      const classeBadge = statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado";
+      const classeBadge = classeBadgeStatus(statusId);
       const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
 
       const acao = statusId === "aberto" ? "Cadastrar lista →" : "Ver detalhes";
