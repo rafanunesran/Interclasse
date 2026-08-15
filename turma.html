@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Turma — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/style.css?v=20260815b" />
 </head>
 <body>
 
@@ -20,7 +20,10 @@
     <h2 id="nomeTurma">Carregando...</h2>
     <span id="badgeStatus" class="badge"></span>
     <p id="infoDataLimite" class="pix-ajuda oculto"></p>
-    <img id="imagemTurma" class="imagem-turma oculto" alt="Imagem da camiseta desta turma" />
+    <span id="wrapImagemTurma" class="wrap-imagem oculto">
+      <img id="imagemTurma" class="imagem-turma img-na-marca" alt="Imagem da camiseta desta turma" />
+      <span id="marcaImagemTurma" class="marca-overlay oculto" aria-hidden="true"></span>
+    </span>
     <div id="barraStatus"></div>
     <p id="mensagemFechado" class="aviso oculto">
       Este pedido já foi fechado. Não é mais possível editar a lista. Se precisar corrigir algo, fale com a coordenação do interclasse.
@@ -122,7 +125,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js"></script>
-<script src="js/turma.js"></script>
+<script src="js/utils.js?v=20260815b"></script>
+<script src="js/turma.js?v=20260815b"></script>
 </body>
 </html>

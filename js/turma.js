@@ -27,6 +27,8 @@ const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
 const elBarraStatus = document.getElementById("barraStatus");
 const elImagemTurma = document.getElementById("imagemTurma");
+const elWrapImagemTurma = document.getElementById("wrapImagemTurma");
+const elMarcaImagemTurma = document.getElementById("marcaImagemTurma");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
@@ -113,12 +115,16 @@ function atualizarBadge() {
   renderizarBarraStatus(elBarraStatus, statusId);
 
   // Imagem da camiseta (referência para os alunos).
-  if (elImagemTurma) {
+  if (elImagemTurma && elWrapImagemTurma) {
     if (turmaAtual.imagemUrl) {
       elImagemTurma.src = turmaAtual.imagemUrl;
-      elImagemTurma.classList.remove("oculto");
+      elWrapImagemTurma.classList.remove("oculto");
+      // Marca d'água sobreposta (não altera o arquivo), conforme o flag da turma.
+      if (elMarcaImagemTurma) {
+        elMarcaImagemTurma.classList.toggle("oculto", turmaAtual.marcaDagua !== true);
+      }
     } else {
-      elImagemTurma.classList.add("oculto");
+      elWrapImagemTurma.classList.add("oculto");
       elImagemTurma.removeAttribute("src");
     }
   }

@@ -760,7 +760,8 @@ function criarBlocoImagemTurma(turmaId, turma) {
     thumb.className = "thumb-camiseta";
     thumb.src = turma.imagemUrl;
     thumb.alt = "Imagem da camiseta";
-    bloco.appendChild(thumb);
+    // Sobrepõe a marca d'água (sem alterar o arquivo) quando ativada na turma.
+    bloco.appendChild(envolverImagemComMarca(thumb, turma.marcaDagua === true));
   }
 
   const inputImg = document.createElement("input");
@@ -768,20 +769,22 @@ function criarBlocoImagemTurma(turmaId, turma) {
   inputImg.accept = "image/*";
   inputImg.style.display = "none";
 
-  // Checkbox: marca d'água para a imagem de referência. Marcado por padrão;
-  // desmarque antes de enviar a imagem oficial para subir sem marca.
+  // Checkbox: liga/desliga a marca d'água SOBREPOSTA (não altera o arquivo).
+  // Vale na hora e para imagens já enviadas — é só uma camada na exibição.
   const lblMarca = document.createElement("label");
   lblMarca.className = "checkbox-inline check-marca";
   const chkMarca = document.createElement("input");
   chkMarca.type = "checkbox";
-  chkMarca.checked = true;
+  chkMarca.checked = turma.marcaDagua === true;
+  chkMarca.onchange = () => {
+    // Atualiza o estado local na hora e persiste o flag na turma.
+    if (estadoTurmas[turmaId]) estadoTurmas[turmaId].turma.marcaDagua = chkMarca.checked;
+    db.collection("turmas").doc(turmaId).update({ marcaDagua: chkMarca.checked })
+      .then(() => renderizarTurmasAdmin())
+      .catch((e) => console.error("Falha ao salvar a marca d'água:", e));
+  };
   lblMarca.appendChild(chkMarca);
-  lblMarca.appendChild(document.createTextNode(" Marca d'água (imagem de referência)"));
-
-  // Preview grande da imagem já processada (mostra a marca antes de confiar no Drive).
-  const preview = document.createElement("img");
-  preview.className = "preview-camiseta oculto";
-  preview.alt = "Prévia da imagem a enviar";
+  lblMarca.appendChild(document.createTextNode(" Marca d'água de referência (sobreposta)"));
 
   const btnImg = document.createElement("button");
   btnImg.className = "secundario";
@@ -797,18 +800,11 @@ function criarBlocoImagemTurma(turmaId, turma) {
   inputImg.onchange = async () => {
     const file = inputImg.files[0];
     if (!file) return;
-    const comMarca = chkMarca.checked;
     btnImg.disabled = true;
     const antes = btnImg.textContent;
-    btnImg.textContent = "Processando…";
+    btnImg.textContent = "Enviando…";
     try {
-      // Processa a imagem uma vez (com/sem marca) e mostra a prévia.
-      const dataBase64 = await redimensionarImagemBase64(file, 1200, { marcaDagua: comMarca });
-      preview.src = "data:image/jpeg;base64," + dataBase64;
-      preview.classList.remove("oculto");
-      // Envia exatamente o que está na prévia.
-      btnImg.textContent = comMarca ? "Enviando (com marca)…" : "Enviando…";
-      const url = await enviarImagemBase64Drive(driveScriptUrl, turmaId, dataBase64);
+      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file);
       await db.collection("turmas").doc(turmaId).update({ imagemUrl: url });
     } catch (e) {
       console.error(e);
@@ -822,7 +818,6 @@ function criarBlocoImagemTurma(turmaId, turma) {
 
   bloco.appendChild(lblMarca);
   bloco.appendChild(btnImg);
-  bloco.appendChild(preview);
 
   if (turma.imagemUrl) {
     const btnRemover = document.createElement("button");

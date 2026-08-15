@@ -279,44 +279,26 @@ function renderizarBarraStatus(container, statusId) {
 // IMAGEM DA CAMISETA (Google Drive via Apps Script)
 // ============================================================
 
-// Desenha uma marca d'água diagonal repetida sobre o canvas (para a imagem
-// de referência). Texto branco semitransparente com contorno escuro para
-// ficar legível em qualquer fundo.
-function desenharMarcaDagua(ctx, w, h, texto) {
-  texto = (texto || "REFERÊNCIA").toUpperCase();
-  ctx.save();
-  const fonte = Math.max(18, Math.round(w / 12));
-  ctx.font = `800 ${fonte}px -apple-system, "Segoe UI", Roboto, Arial, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.lineWidth = Math.max(2, fonte / 10);
-  // Opacidade embutida nas cores (sem globalAlpha, que atenuaria em dobro).
-  const corPreenchimento = "rgba(255, 255, 255, 0.55)";
-  const corContorno = "rgba(0, 0, 0, 0.45)";
-
-  // Gira em torno do centro para o texto ficar na diagonal.
-  ctx.translate(w / 2, h / 2);
-  ctx.rotate(-Math.PI / 6); // -30 graus
-  ctx.translate(-w / 2, -h / 2);
-
-  const passoX = ctx.measureText(texto).width + fonte * 1.5;
-  const passoY = fonte * 2.6;
-  // Cobre uma área maior que o canvas para preencher os cantos após girar.
-  for (let y = -h; y < h * 2; y += passoY) {
-    for (let x = -w; x < w * 2; x += passoX) {
-      ctx.strokeStyle = corContorno;
-      ctx.strokeText(texto, x, y);
-      ctx.fillStyle = corPreenchimento;
-      ctx.fillText(texto, x, y);
-    }
+// Marca d'água por SOBREPOSIÇÃO (não altera o arquivo). Envolve uma <img>
+// num wrapper posicionado e, quando `comMarca`, adiciona uma camada com o
+// texto "REFERÊNCIA" repetido em diagonal (definida em CSS: .marca-overlay).
+// Vale para qualquer imagem, inclusive as já enviadas ao Drive.
+function envolverImagemComMarca(imgEl, comMarca) {
+  const wrap = document.createElement("span");
+  wrap.className = "wrap-imagem";
+  imgEl.classList.add("img-na-marca");
+  wrap.appendChild(imgEl);
+  if (comMarca) {
+    const camada = document.createElement("span");
+    camada.className = "marca-overlay";
+    camada.setAttribute("aria-hidden", "true");
+    wrap.appendChild(camada);
   }
-  ctx.restore();
+  return wrap;
 }
 
 // Reduz a imagem para no máximo `maxLargura` px e devolve base64 (JPEG, sem prefixo).
-// `opcoes.marcaDagua` (bool) aplica a marca d'água; `opcoes.textoMarca` personaliza o texto.
-function redimensionarImagemBase64(file, maxLargura, opcoes) {
-  opcoes = opcoes || {};
+function redimensionarImagemBase64(file, maxLargura) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -328,9 +310,7 @@ function redimensionarImagemBase64(file, maxLargura, opcoes) {
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-      if (opcoes.marcaDagua) desenharMarcaDagua(ctx, w, h, opcoes.textoMarca);
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
     };
     img.onerror = () => {
@@ -359,9 +339,8 @@ async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64) {
 }
 
 // Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
-// `opcoes` é repassado ao redimensionamento (ex.: { marcaDagua: true }).
-async function enviarImagemDrive(scriptUrl, turmaId, file, opcoes) {
-  const dataBase64 = await redimensionarImagemBase64(file, 1200, opcoes);
+async function enviarImagemDrive(scriptUrl, turmaId, file) {
+  const dataBase64 = await redimensionarImagemBase64(file, 1200);
   return enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64);
 }
 
