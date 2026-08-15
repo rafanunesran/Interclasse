@@ -229,7 +229,10 @@ const STATUS_PEDIDO = [
   { id: "impressao", label: "Impressão" },
   { id: "costura", label: "Costura" },
   { id: "logistica", label: "Logística" },
-  { id: "entregue", label: "Entregue ao representante" }
+  { id: "entregue", label: "Entregue ao representante" },
+  // Status especial (fora da linha do tempo): pausa tudo para os usuários —
+  // sem cadastrar/editar nomes e sem receber pagamento. Só o admin muda.
+  { id: "suspenso", label: "Suspenso" }
 ];
 
 // Status atual da turma (com compatibilidade para turmas antigas que só têm `fechado`).
@@ -252,6 +255,19 @@ function pedidoAberto(turma) {
   return statusPedidoDe(turma) === "aberto";
 }
 
+// Pedido suspenso: tudo bloqueado para os usuários (sem cadastro e sem pagamento).
+function pedidoSuspenso(turma) {
+  return statusPedidoDe(turma) === "suspenso";
+}
+
+// Classe CSS do badge conforme o status (usada em todas as telas).
+function classeBadgeStatus(statusId) {
+  if (statusId === "aberto") return "aberto";
+  if (statusId === "entregue") return "pago";
+  if (statusId === "suspenso") return "suspenso";
+  return "fechado";
+}
+
 // Se a turma tem data limite (string "YYYY-MM-DD") vencida e ainda está "aberto",
 // retorna "fechado" (fechamento automático). Caso contrário, null (sem mudança).
 function statusAutoPorData(turma) {
@@ -264,10 +280,21 @@ function statusAutoPorData(turma) {
 // Renderiza a barra de acompanhamento (etapas do pedido) em `container`.
 function renderizarBarraStatus(container, statusId) {
   if (!container) return;
-  const atual = indiceStatus(statusId);
   container.className = "barra-status";
   container.innerHTML = "";
+
+  // Suspenso não faz parte da linha do tempo: mostra um indicador destacado.
+  if (statusId === "suspenso") {
+    const etapa = document.createElement("span");
+    etapa.className = "status-etapa suspenso atual";
+    etapa.textContent = "⏸ Pedido suspenso";
+    container.appendChild(etapa);
+    return;
+  }
+
+  const atual = indiceStatus(statusId);
   STATUS_PEDIDO.forEach((s, i) => {
+    if (s.id === "suspenso") return; // fora da linha do tempo
     const etapa = document.createElement("span");
     etapa.className = "status-etapa" + (i < atual ? " concluida" : i === atual ? " atual" : "");
     etapa.textContent = s.label;

@@ -185,7 +185,7 @@ function renderizarTurmasAdmin() {
     }
 
     const statusId = statusPedidoDe(turma);
-    const classeBadge = statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado";
+    const classeBadge = classeBadgeStatus(statusId);
     const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
 
     const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;

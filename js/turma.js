@@ -25,6 +25,7 @@ const elAvisoDuplicado = document.getElementById("avisoDuplicado");
 const elBtnExportar = document.getElementById("btnExportar");
 const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
+const elMensagemSuspenso = document.getElementById("mensagemSuspenso");
 const elBarraStatus = document.getElementById("barraStatus");
 const elImagemTurma = document.getElementById("imagemTurma");
 const elWrapImagemTurma = document.getElementById("wrapImagemTurma");
@@ -109,8 +110,7 @@ async function aplicarFechamentoAutomatico() {
 function atualizarBadge() {
   const statusId = statusPedidoDe(turmaAtual);
   elBadgeStatus.textContent = labelStatus(statusId);
-  elBadgeStatus.className =
-    "badge " + (statusId === "aberto" ? "aberto" : statusId === "entregue" ? "pago" : "fechado");
+  elBadgeStatus.className = "badge " + classeBadgeStatus(statusId);
 
   renderizarBarraStatus(elBarraStatus, statusId);
 
@@ -144,6 +144,7 @@ function atualizarBadge() {
 
 function atualizarVisibilidade() {
   const aberto = pedidoAberto(turmaAtual);
+  const suspenso = pedidoSuspenso(turmaAtual);
   const podeEditar = desbloqueado && aberto && cadastrosGlobaisAbertos;
 
   elCardSenha.classList.toggle("oculto", desbloqueado);
@@ -155,7 +156,9 @@ function atualizarVisibilidade() {
       elDataLimite.value = turmaAtual.dataLimite || "";
     }
   }
-  elMensagemFechado.classList.toggle("oculto", aberto);
+  // Mensagem de suspenso tem prioridade sobre a de "fechado".
+  if (elMensagemSuspenso) elMensagemSuspenso.classList.toggle("oculto", !suspenso);
+  elMensagemFechado.classList.toggle("oculto", aberto || suspenso);
   if (elMensagemGlobalFechado) {
     // Só mostra o aviso global quando a turma em si está aberta (para não duplicar avisos).
     elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || !aberto);
@@ -260,8 +263,9 @@ function renderizarTabela() {
 
       tdAcoes.appendChild(btnEditar);
       tdAcoes.appendChild(btnExcluir);
-    } else if (!pedidoAberto(turmaAtual)) {
-      // Pedido fechado: o representante não edita mais.
+    } else if (!pedidoAberto(turmaAtual) && !pedidoSuspenso(turmaAtual)) {
+      // Pedido fechado (mas não suspenso): o representante não edita mais, porém
+      // ainda pode solicitar ajuste e pagar. Suspenso bloqueia tudo isso.
       // "Solicitar ajuste" só enquanto NÃO estiver pago.
       if (!aluno.pago) {
         const btnAjuste = document.createElement("button");
@@ -321,6 +325,12 @@ function escapeHtml(texto) {
 
 elFormAluno.addEventListener("submit", async (ev) => {
   ev.preventDefault();
+
+  // Segurança: só cadastra com o pedido aberto e cadastros liberados.
+  if (!pedidoAberto(turmaAtual) || !cadastrosGlobaisAbertos) {
+    alert("Os cadastros estão fechados para esta turma no momento.");
+    return;
+  }
 
   const nome = document.getElementById("nomeAluno").value.trim();
   const tamanho = document.getElementById("tamanho").value;
@@ -493,6 +503,11 @@ function definirStatusPix(texto, tipo) {
 }
 
 function abrirPagamentoPix(aluno) {
+  // Segurança: pedido suspenso não recebe pagamento.
+  if (pedidoSuspenso(turmaAtual)) {
+    alert("Os pagamentos estão temporariamente suspensos para esta turma.");
+    return;
+  }
   pixAlunoAtual = aluno;
 
   elPixAluno.textContent = `${aluno.nome} — tamanho ${aluno.tamanho}`;
@@ -607,6 +622,10 @@ if (elPixCopiar) {
 if (elPixJaPaguei) {
   elPixJaPaguei.addEventListener("click", async () => {
     if (!pixAlunoAtual) return;
+    if (pedidoSuspenso(turmaAtual)) {
+      alert("Os pagamentos estão temporariamente suspensos para esta turma.");
+      return;
+    }
     elPixJaPaguei.disabled = true;
     try {
       await db.collection("turmas").doc(turmaId).collection("alunos").doc(pixAlunoAtual.id).update({

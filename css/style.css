@@ -124,6 +124,7 @@ tr.duplicado td { background: #fef3c7; }
 .badge.pago { background: #dcfce7; color: #166534; }
 .badge.aguardando { background: #fef3c7; color: #92400e; }
 .badge.pendente { background: #e5e7eb; color: #374151; }
+.badge.suspenso { background: #ffedd5; color: #9a3412; }
 
 /* Barra de acompanhamento do pedido (etapas). */
 .barra-status {
@@ -153,6 +154,11 @@ tr.duplicado td { background: #fef3c7; }
   border-color: var(--azul);
   color: #fff;
   box-shadow: 0 2px 8px rgba(29, 78, 216, 0.3);
+}
+.status-etapa.suspenso.atual {
+  background: #ea580c;
+  border-color: #ea580c;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
 }
 
 .aviso {
