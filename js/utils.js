@@ -199,6 +199,18 @@ function precoDoTamanho(tamanho, precosPorGrupo) {
   return null;
 }
 
+// Grupo de tamanho ao qual um tamanho pertence (ou null).
+function grupoDoTamanho(tamanho) {
+  return GRUPOS_TAMANHO.find((g) => g.tamanhos.includes(tamanho)) || null;
+}
+
+// Custo unitário (Impressão + Costureira) de um tamanho, a partir dos grupos.
+function custoDoTamanho(tamanho) {
+  const grupo = grupoDoTamanho(tamanho);
+  if (!grupo) return 0;
+  return Number(grupo.custoImpressao || 0) + Number(grupo.custoCostureira || 0);
+}
+
 // Formata um número como moeda BRL (ex.: 45 -> "R$ 45,00").
 function formatarReais(valor) {
   return "R$ " + Number(valor || 0).toFixed(2).replace(".", ",");

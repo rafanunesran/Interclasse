@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260815d" />
+<link rel="stylesheet" href="css/style.css?v=20260815e" />
 </head>
 <body>
 
@@ -25,6 +25,7 @@
     <nav class="abas-admin">
       <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
       <button type="button" class="aba" data-aba="kanban">Kanban</button>
+      <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
       <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
       <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
       <button type="button" class="aba" data-aba="config">Configurações</button>
@@ -56,6 +57,18 @@
         <h2>Kanban de pedidos</h2>
         <p>Cada card é o pedido de uma turma. Arraste um card para outra coluna para mudar o status — ou use o seletor dentro do card (melhor no celular). A mudança vale na hora para todo o sistema.</p>
         <div id="kanbanBoard" class="kanban-board"></div>
+      </div>
+    </section>
+
+    <!-- ABA: FINANCEIRO (relatórios de faturamento) -->
+    <section id="aba-financeiro" class="secao-aba oculto">
+      <div class="card">
+        <div class="fin-cabecalho">
+          <h2>Financeiro</h2>
+          <button type="button" id="btnExportarFinanceiro" class="secundario">Exportar CSV</button>
+        </div>
+        <p>Relatórios de faturamento com base nos preços (aba Pagamentos) e nos custos por grupo (aba Tamanhos). Os valores atualizam em tempo real conforme os pagamentos entram.</p>
+        <div id="financeiroConteudo"></div>
       </div>
     </section>
 
@@ -157,8 +170,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260815d"></script>
+<script src="js/utils.js?v=20260815e"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260815d"></script>
+<script src="js/admin.js?v=20260815e"></script>
 </body>
 </html>
