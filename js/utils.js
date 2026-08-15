@@ -218,6 +218,10 @@ function formatarReais(valor) {
 
 // Retorna o HTML do badge de status de pagamento de um aluno.
 function badgePagamentoHtml(aluno) {
+  // Camiseta interna (produção própria): custo entra no financeiro, sem receita.
+  if (aluno.pago && aluno.pagamentoForma === "interno") {
+    return '<span class="badge interno">Interno</span>';
+  }
   if (aluno.pago) {
     const forma =
       aluno.pagamentoForma === "pix" ? " (PIX)" :
@@ -228,6 +232,11 @@ function badgePagamentoHtml(aluno) {
     return '<span class="badge aguardando">Aguardando confirmação</span>';
   }
   return '<span class="badge pendente">Pendente</span>';
+}
+
+// Camiseta interna: paga como "interno" (produção própria, sem receita).
+function ehInterno(aluno) {
+  return !!(aluno && aluno.pago && aluno.pagamentoForma === "interno");
 }
 
 // ============================================================

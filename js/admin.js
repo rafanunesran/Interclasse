@@ -325,8 +325,9 @@ function renderizarTurmasAdmin() {
         selPag.innerHTML =
           '<option value="pendente">Pendente</option>' +
           '<option value="pix">Pago (PIX)</option>' +
-          '<option value="dinheiro">Pago (dinheiro)</option>';
-        selPag.value = aluno.pago ? (aluno.pagamentoForma === "dinheiro" ? "dinheiro" : "pix") : "pendente";
+          '<option value="dinheiro">Pago (dinheiro)</option>' +
+          '<option value="interno">Interno (só custo)</option>';
+        selPag.value = aluno.pago ? (aluno.pagamentoForma || "pix") : "pendente";
         selPag.onchange = () => atualizarPagamento(turmaId, aluno.id, selPag.value);
         tdPag.appendChild(selPag);
         if (aluno.pagamentoDeclarado && !aluno.pago) {
@@ -594,20 +595,21 @@ function calcularFinanceiro() {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
     custos: 0, custosRecebido: 0,
     qtd: 0, qtdPagas: 0, qtdAguardando: 0, qtdPendentes: 0,
+    qtdInternas: 0, custoInterno: 0,
     porForma: { pix: 0, dinheiro: 0 },
     porTurma: [],
     porGrupo: {}
   };
 
   Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
-    const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, qtd: alunos.length, pagas: 0 };
+    const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
-      const venda = Number(precoDoTamanho(a.tamanho, precos) || 0);
-      const custo = custoDoTamanho(a.tamanho);
-      fin.previsto += venda;
+      const interno = ehInterno(a);
+      // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
+      const venda = interno ? 0 : Number(precoDoTamanho(a.tamanho, precos) || 0);
+      const custo = custoDoTamanho(a.tamanho); // custo entra sempre (a camiseta é produzida)
       fin.custos += custo;
       fin.qtd++;
-      t.previsto += venda;
       t.custos += custo;
 
       const g = grupoDoTamanho(a.tamanho);
@@ -616,6 +618,17 @@ function calcularFinanceiro() {
       fin.porGrupo[gnome].qtd++;
       fin.porGrupo[gnome].venda += venda;
       fin.porGrupo[gnome].custo += custo;
+
+      if (interno) {
+        // Só custo, sem receita e fora de previsto/recebido/a receber.
+        fin.qtdInternas++;
+        fin.custoInterno += custo;
+        t.internas++;
+        return;
+      }
+
+      fin.previsto += venda;
+      t.previsto += venda;
 
       if (a.pago) {
         fin.recebido += venda;
@@ -638,12 +651,13 @@ function calcularFinanceiro() {
     fin.porTurma.push(t);
   });
 
+  fin.qtdVendaveis = fin.qtd - fin.qtdInternas;
   fin.aReceber = fin.previsto - fin.recebido;
   fin.lucroPrevisto = fin.previsto - fin.custos;
   fin.lucroRealizado = fin.recebido - fin.custosRecebido;
   fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
   fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
-  fin.ticketMedio = fin.qtd > 0 ? fin.previsto / fin.qtd : 0;
+  fin.ticketMedio = fin.qtdVendaveis > 0 ? fin.previsto / fin.qtdVendaveis : 0;
 
   // Ordena as turmas por valor a receber (maior primeiro) — foco na cobrança.
   fin.porTurma.sort((a, b) => b.aReceber - a.aReceber);
@@ -703,7 +717,7 @@ function renderizarFinanceiro() {
       <div class="fin-card fin-card-azul">
         <span class="fin-rotulo">Vai chegar (previsto)</span>
         <span class="fin-valor">${formatarReais(f.previsto)}</span>
-        <span class="fin-sub">${f.qtd} camiseta(s) · ticket médio ${formatarReais(f.ticketMedio)}</span>
+        <span class="fin-sub">${f.qtdVendaveis} camiseta(s) vendável(is) · ticket médio ${formatarReais(f.ticketMedio)}</span>
       </div>
       <div class="fin-card fin-card-verde">
         <span class="fin-rotulo">Já chegou (recebido)</span>
@@ -735,18 +749,24 @@ function renderizarFinanceiro() {
       <div class="fin-card">
         <span class="fin-rotulo">Custos previstos</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
-        <span class="fin-sub">Impressão + Costureira</span>
+        <span class="fin-sub">Impressão + Costureira (todas as camisetas)</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Lucro previsto</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroPrevisto)}</span>
-        <span class="fin-sub">margem ${f.margem.toFixed(0)}%</span>
+        <span class="fin-sub">margem ${f.margem.toFixed(0)}% · já desconta as internas</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Lucro realizado</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroRealizado)}</span>
         <span class="fin-sub">sobre o que já chegou</span>
       </div>
+      ${f.qtdInternas > 0 ? `
+      <div class="fin-card fin-card-interno">
+        <span class="fin-rotulo">Camisetas internas</span>
+        <span class="fin-valor fin-valor-md">${f.qtdInternas} un</span>
+        <span class="fin-sub">custo ${formatarReais(f.custoInterno)} · sem receita</span>
+      </div>` : ""}
     </div>
 
     <!-- Forma de pagamento (do que já chegou) -->
