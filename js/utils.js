@@ -285,26 +285,28 @@ function renderizarBarraStatus(container, statusId) {
 function desenharMarcaDagua(ctx, w, h, texto) {
   texto = (texto || "REFERÊNCIA").toUpperCase();
   ctx.save();
-  const fonte = Math.max(16, Math.round(w / 14));
-  ctx.font = `700 ${fonte}px -apple-system, "Segoe UI", Roboto, Arial, sans-serif`;
+  const fonte = Math.max(18, Math.round(w / 12));
+  ctx.font = `800 ${fonte}px -apple-system, "Segoe UI", Roboto, Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.globalAlpha = 0.28;
-  ctx.fillStyle = "#ffffff";
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
-  ctx.lineWidth = Math.max(1, fonte / 12);
+  ctx.lineWidth = Math.max(2, fonte / 10);
+  // Opacidade embutida nas cores (sem globalAlpha, que atenuaria em dobro).
+  const corPreenchimento = "rgba(255, 255, 255, 0.55)";
+  const corContorno = "rgba(0, 0, 0, 0.45)";
 
   // Gira em torno do centro para o texto ficar na diagonal.
   ctx.translate(w / 2, h / 2);
   ctx.rotate(-Math.PI / 6); // -30 graus
   ctx.translate(-w / 2, -h / 2);
 
-  const passoX = ctx.measureText(texto).width + fonte * 2;
-  const passoY = fonte * 3;
+  const passoX = ctx.measureText(texto).width + fonte * 1.5;
+  const passoY = fonte * 2.6;
   // Cobre uma área maior que o canvas para preencher os cantos após girar.
   for (let y = -h; y < h * 2; y += passoY) {
     for (let x = -w; x < w * 2; x += passoX) {
+      ctx.strokeStyle = corContorno;
       ctx.strokeText(texto, x, y);
+      ctx.fillStyle = corPreenchimento;
       ctx.fillText(texto, x, y);
     }
   }
