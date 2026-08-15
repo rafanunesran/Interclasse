@@ -714,3 +714,91 @@ tr.linha-ajuste td { background: #fef2f2; }
   font-weight: 700;
   margin-top: 8px;
 }
+
+/* ============================================================
+   FINANCEIRO (aba do Super Admin)
+   ============================================================ */
+.fin-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fin-cabecalho h2 { margin: 0; }
+.fin-cabecalho button { margin: 0; }
+
+.fin-destaques {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.fin-card {
+  border: 1px solid var(--cinza-borda);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--branco);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fin-card-azul { border-left: 5px solid var(--azul); }
+.fin-card-verde { border-left: 5px solid var(--verde); }
+.fin-card-vermelho { border-left: 5px solid var(--vermelho); }
+.fin-rotulo {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.fin-valor {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--texto);
+}
+.fin-valor-md { font-size: 1.35rem; }
+.fin-sub { font-size: 0.8rem; color: #6b7280; }
+
+.fin-barra-wrap { margin: 4px 0 14px; }
+.fin-barra {
+  height: 14px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.fin-barra-fill {
+  height: 100%;
+  background: var(--verde);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.fin-barra-legenda {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.fin-titulo {
+  margin: 22px 0 6px;
+  font-size: 1rem;
+}
+
+.fin-tabela-wrap { overflow-x: auto; }
+.fin-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  min-width: 520px;
+}
+.fin-tabela th, .fin-tabela td {
+  border-bottom: 1px solid var(--cinza-borda);
+  text-align: left;
+  padding: 8px 6px;
+  white-space: nowrap;
+}
+.fin-tabela th { background: var(--cinza-bg); }
+.fin-verde { color: #166534; font-weight: 600; }
+.fin-vermelho { color: #991b1b; font-weight: 600; }

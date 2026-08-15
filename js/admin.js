@@ -377,6 +377,7 @@ function renderizarTurmasAdmin() {
 
   renderizarResumoPagamentos();
   renderizarKanban();
+  renderizarFinanceiro();
 }
 
 // Atualiza o status do pedido de uma turma (usado no seletor da aba Inicial
@@ -578,6 +579,234 @@ function renderizarResumoPagamentos() {
     </div>
   `;
 }
+
+// ============================================================
+// FINANCEIRO (relatórios de faturamento)
+// ============================================================
+
+// Percorre todas as turmas/alunos e calcula os números do financeiro.
+// venda = preço do tamanho (aba Pagamentos); custo = Impressão + Costureira
+// do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" = declarado mas
+// não confirmado; "pendente" = nem declarado.
+function calcularFinanceiro() {
+  const precos = precosPorGrupoAtual || {};
+  const fin = {
+    previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
+    custos: 0, custosRecebido: 0,
+    qtd: 0, qtdPagas: 0, qtdAguardando: 0, qtdPendentes: 0,
+    porForma: { pix: 0, dinheiro: 0 },
+    porTurma: [],
+    porGrupo: {}
+  };
+
+  Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
+    const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, qtd: alunos.length, pagas: 0 };
+    alunos.forEach((a) => {
+      const venda = Number(precoDoTamanho(a.tamanho, precos) || 0);
+      const custo = custoDoTamanho(a.tamanho);
+      fin.previsto += venda;
+      fin.custos += custo;
+      fin.qtd++;
+      t.previsto += venda;
+      t.custos += custo;
+
+      const g = grupoDoTamanho(a.tamanho);
+      const gnome = g ? g.grupo : "Sem grupo";
+      if (!fin.porGrupo[gnome]) fin.porGrupo[gnome] = { qtd: 0, venda: 0, custo: 0 };
+      fin.porGrupo[gnome].qtd++;
+      fin.porGrupo[gnome].venda += venda;
+      fin.porGrupo[gnome].custo += custo;
+
+      if (a.pago) {
+        fin.recebido += venda;
+        fin.custosRecebido += custo;
+        fin.qtdPagas++;
+        t.recebido += venda;
+        t.pagas++;
+        if (a.pagamentoForma === "dinheiro") fin.porForma.dinheiro += venda;
+        else fin.porForma.pix += venda;
+      } else if (a.pagamentoDeclarado) {
+        fin.aguardando += venda;
+        fin.qtdAguardando++;
+      } else {
+        fin.pendente += venda;
+        fin.qtdPendentes++;
+      }
+    });
+    t.aReceber = t.previsto - t.recebido;
+    t.lucro = t.previsto - t.custos;
+    fin.porTurma.push(t);
+  });
+
+  fin.aReceber = fin.previsto - fin.recebido;
+  fin.lucroPrevisto = fin.previsto - fin.custos;
+  fin.lucroRealizado = fin.recebido - fin.custosRecebido;
+  fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
+  fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
+  fin.ticketMedio = fin.qtd > 0 ? fin.previsto / fin.qtd : 0;
+
+  // Ordena as turmas por valor a receber (maior primeiro) — foco na cobrança.
+  fin.porTurma.sort((a, b) => b.aReceber - a.aReceber);
+  return fin;
+}
+
+let finUltimo = null; // guarda o último cálculo p/ exportar
+
+function renderizarFinanceiro() {
+  const el = document.getElementById("financeiroConteudo");
+  if (!el) return;
+
+  const f = calcularFinanceiro();
+  finUltimo = f;
+
+  if (f.qtd === 0) {
+    el.innerHTML = "<p>Nenhuma camiseta cadastrada ainda. Assim que houver pedidos, os números aparecem aqui.</p>";
+    return;
+  }
+
+  const semPrecos = f.previsto === 0;
+  const avisoPrecos = semPrecos
+    ? '<p class="aviso">Defina os preços por grupo na aba <strong>Pagamentos</strong> para ver os valores de faturamento.</p>'
+    : "";
+
+  const linhasTurma = f.porTurma.map((t) => {
+    const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
+    return `<tr>
+      <td>${escapeHtmlAdmin(t.nome)}</td>
+      <td>${t.qtd}</td>
+      <td>${formatarReais(t.previsto)}</td>
+      <td class="fin-verde">${formatarReais(t.recebido)}</td>
+      <td class="fin-vermelho">${formatarReais(t.aReceber)}</td>
+      <td>${pct}%</td>
+      <td>${formatarReais(t.lucro)}</td>
+    </tr>`;
+  }).join("");
+
+  const gruposOrdenados = Object.keys(f.porGrupo).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const linhasGrupo = gruposOrdenados.map((g) => {
+    const d = f.porGrupo[g];
+    const lucro = d.venda - d.custo;
+    return `<tr>
+      <td>${escapeHtmlAdmin(g)}</td>
+      <td>${d.qtd}</td>
+      <td>${formatarReais(d.venda)}</td>
+      <td>${formatarReais(d.custo)}</td>
+      <td>${formatarReais(lucro)}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    ${avisoPrecos}
+
+    <!-- Destaque principal: quanto vai chegar / já chegou / falta chegar -->
+    <div class="fin-destaques">
+      <div class="fin-card fin-card-azul">
+        <span class="fin-rotulo">Vai chegar (previsto)</span>
+        <span class="fin-valor">${formatarReais(f.previsto)}</span>
+        <span class="fin-sub">${f.qtd} camiseta(s) · ticket médio ${formatarReais(f.ticketMedio)}</span>
+      </div>
+      <div class="fin-card fin-card-verde">
+        <span class="fin-rotulo">Já chegou (recebido)</span>
+        <span class="fin-valor">${formatarReais(f.recebido)}</span>
+        <span class="fin-sub">${f.qtdPagas} paga(s)</span>
+      </div>
+      <div class="fin-card fin-card-vermelho">
+        <span class="fin-rotulo">Falta chegar (a receber)</span>
+        <span class="fin-valor">${formatarReais(f.aReceber)}</span>
+        <span class="fin-sub">${f.qtdAguardando + f.qtdPendentes} camiseta(s) em aberto</span>
+      </div>
+    </div>
+
+    <!-- Barra de recebimento -->
+    <div class="fin-barra-wrap">
+      <div class="fin-barra"><div class="fin-barra-fill" style="width:${Math.min(100, Math.round(f.pctRecebido))}%"></div></div>
+      <div class="fin-barra-legenda">${Math.round(f.pctRecebido)}% recebido do previsto</div>
+    </div>
+
+    <!-- Detalhe do "falta chegar" -->
+    <div class="resumo-tamanhos">
+      <span class="badge aguardando">Aguardando confirmação: ${formatarReais(f.aguardando)} (${f.qtdAguardando})</span>
+      <span class="badge pendente">Pendente (sem aviso): ${formatarReais(f.pendente)} (${f.qtdPendentes})</span>
+    </div>
+
+    <!-- Custos e lucro -->
+    <h3 class="fin-titulo">Custos e lucro</h3>
+    <div class="fin-destaques fin-destaques-3">
+      <div class="fin-card">
+        <span class="fin-rotulo">Custos previstos</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
+        <span class="fin-sub">Impressão + Costureira</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Lucro previsto</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(f.lucroPrevisto)}</span>
+        <span class="fin-sub">margem ${f.margem.toFixed(0)}%</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Lucro realizado</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(f.lucroRealizado)}</span>
+        <span class="fin-sub">sobre o que já chegou</span>
+      </div>
+    </div>
+
+    <!-- Forma de pagamento (do que já chegou) -->
+    <h3 class="fin-titulo">Como o dinheiro chegou</h3>
+    <div class="resumo-tamanhos">
+      <span class="badge pago">PIX: ${formatarReais(f.porForma.pix)}</span>
+      <span class="badge pago">Dinheiro: ${formatarReais(f.porForma.dinheiro)}</span>
+    </div>
+
+    <!-- Por turma -->
+    <h3 class="fin-titulo">Por turma (ordenado por valor a receber)</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr>
+          <th>Turma</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Lucro prev.</th>
+        </tr></thead>
+        <tbody>${linhasTurma}</tbody>
+      </table>
+    </div>
+
+    <!-- Por grupo de tamanho -->
+    <h3 class="fin-titulo">Por grupo de tamanho</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr>
+          <th>Grupo</th><th>Qtd</th><th>Venda</th><th>Custo</th><th>Lucro</th>
+        </tr></thead>
+        <tbody>${linhasGrupo}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+// Exporta o relatório financeiro (por turma + totais) em CSV.
+function exportarFinanceiro() {
+  const f = finUltimo || calcularFinanceiro();
+  if (f.qtd === 0) {
+    alert("Não há dados financeiros para exportar.");
+    return;
+  }
+  const linhas = [["Turma", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Custos", "Lucro previsto"]];
+  f.porTurma.forEach((t) => {
+    const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
+    linhas.push([
+      t.nome, t.qtd,
+      t.previsto.toFixed(2), t.recebido.toFixed(2), t.aReceber.toFixed(2),
+      pct + "%", t.custos.toFixed(2), t.lucro.toFixed(2)
+    ]);
+  });
+  linhas.push([]);
+  linhas.push([
+    "TOTAL", f.qtd,
+    f.previsto.toFixed(2), f.recebido.toFixed(2), f.aReceber.toFixed(2),
+    Math.round(f.pctRecebido) + "%", f.custos.toFixed(2), f.lucroPrevisto.toFixed(2)
+  ]);
+  baixarCSV("financeiro-interclasse.csv", linhas);
+}
+
+const elBtnExportarFinanceiro = document.getElementById("btnExportarFinanceiro");
+if (elBtnExportarFinanceiro) elBtnExportarFinanceiro.addEventListener("click", exportarFinanceiro);
 
 // Monta o formulário inline de edição do nome e da senha da turma.
 function criarFormEdicaoTurma(turmaId, turma) {
@@ -929,6 +1158,9 @@ async function carregarPainelConfig() {
   elMpAtivo.checked = cfg.mpAtivo === true;
   elMpBackendUrl.value = cfg.mpBackendUrl || "";
   renderizarPrecosPorGrupo(cfg.precosPorGrupo || {});
+
+  // Com preços e custos já carregados, atualiza o financeiro.
+  renderizarFinanceiro();
 }
 
 // ---------------- Pagamento (PIX) ----------------
