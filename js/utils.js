@@ -204,11 +204,21 @@ function grupoDoTamanho(tamanho) {
   return GRUPOS_TAMANHO.find((g) => g.tamanhos.includes(tamanho)) || null;
 }
 
-// Custo unitário (Impressão + Costureira) de um tamanho, a partir dos grupos.
-function custoDoTamanho(tamanho) {
+// Custo de impressão unitário de um tamanho (a partir do grupo).
+function custoImpressaoDoTamanho(tamanho) {
   const grupo = grupoDoTamanho(tamanho);
-  if (!grupo) return 0;
-  return Number(grupo.custoImpressao || 0) + Number(grupo.custoCostureira || 0);
+  return grupo ? Number(grupo.custoImpressao || 0) : 0;
+}
+
+// Custo de costureira unitário de um tamanho (a partir do grupo).
+function custoCostureiraDoTamanho(tamanho) {
+  const grupo = grupoDoTamanho(tamanho);
+  return grupo ? Number(grupo.custoCostureira || 0) : 0;
+}
+
+// Custo unitário total (Impressão + Costureira) de um tamanho.
+function custoDoTamanho(tamanho) {
+  return custoImpressaoDoTamanho(tamanho) + custoCostureiraDoTamanho(tamanho);
 }
 
 // Formata um número como moeda BRL (ex.: 45 -> "R$ 45,00").

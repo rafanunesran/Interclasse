@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260815f" />
+<link rel="stylesheet" href="css/style.css?v=20260815g" />
 </head>
 <body>
 
@@ -162,6 +162,15 @@
   </div>
 </main>
 
+<!-- Pop-up de detalhe de custo (Financeiro) -->
+<div id="modalCusto" class="modal-pix oculto">
+  <div class="modal-pix-conteudo">
+    <button id="fecharModalCusto" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3 id="modalCustoTitulo">Custo previsto</h3>
+    <div id="modalCustoCorpo"></div>
+  </div>
+</div>
+
 <p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -170,8 +179,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260815f"></script>
+<script src="js/utils.js?v=20260815g"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260815f"></script>
+<script src="js/admin.js?v=20260815g"></script>
 </body>
 </html>

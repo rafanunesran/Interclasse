@@ -804,3 +804,24 @@ tr.linha-ajuste td { background: #fef2f2; }
 .fin-tabela th { background: var(--cinza-bg); }
 .fin-verde { color: #166534; font-weight: 600; }
 .fin-vermelho { color: #991b1b; font-weight: 600; }
+
+/* Card e célula de custo clicáveis (abrem o pop-up de detalhe). */
+.fin-card-click { cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+.fin-card-click:hover {
+  border-color: var(--azul);
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.12);
+}
+.fin-link { color: var(--azul); font-weight: 600; }
+.fin-custo-cel {
+  cursor: pointer;
+  color: var(--azul);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fin-custo-cel:hover { text-decoration: underline; }
+
+/* Tabela dentro do pop-up de custo. */
+.fin-tabela-modal { min-width: 0; margin: 8px 0 0; }
+.fin-tabela-modal td { text-align: left; }
+.fin-tabela-modal td:last-child { text-align: right; }
+.fin-linha-total td { border-top: 2px solid var(--cinza-borda); }
