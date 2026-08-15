@@ -361,6 +361,14 @@ tr.duplicado td { background: #fef3c7; }
   white-space: nowrap;
   font-size: 0.8rem;
 }
+.preview-camiseta {
+  flex-basis: 100%;
+  width: 100%;
+  max-width: 320px;
+  border-radius: 10px;
+  border: 1px solid var(--cinza-borda);
+  margin-top: 8px;
+}
 
 /* Barra superior do painel administrativo (identificação + sair). */
 .barra-admin {

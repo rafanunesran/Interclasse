@@ -778,6 +778,11 @@ function criarBlocoImagemTurma(turmaId, turma) {
   lblMarca.appendChild(chkMarca);
   lblMarca.appendChild(document.createTextNode(" Marca d'água (imagem de referência)"));
 
+  // Preview grande da imagem já processada (mostra a marca antes de confiar no Drive).
+  const preview = document.createElement("img");
+  preview.className = "preview-camiseta oculto";
+  preview.alt = "Prévia da imagem a enviar";
+
   const btnImg = document.createElement("button");
   btnImg.className = "secundario";
   btnImg.textContent = turma.imagemUrl ? "Trocar imagem" : "Enviar imagem da camiseta";
@@ -795,9 +800,15 @@ function criarBlocoImagemTurma(turmaId, turma) {
     const comMarca = chkMarca.checked;
     btnImg.disabled = true;
     const antes = btnImg.textContent;
-    btnImg.textContent = comMarca ? "Enviando (com marca)…" : "Enviando…";
+    btnImg.textContent = "Processando…";
     try {
-      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file, { marcaDagua: comMarca });
+      // Processa a imagem uma vez (com/sem marca) e mostra a prévia.
+      const dataBase64 = await redimensionarImagemBase64(file, 1200, { marcaDagua: comMarca });
+      preview.src = "data:image/jpeg;base64," + dataBase64;
+      preview.classList.remove("oculto");
+      // Envia exatamente o que está na prévia.
+      btnImg.textContent = comMarca ? "Enviando (com marca)…" : "Enviando…";
+      const url = await enviarImagemBase64Drive(driveScriptUrl, turmaId, dataBase64);
       await db.collection("turmas").doc(turmaId).update({ imagemUrl: url });
     } catch (e) {
       console.error(e);
@@ -811,6 +822,7 @@ function criarBlocoImagemTurma(turmaId, turma) {
 
   bloco.appendChild(lblMarca);
   bloco.appendChild(btnImg);
+  bloco.appendChild(preview);
 
   if (turma.imagemUrl) {
     const btnRemover = document.createElement("button");

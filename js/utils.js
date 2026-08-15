@@ -341,10 +341,8 @@ function redimensionarImagemBase64(file, maxLargura, opcoes) {
   });
 }
 
-// Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
-// `opcoes` é repassado ao redimensionamento (ex.: { marcaDagua: true }).
-async function enviarImagemDrive(scriptUrl, turmaId, file, opcoes) {
-  const dataBase64 = await redimensionarImagemBase64(file, 1200, opcoes);
+// Envia um base64 já processado ao Apps Script (Google Drive) e retorna a URL pública.
+async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64) {
   const resp = await fetch(scriptUrl, {
     method: "POST",
     // text/plain (padrão do fetch com string) evita o preflight de CORS do Apps Script.
@@ -358,6 +356,13 @@ async function enviarImagemDrive(scriptUrl, turmaId, file, opcoes) {
   const dados = await resp.json();
   if (!dados || !dados.ok) throw new Error((dados && dados.erro) || "Falha ao enviar a imagem.");
   return dados.url;
+}
+
+// Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
+// `opcoes` é repassado ao redimensionamento (ex.: { marcaDagua: true }).
+async function enviarImagemDrive(scriptUrl, turmaId, file, opcoes) {
+  const dataBase64 = await redimensionarImagemBase64(file, 1200, opcoes);
+  return enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64);
 }
 
 function mostrarMensagem(elemento, texto, tipo) {
