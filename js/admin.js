@@ -593,7 +593,7 @@ function calcularFinanceiro() {
   const precos = precosPorGrupoAtual || {};
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
-    custos: 0, custosRecebido: 0,
+    custos: 0, custosRecebido: 0, custoImpressao: 0, custoCostureira: 0,
     qtd: 0, qtdPagas: 0, qtdAguardando: 0, qtdPendentes: 0,
     qtdInternas: 0, custoInterno: 0,
     porForma: { pix: 0, dinheiro: 0 },
@@ -602,15 +602,21 @@ function calcularFinanceiro() {
   };
 
   Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
-    const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, qtd: alunos.length, pagas: 0, internas: 0 };
+    const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
       const venda = interno ? 0 : Number(precoDoTamanho(a.tamanho, precos) || 0);
-      const custo = custoDoTamanho(a.tamanho); // custo entra sempre (a camiseta é produzida)
+      const cImp = custoImpressaoDoTamanho(a.tamanho);
+      const cCos = custoCostureiraDoTamanho(a.tamanho);
+      const custo = cImp + cCos; // custo entra sempre (a camiseta é produzida)
       fin.custos += custo;
+      fin.custoImpressao += cImp;
+      fin.custoCostureira += cCos;
       fin.qtd++;
       t.custos += custo;
+      t.custoImpressao += cImp;
+      t.custoCostureira += cCos;
 
       const g = grupoDoTamanho(a.tamanho);
       const gnome = g ? g.grupo : "Sem grupo";
@@ -683,7 +689,7 @@ function renderizarFinanceiro() {
     ? '<p class="aviso">Defina os preços por grupo na aba <strong>Pagamentos</strong> para ver os valores de faturamento.</p>'
     : "";
 
-  const linhasTurma = f.porTurma.map((t) => {
+  const linhasTurma = f.porTurma.map((t, idx) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     return `<tr>
       <td>${escapeHtmlAdmin(t.nome)}</td>
@@ -692,6 +698,7 @@ function renderizarFinanceiro() {
       <td class="fin-verde">${formatarReais(t.recebido)}</td>
       <td class="fin-vermelho">${formatarReais(t.aReceber)}</td>
       <td>${pct}%</td>
+      <td class="fin-custo-cel" data-turma-idx="${idx}" role="button" tabindex="0" title="Ver detalhe do custo">${formatarReais(t.custos)} ›</td>
       <td>${formatarReais(t.lucro)}</td>
     </tr>`;
   }).join("");
@@ -746,10 +753,10 @@ function renderizarFinanceiro() {
     <!-- Custos e lucro -->
     <h3 class="fin-titulo">Custos e lucro</h3>
     <div class="fin-destaques fin-destaques-3">
-      <div class="fin-card">
+      <div class="fin-card fin-card-click" data-fin-modal="total" role="button" tabindex="0" title="Ver detalhe do custo">
         <span class="fin-rotulo">Custos previstos</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
-        <span class="fin-sub">Impressão + Costureira (todas as camisetas)</span>
+        <span class="fin-sub fin-link">Impressão + Costureira · ver detalhe ›</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Lucro previsto</span>
@@ -781,7 +788,7 @@ function renderizarFinanceiro() {
     <div class="fin-tabela-wrap">
       <table class="fin-tabela">
         <thead><tr>
-          <th>Turma</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Lucro prev.</th>
+          <th>Turma</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Custo prev.</th><th>Lucro prev.</th>
         </tr></thead>
         <tbody>${linhasTurma}</tbody>
       </table>
@@ -798,6 +805,50 @@ function renderizarFinanceiro() {
       </table>
     </div>
   `;
+
+  // Liga os cliques que abrem o pop-up de detalhe de custo (total e por turma).
+  const cardTotal = el.querySelector('[data-fin-modal="total"]');
+  if (cardTotal) {
+    const abrir = () => abrirModalCusto("Custo previsto — total", {
+      impressao: f.custoImpressao, costureira: f.custoCostureira, total: f.custos, qtd: f.qtd
+    });
+    cardTotal.onclick = abrir;
+    cardTotal.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
+  }
+  el.querySelectorAll(".fin-custo-cel").forEach((cel) => {
+    const t = f.porTurma[Number(cel.dataset.turmaIdx)];
+    if (!t) return;
+    const abrir = () => abrirModalCusto("Custo previsto — " + t.nome, {
+      impressao: t.custoImpressao, costureira: t.custoCostureira, total: t.custos, qtd: t.qtd
+    });
+    cel.onclick = abrir;
+    cel.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
+  });
+}
+
+// Pop-up com o detalhe do custo (Impressão + Costureira).
+function abrirModalCusto(titulo, d) {
+  const modal = document.getElementById("modalCusto");
+  const tit = document.getElementById("modalCustoTitulo");
+  const corpo = document.getElementById("modalCustoCorpo");
+  if (!modal || !corpo) return;
+  if (tit) tit.textContent = titulo;
+  corpo.innerHTML = `
+    <table class="fin-tabela fin-tabela-modal">
+      <tbody>
+        <tr><td>Impressão</td><td>${formatarReais(d.impressao)}</td></tr>
+        <tr><td>Costureira</td><td>${formatarReais(d.costureira)}</td></tr>
+        <tr class="fin-linha-total"><td><strong>Total</strong></td><td><strong>${formatarReais(d.total)}</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="pix-ajuda">${d.qtd} camiseta(s) considerada(s) (inclui as internas).</p>
+  `;
+  modal.classList.remove("oculto");
+}
+
+function fecharModalCusto() {
+  const modal = document.getElementById("modalCusto");
+  if (modal) modal.classList.add("oculto");
 }
 
 // Exporta o relatório financeiro (por turma + totais) em CSV.
@@ -807,26 +858,36 @@ function exportarFinanceiro() {
     alert("Não há dados financeiros para exportar.");
     return;
   }
-  const linhas = [["Turma", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Custos", "Lucro previsto"]];
+  const linhas = [["Turma", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
   f.porTurma.forEach((t) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     linhas.push([
       t.nome, t.qtd,
       t.previsto.toFixed(2), t.recebido.toFixed(2), t.aReceber.toFixed(2),
-      pct + "%", t.custos.toFixed(2), t.lucro.toFixed(2)
+      pct + "%", t.custoImpressao.toFixed(2), t.custoCostureira.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2)
     ]);
   });
   linhas.push([]);
   linhas.push([
     "TOTAL", f.qtd,
     f.previsto.toFixed(2), f.recebido.toFixed(2), f.aReceber.toFixed(2),
-    Math.round(f.pctRecebido) + "%", f.custos.toFixed(2), f.lucroPrevisto.toFixed(2)
+    Math.round(f.pctRecebido) + "%", f.custoImpressao.toFixed(2), f.custoCostureira.toFixed(2), f.custos.toFixed(2), f.lucroPrevisto.toFixed(2)
   ]);
   baixarCSV("financeiro-interclasse.csv", linhas);
 }
 
 const elBtnExportarFinanceiro = document.getElementById("btnExportarFinanceiro");
 if (elBtnExportarFinanceiro) elBtnExportarFinanceiro.addEventListener("click", exportarFinanceiro);
+
+// Fechar o pop-up de custo (botão × e clique no fundo escuro).
+const elFecharModalCusto = document.getElementById("fecharModalCusto");
+if (elFecharModalCusto) elFecharModalCusto.addEventListener("click", fecharModalCusto);
+const elModalCusto = document.getElementById("modalCusto");
+if (elModalCusto) {
+  elModalCusto.addEventListener("click", (ev) => {
+    if (ev.target === elModalCusto) fecharModalCusto();
+  });
+}
 
 // Monta o formulário inline de edição do nome e da senha da turma.
 function criarFormEdicaoTurma(turmaId, turma) {
