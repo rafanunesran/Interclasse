@@ -271,7 +271,8 @@ function historicoAjusteHtml(aluno) {
       return `<li>${quando ? quando + " — " : ""}${label}${motivo}</li>`;
     })
     .join("");
-  return `<div class="hist-ajuste"><strong>Histórico de ajustes</strong><ul>${itens}</ul></div>`;
+  // <details> recolhível (fechado por padrão) para não alongar a página.
+  return `<details class="hist-ajuste"><summary>Histórico de ajustes (${h.length})</summary><ul>${itens}</ul></details>`;
 }
 
 // ============================================================
