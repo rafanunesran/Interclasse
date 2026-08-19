@@ -286,8 +286,9 @@ function renderizarTabela() {
       }
 
       // Solicitar ajuste: em qualquer fase que não seja "aberto" (onde dá para
-      // editar direto), enquanto não estiver pago. Inclui "pagamento em andamento".
-      if (!pedidoAberto(turmaAtual) && !aluno.pago) {
+      // editar direto), enquanto o pagamento não foi feito nem declarado —
+      // pagar confirma os dados e encerra a possibilidade de ajuste.
+      if (!pedidoAberto(turmaAtual) && !aluno.pago && !aluno.pagamentoDeclarado) {
         const btnAjuste = document.createElement("button");
         btnAjuste.className = "secundario";
         if (ajustePendente) {
@@ -537,6 +538,19 @@ function abrirPagamentoPix(aluno) {
     alert("Esta camiseta tem um ajuste pendente. O pagamento libera assim que a organização resolver o ajuste.");
     return;
   }
+  // Confirmação: pagar confirma os dados e encerra a possibilidade de ajuste.
+  const confirmar = confirm(
+    `Confira os dados desta camiseta antes de pagar:\n\n` +
+    `• Nome: ${aluno.nome}\n` +
+    `• Tamanho: ${aluno.tamanho}\n` +
+    `• Número: ${aluno.numero || "-"}\n` +
+    `• Nome na camiseta: ${aluno.nomeCamiseta || "-"}\n\n` +
+    `Ao pagar, você CONFIRMA que estes dados estão corretos. ` +
+    `Depois do pagamento, NÃO será mais possível solicitar ajuste desta unidade.\n\n` +
+    `Deseja continuar?`
+  );
+  if (!confirmar) return;
+
   pixAlunoAtual = aluno;
 
   elPixAluno.textContent = `${aluno.nome} — tamanho ${aluno.tamanho}`;
