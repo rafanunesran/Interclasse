@@ -249,6 +249,31 @@ function ehInterno(aluno) {
   return !!(aluno && aluno.pago && aluno.pagamentoForma === "interno");
 }
 
+// Formata um instante em millis (Date.now()) como "dd/mm/aaaa hh:mm".
+function formatarMillis(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+// HTML do histórico de ajustes de uma unidade (solicitações e resoluções).
+function historicoAjusteHtml(aluno) {
+  const h = aluno && Array.isArray(aluno.ajusteHistorico) ? aluno.ajusteHistorico : [];
+  if (h.length === 0) return "";
+  const itens = h
+    .slice()
+    .sort((a, b) => (a.em || 0) - (b.em || 0))
+    .map((e) => {
+      const quando = formatarMillis(e.em);
+      const label = e.tipo === "resolvido" ? "Ajuste resolvido" : "Ajuste solicitado";
+      const motivo = e.motivo ? ": " + escaparHtml(e.motivo) : "";
+      return `<li>${quando ? quando + " — " : ""}${label}${motivo}</li>`;
+    })
+    .join("");
+  return `<div class="hist-ajuste"><strong>Histórico de ajustes</strong><ul>${itens}</ul></div>`;
+}
+
 // ============================================================
 // STATUS DO PEDIDO (etapas da turma)
 // ============================================================
