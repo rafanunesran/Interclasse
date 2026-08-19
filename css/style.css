@@ -535,6 +535,19 @@ tr.duplicado td { background: #fef3c7; }
   vertical-align: middle;
 }
 .motivo-ajuste { color: var(--vermelho); }
+
+/* Histórico de ajustes de uma unidade. */
+.hist-ajuste {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+.hist-ajuste strong { color: #4b5563; }
+.hist-ajuste ul {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+.hist-ajuste li { margin: 1px 0; }
 tr.linha-ajuste td { background: #fef2f2; }
 .aviso-ajustes {
   display: flex;

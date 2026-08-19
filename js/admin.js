@@ -309,7 +309,7 @@ function renderizarTurmasAdmin() {
           : "";
 
         tr.innerHTML = `
-          <td>${marca}${escapeHtmlAdmin(aluno.nome)}${motivo}</td>
+          <td>${marca}${escapeHtmlAdmin(aluno.nome)}${motivo}${historicoAjusteHtml(aluno)}</td>
           <td>${escapeHtmlAdmin(aluno.tamanho)}</td>
           <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
           <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
@@ -352,7 +352,9 @@ function renderizarTurmasAdmin() {
           btnResolver.title = "Marcar o ajuste como resolvido";
           btnResolver.onclick = () => {
             db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
-              ajusteSolicitado: false
+              ajusteSolicitado: false,
+              ajusteResolvidoEm: firebase.firestore.FieldValue.serverTimestamp(),
+              ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now() })
             });
           };
           tdAcoes.appendChild(btnResolver);
@@ -1032,7 +1034,12 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
         numero: inputNumero.value.trim(),
         nomeCamiseta: novoCostas
       };
-      if (aluno.ajusteSolicitado) dados.ajusteSolicitado = false; // corrigiu = resolveu
+      if (aluno.ajusteSolicitado) {
+        // Corrigir a linha resolve o ajuste e registra no histórico.
+        dados.ajusteSolicitado = false;
+        dados.ajusteResolvidoEm = firebase.firestore.FieldValue.serverTimestamp();
+        dados.ajusteHistorico = firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now() });
+      }
       await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update(dados);
       // O onSnapshot dos alunos re-renderiza a lista automaticamente.
     } catch (erro) {

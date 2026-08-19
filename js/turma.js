@@ -242,7 +242,7 @@ function renderizarTabela() {
       : "";
 
     tr.innerHTML = `
-      <td>${marca}${escapeHtml(aluno.nome)}</td>
+      <td>${marca}${escapeHtml(aluno.nome)}${historicoAjusteHtml(aluno)}</td>
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
@@ -270,10 +270,14 @@ function renderizarTabela() {
         tdAcoes.appendChild(btnExcluir);
       }
 
+      const ajustePendente = !!aluno.ajusteSolicitado;
+
       // Pagar: disponível nas etapas de pagamento (fechado / em andamento),
-      // se houver PIX estático ou Mercado Pago e o aluno ainda não estiver pago.
+      // se houver PIX/Mercado Pago e o aluno não estiver pago. Fica BLOQUEADO
+      // enquanto houver um ajuste pendente nesta unidade.
       const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
-      if (pedidoAceitaPagamento(turmaAtual) && !aluno.pago && (configGeral.pixChave || temMp)) {
+      const podePagar = pedidoAceitaPagamento(turmaAtual) && !aluno.pago && (configGeral.pixChave || temMp);
+      if (podePagar && !ajustePendente) {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
         btnPagar.textContent = "Pagar";
@@ -281,12 +285,12 @@ function renderizarTabela() {
         tdAcoes.appendChild(btnPagar);
       }
 
-      // Solicitar ajuste: só quando a lista já travou (pagamento encerrado+)
-      // e o aluno ainda não está pago — pois aí não dá mais para editar direto.
-      if (!pedidoAceitaCadastro(turmaAtual) && !aluno.pago) {
+      // Solicitar ajuste: em qualquer fase que não seja "aberto" (onde dá para
+      // editar direto), enquanto não estiver pago. Inclui "pagamento em andamento".
+      if (!pedidoAberto(turmaAtual) && !aluno.pago) {
         const btnAjuste = document.createElement("button");
         btnAjuste.className = "secundario";
-        if (aluno.ajusteSolicitado) {
+        if (ajustePendente) {
           btnAjuste.textContent = "Ajuste solicitado ✓";
           btnAjuste.disabled = true;
         } else {
@@ -294,6 +298,14 @@ function renderizarTabela() {
           btnAjuste.onclick = () => solicitarAjuste(aluno);
         }
         tdAcoes.appendChild(btnAjuste);
+      }
+
+      // Aviso de pagamento bloqueado por ajuste pendente.
+      if (podePagar && ajustePendente) {
+        const nota = document.createElement("small");
+        nota.className = "motivo-ajuste";
+        nota.textContent = "Pagamento bloqueado até a organização resolver o ajuste.";
+        tdAcoes.appendChild(nota);
       }
     }
 
@@ -468,9 +480,15 @@ async function solicitarAjuste(aluno) {
     await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
       ajusteSolicitado: true,
       ajusteMotivo: motivo.trim(),
-      ajusteSolicitadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      ajusteSolicitadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      // Registra no histórico do pedido (arrays não aceitam serverTimestamp, usamos millis).
+      ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({
+        tipo: "solicitado",
+        motivo: motivo.trim(),
+        em: Date.now()
+      })
     });
-    alert("Pedido de ajuste enviado para a organização. Eles vão avaliar a correção.");
+    alert("Pedido de ajuste enviado para a organização. O pagamento desta unidade fica bloqueado até resolverem.");
   } catch (erro) {
     console.error(erro);
     alert("Não foi possível enviar o pedido de ajuste. Tente novamente.");
@@ -512,6 +530,11 @@ function abrirPagamentoPix(aluno) {
   // Segurança: pedido suspenso não recebe pagamento.
   if (pedidoSuspenso(turmaAtual)) {
     alert("Os pagamentos estão temporariamente suspensos para esta turma.");
+    return;
+  }
+  // Segurança: unidade com ajuste pendente fica bloqueada para pagamento.
+  if (aluno.ajusteSolicitado) {
+    alert("Esta camiseta tem um ajuste pendente. O pagamento libera assim que a organização resolver o ajuste.");
     return;
   }
   pixAlunoAtual = aluno;
