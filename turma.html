@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Turma — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260815j" />
+<link rel="stylesheet" href="css/style.css?v=20260815k" />
 </head>
 <body>
 
@@ -98,6 +98,34 @@
   </div>
 </main>
 
+<!-- Modal: solicitar ajuste (corrige os campos e envia a correção pronta) -->
+<div id="modalAjuste" class="modal-pix oculto">
+  <div class="modal-pix-conteudo modal-ajuste-conteudo">
+    <button id="fecharModalAjuste" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Solicitar ajuste</h3>
+    <p class="pix-ajuda">Corrija abaixo apenas o que estiver errado e envie. A organização confere e aplica com um clique.</p>
+    <form id="formAjuste">
+      <label for="ajusteNome">Nome do estudante</label>
+      <input type="text" id="ajusteNome" />
+
+      <label for="ajusteTamanho">Tamanho da camiseta</label>
+      <select id="ajusteTamanho"></select>
+
+      <label for="ajusteNumero">Número da camiseta</label>
+      <input type="text" id="ajusteNumero" inputmode="numeric" />
+
+      <label for="ajusteNomeCamiseta">Nome na camiseta (costas)</label>
+      <input type="text" id="ajusteNomeCamiseta" />
+
+      <label for="ajusteObs">Observação (opcional)</label>
+      <input type="text" id="ajusteObs" placeholder="Algo a explicar para a organização?" />
+
+      <button type="submit" class="primario">Enviar ajuste</button>
+    </form>
+    <p id="msgAjuste" class="oculto"></p>
+  </div>
+</div>
+
 <div id="modalPix" class="modal-pix oculto">
   <div class="modal-pix-conteudo">
     <button id="fecharModalPix" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
@@ -128,7 +156,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260815j"></script>
-<script src="js/turma.js?v=20260815j"></script>
+<script src="js/utils.js?v=20260815k"></script>
+<script src="js/turma.js?v=20260815k"></script>
 </body>
 </html>

@@ -257,6 +257,42 @@ function formatarMillis(ms) {
   return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// Campos da camiseta que podem ser corrigidos por um pedido de ajuste.
+const CAMPOS_AJUSTE = [
+  { key: "nome", label: "Nome" },
+  { key: "tamanho", label: "Tamanho" },
+  { key: "numero", label: "Número" },
+  { key: "nomeCamiseta", label: "Nome na camiseta" }
+];
+
+// HTML da proposta de ajuste (valor atual → valor sugerido), quando houver.
+function propostaAjusteHtml(aluno) {
+  const p = aluno && aluno.ajusteProposto;
+  if (!p || typeof p !== "object") return "";
+  const linhas = CAMPOS_AJUSTE
+    .filter((c) => p[c.key] !== undefined)
+    .map((c) => {
+      const de = (aluno[c.key] === undefined || aluno[c.key] === "") ? "-" : String(aluno[c.key]);
+      const para = (p[c.key] === undefined || p[c.key] === "") ? "-" : String(p[c.key]);
+      return `<li>${c.label}: <span class="prop-de">${escaparHtml(de)}</span> → <span class="prop-para">${escaparHtml(para)}</span></li>`;
+    })
+    .join("");
+  if (!linhas) return "";
+  const obs = aluno.ajusteMotivo ? `<div class="prop-obs">Obs.: ${escaparHtml(aluno.ajusteMotivo)}</div>` : "";
+  return `<div class="ajuste-proposto"><strong>Ajuste solicitado</strong><ul>${linhas}</ul>${obs}</div>`;
+}
+
+// Resumo em texto das mudanças propostas (para histórico/CSV).
+function resumoMudancasAjuste(aluno, proposto) {
+  return CAMPOS_AJUSTE
+    .filter((c) => proposto[c.key] !== undefined)
+    .map((c) => {
+      const de = (aluno[c.key] === undefined || aluno[c.key] === "") ? "-" : String(aluno[c.key]);
+      return `${c.label}: ${de} → ${proposto[c.key] || "-"}`;
+    })
+    .join("; ");
+}
+
 // HTML do histórico de ajustes de uma unidade (solicitações e resoluções).
 function historicoAjusteHtml(aluno) {
   const h = aluno && Array.isArray(aluno.ajusteHistorico) ? aluno.ajusteHistorico : [];
@@ -267,8 +303,9 @@ function historicoAjusteHtml(aluno) {
     .map((e) => {
       const quando = formatarMillis(e.em);
       const label = e.tipo === "resolvido" ? "Ajuste resolvido" : "Ajuste solicitado";
-      const motivo = e.motivo ? ": " + escaparHtml(e.motivo) : "";
-      return `<li>${quando ? quando + " — " : ""}${label}${motivo}</li>`;
+      const detalhe = e.mudancas ? " — " + escaparHtml(e.mudancas) : (e.motivo ? ": " + escaparHtml(e.motivo) : "");
+      const obs = e.mudancas && e.motivo ? ` (${escaparHtml(e.motivo)})` : "";
+      return `<li>${quando ? quando + " — " : ""}${label}${detalhe}${obs}</li>`;
     })
     .join("");
   // <details> recolhível (fechado por padrão) para não alongar a página.
