@@ -366,11 +366,37 @@ function renderizarTurmasAdmin() {
             db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
               ajusteSolicitado: false,
               ajusteProposto: firebase.firestore.FieldValue.delete(),
+              ajusteContato: firebase.firestore.FieldValue.delete(),
               ajusteResolvidoEm: firebase.firestore.FieldValue.serverTimestamp(),
               ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now(), motivo: "Dispensado" })
             });
           };
           tdAcoes.appendChild(btnResolver);
+        }
+
+        // Avisar no WhatsApp: aparece quando há contato e o ajuste já foi resolvido.
+        if (aluno.ajusteContato && !aluno.ajusteSolicitado) {
+          const btnWa = document.createElement("button");
+          btnWa.className = "sucesso";
+          btnWa.textContent = "Avisar no WhatsApp";
+          btnWa.title = "Enviar aviso de ajuste aprovado e pagamento liberado";
+          btnWa.onclick = () => {
+            const texto =
+              `Olá! ✅ O ajuste da camiseta de ${aluno.nome} (turma ${turma.nome}) foi aprovado e aplicado. ` +
+              `O pedido já está disponível para pagamento. 👕`;
+            const url = linkWhatsapp(aluno.ajusteContato, texto);
+            if (!url) {
+              alert("O contato informado não é um telefone válido para o WhatsApp.");
+              return;
+            }
+            window.open(url, "_blank");
+            // Marca como avisado e remove o contato para o botão sumir.
+            db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+              ajusteContato: firebase.firestore.FieldValue.delete(),
+              ajusteAvisadoEm: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          };
+          tdAcoes.appendChild(btnWa);
         }
 
         const btnExcluir = document.createElement("button");
