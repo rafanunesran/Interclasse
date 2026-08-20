@@ -477,6 +477,7 @@ const elAjusteTamanho = document.getElementById("ajusteTamanho");
 const elAjusteNumero = document.getElementById("ajusteNumero");
 const elAjusteNomeCamiseta = document.getElementById("ajusteNomeCamiseta");
 const elAjusteObs = document.getElementById("ajusteObs");
+const elAjusteContato = document.getElementById("ajusteContato");
 const elMsgAjuste = document.getElementById("msgAjuste");
 const elFecharModalAjuste = document.getElementById("fecharModalAjuste");
 
@@ -493,6 +494,7 @@ function solicitarAjuste(aluno) {
   if (elAjusteNumero) elAjusteNumero.value = aluno.numero || "";
   if (elAjusteNomeCamiseta) elAjusteNomeCamiseta.value = aluno.nomeCamiseta || "";
   if (elAjusteObs) elAjusteObs.value = "";
+  if (elAjusteContato) elAjusteContato.value = aluno.ajusteContato || "";
   if (elMsgAjuste) esconderMensagem(elMsgAjuste);
   if (elModalAjuste) elModalAjuste.classList.remove("oculto");
 }
@@ -539,6 +541,7 @@ if (elFormAjuste) {
     }
 
     const obs = elAjusteObs.value.trim();
+    const contato = elAjusteContato.value.trim();
     const resumo = resumoMudancasAjuste(aluno, proposto);
 
     const botao = elFormAjuste.querySelector("button[type=submit]");
@@ -548,6 +551,7 @@ if (elFormAjuste) {
         ajusteSolicitado: true,
         ajusteProposto: proposto,
         ajusteMotivo: obs,
+        ajusteContato: contato,
         ajusteSolicitadoEm: firebase.firestore.FieldValue.serverTimestamp(),
         // Arrays não aceitam serverTimestamp; usamos millis + resumo em texto.
         ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({

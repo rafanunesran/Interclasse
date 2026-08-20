@@ -249,6 +249,22 @@ function ehInterno(aluno) {
   return !!(aluno && aluno.pago && aluno.pagamentoForma === "interno");
 }
 
+// Normaliza um telefone para o formato do WhatsApp (só dígitos, com DDI).
+// Se vier com 10/11 dígitos (DDD + número), assume Brasil e prefixa 55.
+function normalizarTelefoneWhats(tel) {
+  let d = String(tel || "").replace(/\D/g, "");
+  if (!d) return "";
+  if ((d.length === 10 || d.length === 11) && !d.startsWith("55")) d = "55" + d;
+  return d;
+}
+
+// Monta o link wa.me com texto pré-preenchido (ou "" se telefone inválido).
+function linkWhatsapp(tel, texto) {
+  const fone = normalizarTelefoneWhats(tel);
+  if (fone.length < 10) return "";
+  return "https://wa.me/" + fone + "?text=" + encodeURIComponent(texto || "");
+}
+
 // Formata um instante em millis (Date.now()) como "dd/mm/aaaa hh:mm".
 function formatarMillis(ms) {
   if (!ms) return "";
