@@ -536,6 +536,31 @@ tr.duplicado td { background: #fef3c7; }
 }
 .motivo-ajuste { color: var(--vermelho); }
 
+/* Proposta de ajuste (valor atual → sugerido). */
+.ajuste-proposto {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.ajuste-proposto strong { color: #9a3412; }
+.ajuste-proposto ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.ajuste-proposto li { margin: 1px 0; }
+.prop-de { color: #6b7280; text-decoration: line-through; }
+.prop-para { color: #166534; font-weight: 700; }
+.prop-obs { margin-top: 4px; color: #6b7280; }
+
+/* Modal de solicitação de ajuste (formulário alinhado à esquerda). */
+.modal-ajuste-conteudo {
+  text-align: left;
+  max-width: 420px;
+}
+
 /* Histórico de ajustes de uma unidade (recolhível). */
 .hist-ajuste {
   margin-top: 6px;

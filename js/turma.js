@@ -242,7 +242,7 @@ function renderizarTabela() {
       : "";
 
     tr.innerHTML = `
-      <td>${marca}${escapeHtml(aluno.nome)}${historicoAjusteHtml(aluno)}</td>
+      <td>${marca}${escapeHtml(aluno.nome)}${propostaAjusteHtml(aluno)}${historicoAjusteHtml(aluno)}</td>
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
@@ -468,32 +468,103 @@ async function excluirAluno(aluno) {
   }
 }
 
-// ---------------- Solicitar ajuste (pedido fechado) ----------------
+// ---------------- Solicitar ajuste (correção guiada por campos) ----------------
 
-async function solicitarAjuste(aluno) {
-  const motivo = prompt(
-    `O que precisa ser corrigido em "${aluno.nome}"?\n` +
-    `Ex.: tamanho errado, número, nome na camiseta.`
-  );
-  if (motivo === null) return; // usuário cancelou
+const elModalAjuste = document.getElementById("modalAjuste");
+const elFormAjuste = document.getElementById("formAjuste");
+const elAjusteNome = document.getElementById("ajusteNome");
+const elAjusteTamanho = document.getElementById("ajusteTamanho");
+const elAjusteNumero = document.getElementById("ajusteNumero");
+const elAjusteNomeCamiseta = document.getElementById("ajusteNomeCamiseta");
+const elAjusteObs = document.getElementById("ajusteObs");
+const elMsgAjuste = document.getElementById("msgAjuste");
+const elFecharModalAjuste = document.getElementById("fecharModalAjuste");
 
-  try {
-    await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
-      ajusteSolicitado: true,
-      ajusteMotivo: motivo.trim(),
-      ajusteSolicitadoEm: firebase.firestore.FieldValue.serverTimestamp(),
-      // Registra no histórico do pedido (arrays não aceitam serverTimestamp, usamos millis).
-      ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({
-        tipo: "solicitado",
-        motivo: motivo.trim(),
-        em: Date.now()
-      })
-    });
-    alert("Pedido de ajuste enviado para a organização. O pagamento desta unidade fica bloqueado até resolverem.");
-  } catch (erro) {
-    console.error(erro);
-    alert("Não foi possível enviar o pedido de ajuste. Tente novamente.");
+let ajusteAlunoAtual = null; // aluno aberto no modal de ajuste
+
+// Abre o modal de ajuste com os campos já preenchidos com os valores atuais.
+function solicitarAjuste(aluno) {
+  ajusteAlunoAtual = aluno;
+  if (elAjusteTamanho && elAjusteTamanho.options.length === 0) {
+    preencherSelectTamanhos(elAjusteTamanho);
   }
+  if (elAjusteNome) elAjusteNome.value = aluno.nome || "";
+  if (elAjusteTamanho) elAjusteTamanho.value = aluno.tamanho || "";
+  if (elAjusteNumero) elAjusteNumero.value = aluno.numero || "";
+  if (elAjusteNomeCamiseta) elAjusteNomeCamiseta.value = aluno.nomeCamiseta || "";
+  if (elAjusteObs) elAjusteObs.value = "";
+  if (elMsgAjuste) esconderMensagem(elMsgAjuste);
+  if (elModalAjuste) elModalAjuste.classList.remove("oculto");
+}
+
+function fecharModalAjuste() {
+  if (elModalAjuste) elModalAjuste.classList.add("oculto");
+  ajusteAlunoAtual = null;
+}
+
+if (elFecharModalAjuste) elFecharModalAjuste.addEventListener("click", fecharModalAjuste);
+if (elModalAjuste) {
+  elModalAjuste.addEventListener("click", (ev) => {
+    if (ev.target === elModalAjuste) fecharModalAjuste();
+  });
+}
+
+if (elFormAjuste) {
+  elFormAjuste.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!ajusteAlunoAtual) return;
+    const aluno = ajusteAlunoAtual;
+    esconderMensagem(elMsgAjuste);
+
+    // Monta apenas os campos que mudaram em relação ao valor atual.
+    const novos = {
+      nome: elAjusteNome.value.trim(),
+      tamanho: elAjusteTamanho.value,
+      numero: elAjusteNumero.value.trim(),
+      nomeCamiseta: elAjusteNomeCamiseta.value.trim()
+    };
+    const proposto = {};
+    CAMPOS_AJUSTE.forEach((c) => {
+      const atual = (aluno[c.key] || "").toString();
+      if (novos[c.key] !== atual) proposto[c.key] = novos[c.key];
+    });
+
+    if (Object.keys(proposto).length === 0) {
+      mostrarMensagem(elMsgAjuste, "Altere pelo menos um campo para solicitar o ajuste.", "erro");
+      return;
+    }
+    if (proposto.nome === "" || proposto.tamanho === "" || proposto.nomeCamiseta === "") {
+      mostrarMensagem(elMsgAjuste, "Nome, tamanho e nome na camiseta não podem ficar em branco.", "erro");
+      return;
+    }
+
+    const obs = elAjusteObs.value.trim();
+    const resumo = resumoMudancasAjuste(aluno, proposto);
+
+    const botao = elFormAjuste.querySelector("button[type=submit]");
+    botao.disabled = true;
+    try {
+      await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+        ajusteSolicitado: true,
+        ajusteProposto: proposto,
+        ajusteMotivo: obs,
+        ajusteSolicitadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        // Arrays não aceitam serverTimestamp; usamos millis + resumo em texto.
+        ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({
+          tipo: "solicitado",
+          em: Date.now(),
+          mudancas: resumo,
+          motivo: obs
+        })
+      });
+      fecharModalAjuste();
+      alert("Ajuste enviado para a organização. O pagamento desta unidade fica bloqueado até aplicarem a correção.");
+    } catch (erro) {
+      console.error(erro);
+      mostrarMensagem(elMsgAjuste, "Não foi possível enviar o ajuste. Tente novamente.", "erro");
+      botao.disabled = false;
+    }
+  });
 }
 
 // ---------------- Pagamento via PIX ----------------

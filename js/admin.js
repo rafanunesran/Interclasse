@@ -304,12 +304,14 @@ function renderizarTurmasAdmin() {
         const marca = aluno.ajusteSolicitado
           ? '<span class="marca-ajuste" title="Ajuste solicitado">!</span> '
           : "";
-        const motivo = aluno.ajusteSolicitado && aluno.ajusteMotivo
+        // Proposta guiada (de → para). Para ajustes antigos (só texto), mostra o motivo.
+        const proposta = propostaAjusteHtml(aluno);
+        const motivo = (aluno.ajusteSolicitado && !aluno.ajusteProposto && aluno.ajusteMotivo)
           ? `<br><small class="motivo-ajuste">Ajuste pedido: ${escapeHtmlAdmin(aluno.ajusteMotivo)}</small>`
           : "";
 
         tr.innerHTML = `
-          <td>${marca}${escapeHtmlAdmin(aluno.nome)}${motivo}${historicoAjusteHtml(aluno)}</td>
+          <td>${marca}${escapeHtmlAdmin(aluno.nome)}${proposta}${motivo}${historicoAjusteHtml(aluno)}</td>
           <td>${escapeHtmlAdmin(aluno.tamanho)}</td>
           <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
           <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
@@ -346,15 +348,26 @@ function renderizarTurmasAdmin() {
         tdAcoes.appendChild(btnEditar);
 
         if (aluno.ajusteSolicitado) {
+          // Aplicar: grava a correção sugerida e resolve (só o "OK" do usuário).
+          if (aluno.ajusteProposto) {
+            const btnAplicar = document.createElement("button");
+            btnAplicar.className = "sucesso";
+            btnAplicar.textContent = "Aplicar ajuste";
+            btnAplicar.title = "Aplicar a correção sugerida e resolver";
+            btnAplicar.onclick = () => aplicarAjuste(turmaId, aluno);
+            tdAcoes.appendChild(btnAplicar);
+          }
+
           const btnResolver = document.createElement("button");
-          btnResolver.className = "sucesso";
-          btnResolver.textContent = "Resolver";
-          btnResolver.title = "Marcar o ajuste como resolvido";
+          btnResolver.className = "secundario";
+          btnResolver.textContent = aluno.ajusteProposto ? "Dispensar" : "Resolver";
+          btnResolver.title = "Marcar como resolvido sem aplicar a sugestão";
           btnResolver.onclick = () => {
             db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
               ajusteSolicitado: false,
+              ajusteProposto: firebase.firestore.FieldValue.delete(),
               ajusteResolvidoEm: firebase.firestore.FieldValue.serverTimestamp(),
-              ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now() })
+              ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now(), motivo: "Dispensado" })
             });
           };
           tdAcoes.appendChild(btnResolver);
@@ -395,6 +408,33 @@ function atualizarStatusPedido(turmaId, novo) {
   }
   db.collection("turmas").doc(turmaId).update(dados)
     .catch((e) => console.error("Falha ao mudar status do pedido:", e));
+}
+
+// Aplica a correção sugerida no pedido de ajuste (grava os campos propostos)
+// e resolve o ajuste, registrando no histórico. É o "OK" do administrador.
+function aplicarAjuste(turmaId, aluno) {
+  const p = aluno.ajusteProposto || {};
+  const resumo = resumoMudancasAjuste(aluno, p);
+  const dados = {
+    ajusteSolicitado: false,
+    ajusteProposto: firebase.firestore.FieldValue.delete(),
+    ajusteMotivo: "",
+    ajusteResolvidoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({
+      tipo: "resolvido",
+      em: Date.now(),
+      motivo: "Ajuste aplicado",
+      mudancas: resumo
+    })
+  };
+  CAMPOS_AJUSTE.forEach((c) => {
+    if (p[c.key] !== undefined) dados[c.key] = p[c.key];
+  });
+  db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update(dados)
+    .catch((e) => {
+      console.error(e);
+      alert("Não foi possível aplicar o ajuste. Tente novamente.");
+    });
 }
 
 // ---------------- Kanban de pedidos ----------------
@@ -1037,6 +1077,7 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
       if (aluno.ajusteSolicitado) {
         // Corrigir a linha resolve o ajuste e registra no histórico.
         dados.ajusteSolicitado = false;
+        dados.ajusteProposto = firebase.firestore.FieldValue.delete();
         dados.ajusteResolvidoEm = firebase.firestore.FieldValue.serverTimestamp();
         dados.ajusteHistorico = firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now() });
       }
