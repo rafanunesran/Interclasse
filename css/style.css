@@ -869,3 +869,159 @@ tr.linha-ajuste td { background: #fef2f2; }
 .fin-tabela-modal td { text-align: left; }
 .fin-tabela-modal td:last-child { text-align: right; }
 .fin-linha-total td { border-top: 2px solid var(--cinza-borda); }
+
+/* ---- Sub-abas do Financeiro (visões do relatório) ---- */
+.fin-subabas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 4px;
+  border-bottom: 2px solid var(--cinza-borda);
+  padding-bottom: 6px;
+}
+.fin-subaba {
+  background: var(--cinza-bg);
+  border: 1px solid var(--cinza-borda);
+  color: var(--texto);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0;
+  width: auto;
+}
+.fin-subaba:hover { border-color: var(--azul); color: var(--azul); }
+.fin-subaba.ativa {
+  background: var(--azul);
+  border-color: var(--azul);
+  color: var(--branco);
+}
+
+/* ---- Filtros (período rápido, datas e turma) ---- */
+.fin-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 14px 0 6px;
+  padding: 10px 12px;
+  background: var(--cinza-bg);
+  border: 1px solid var(--cinza-borda);
+  border-radius: 10px;
+}
+.fin-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fin-chip {
+  background: var(--branco);
+  border: 1px solid var(--cinza-borda);
+  color: var(--texto);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0;
+  width: auto;
+}
+.fin-chip:hover { border-color: var(--azul); color: var(--azul); }
+.fin-chip.ativa { background: var(--azul); border-color: var(--azul); color: var(--branco); }
+.fin-filtros-linha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.fin-filtros-linha label { margin: 0; font-weight: 600; }
+.fin-filtros-linha input, .fin-filtros-linha select {
+  margin: 0;
+  width: auto;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+}
+.fin-dica { font-size: 0.8rem; color: #6b7280; font-weight: 400; }
+
+.fin-destaques-4 { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
+.fin-card-amarelo { border-left: 5px solid var(--amarelo); }
+
+/* ---- Extrato: linha do dia (clicável) e detalhe dos pagamentos ---- */
+.fin-tabela-extrato .fin-linha-dia { cursor: pointer; }
+.fin-tabela-extrato .fin-linha-dia:hover { background: var(--cinza-bg); }
+.fin-seta { color: var(--azul); font-weight: 700; margin-right: 2px; }
+.fin-linha-detalhe > td { background: var(--cinza-bg); padding: 4px 10px 10px; }
+.fin-tabela-interna { min-width: 0; font-size: 0.82rem; background: var(--branco); }
+.fin-tabela-interna th { background: #e9ecf1; }
+.fin-grupo-dia + .fin-grupo-dia .fin-linha-dia td { border-top: 1px solid var(--cinza-borda); }
+
+/* ---- Gráfico de entradas por dia (barras em CSS puro) ---- */
+.fin-grafico {
+  overflow-x: auto;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 10px;
+  padding: 12px 10px 8px;
+  background: var(--branco);
+}
+.fin-gr-barras {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 170px;
+}
+.fin-gr-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 38px;
+  flex: 1 0 38px;
+}
+.fin-gr-topo {
+  font-size: 0.66rem;
+  color: #6b7280;
+  white-space: nowrap;
+  height: 14px;
+}
+.fin-gr-trilho {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: flex-end;
+  background: linear-gradient(to top, var(--cinza-bg) 0 1px, transparent 1px);
+}
+.fin-gr-barra {
+  width: 100%;
+  background: var(--verde);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+}
+.fin-gr-vazia { background: #e5e7eb; }
+.fin-gr-dia { font-size: 0.68rem; color: #6b7280; white-space: nowrap; }
+
+.fin-projecao {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: #eff6ff;
+  border-left: 4px solid var(--azul);
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+/* ---- Tabela do DRE (rótulo à esquerda, valor à direita) ---- */
+.fin-tabela-dre { min-width: 0; }
+.fin-tabela-dre td:last-child { text-align: right; white-space: nowrap; }
+.fin-tabela-dre .fin-linha-total td {
+  border-top: 2px solid var(--cinza-borda);
+  font-weight: 700;
+  background: var(--cinza-bg);
+}
+
+/* Botão de confirmação dentro da fila de conferência (A receber). */
+.fin-btn-confirmar {
+  margin: 0;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+}
+
+/* Modo compacto do gráfico: muitos dias cabendo sem rolagem lateral. */
+.fin-grafico-compacto .fin-gr-col { min-width: 0; flex: 1 1 0; }
+.fin-grafico-compacto .fin-gr-barras { gap: 2px; }
+.fin-grafico-compacto .fin-gr-dia { font-size: 0.62rem; }

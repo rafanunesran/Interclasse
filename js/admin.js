@@ -652,6 +652,90 @@ function renderizarResumoPagamentos() {
 // ============================================================
 // FINANCEIRO (relatórios de faturamento)
 // ============================================================
+// A aba tem várias VISÕES (sub-abas), cada uma respondendo a uma pergunta:
+//   Visão geral  -> "como está o pedido no total?"
+//   Extrato      -> "quanto entrou em cada dia, e de quem?"
+//   Evolução     -> "o dinheiro está entrando em que ritmo?"
+//   A receber    -> "de quem falta cobrar / o que preciso confirmar?"
+//   Resultado    -> "quanto sobra depois dos custos (DRE)?"
+
+const FIN_VISOES = [
+  { id: "geral", label: "Visão geral" },
+  { id: "extrato", label: "Extrato diário" },
+  { id: "evolucao", label: "Evolução" },
+  { id: "cobranca", label: "A receber" },
+  { id: "resultado", label: "Resultado (DRE)" }
+];
+
+// Períodos rápidos do filtro (usados no Extrato e na Evolução).
+const FIN_PERIODOS = [
+  { id: "hoje", label: "Hoje", dias: 1 },
+  { id: "7", label: "7 dias", dias: 7 },
+  { id: "30", label: "30 dias", dias: 30 },
+  { id: "tudo", label: "Tudo", dias: null }
+];
+
+let finUltimo = null;        // último cálculo geral (usado na exportação)
+let finVisao = "geral";      // visão ativa
+let finPeriodo = "30";       // "hoje" | "7" | "30" | "tudo" | "custom"
+let finDe = "";              // data inicial (YYYY-MM-DD) quando periodo = custom
+let finAte = "";             // data final (YYYY-MM-DD) quando periodo = custom
+let finTurmaFiltro = "";     // "" = todas as turmas
+let finDiasAbertos = {};     // chave do dia -> true (linhas expandidas no extrato)
+
+// ---------------- Auxiliares de data ----------------
+
+// Converte um campo de data do Firestore (Timestamp), um número (millis) ou
+// uma string ISO em Date. Retorna null quando não dá para saber a data.
+function finParaData(valor) {
+  if (!valor) return null;
+  if (typeof valor.toDate === "function") return valor.toDate();
+  if (typeof valor === "number") return new Date(valor);
+  if (typeof valor === "string") {
+    const d = new Date(valor.length === 10 ? valor + "T00:00:00" : valor);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+// Chave de agrupamento por dia no fuso local: "2026-08-21".
+function finChaveDia(data) {
+  const y = data.getFullYear();
+  const m = String(data.getMonth() + 1).padStart(2, "0");
+  const d = String(data.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function finDataDaChave(chave) {
+  return new Date(chave + "T00:00:00");
+}
+
+// "21/08 (sex)" — e "hoje"/"ontem" quando for o caso.
+function finRotuloDia(chave) {
+  const d = finDataDaChave(chave);
+  const hoje = finChaveDia(new Date());
+  const ontem = finChaveDia(new Date(Date.now() - 86400000));
+  const base = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const semana = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+  if (chave === hoje) return `${base} (hoje)`;
+  if (chave === ontem) return `${base} (ontem)`;
+  return `${base} (${semana})`;
+}
+
+function finHora(data) {
+  return data ? data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-";
+}
+
+// Diferença em dias inteiros entre uma data e hoje (positivo = no passado).
+function finDiasDesde(data) {
+  if (!data) return null;
+  const ini = new Date(data.getFullYear(), data.getMonth(), data.getDate());
+  const hoje = new Date();
+  const fim = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  return Math.round((fim - ini) / 86400000);
+}
+
+// ---------------- Coleta dos dados ----------------
 
 // Percorre todas as turmas/alunos e calcula os números do financeiro.
 // venda = preço do tamanho (aba Pagamentos); custo = Impressão + Costureira
@@ -722,6 +806,8 @@ function calcularFinanceiro() {
     });
     t.aReceber = t.previsto - t.recebido;
     t.lucro = t.previsto - t.custos;
+    t.vendaveis = t.qtd - t.internas;
+    t.margem = t.previsto > 0 ? (t.lucro / t.previsto) * 100 : 0;
     fin.porTurma.push(t);
   });
 
@@ -732,13 +818,147 @@ function calcularFinanceiro() {
   fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
   fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
   fin.ticketMedio = fin.qtdVendaveis > 0 ? fin.previsto / fin.qtdVendaveis : 0;
+  fin.custoMedio = fin.qtd > 0 ? fin.custos / fin.qtd : 0;
 
   // Ordena as turmas por valor a receber (maior primeiro) — foco na cobrança.
   fin.porTurma.sort((a, b) => b.aReceber - a.aReceber);
   return fin;
 }
 
-let finUltimo = null; // guarda o último cálculo p/ exportar
+// Lista de lançamentos de RECEBIMENTO (uma linha por camiseta paga).
+// É a base do extrato, da evolução e da conciliação por forma de pagamento.
+function finLancamentos() {
+  const precos = precosPorGrupoAtual || {};
+  const lista = [];
+  Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
+    alunos.forEach((a) => {
+      if (!a.pago || ehInterno(a)) return; // interna não gera receita
+      lista.push({
+        turmaId,
+        turma: turma.nome,
+        alunoId: a.id,
+        aluno: a.nome,
+        tamanho: a.tamanho,
+        valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
+        custo: custoDoTamanho(a.tamanho),
+        forma: a.pagamentoForma === "dinheiro" ? "dinheiro" : "pix",
+        online: !!a.pagamentoMpId, // confirmado pelo Mercado Pago (automático)
+        data: finParaData(a.pagamentoEm)
+      });
+    });
+  });
+  // Mais recentes primeiro; os sem data ficam no fim.
+  lista.sort((x, y) => (y.data ? y.data.getTime() : -1) - (x.data ? x.data.getTime() : -1));
+  return lista;
+}
+
+// Lista de PENDÊNCIAS (camisetas ainda não pagas), com o tempo em aberto.
+function finPendencias() {
+  const precos = precosPorGrupoAtual || {};
+  const lista = [];
+  Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
+    const fechadoEm = finParaData(turma.fechadoEm);
+    const limite = turma.dataLimite ? finParaData(turma.dataLimite) : null;
+    alunos.forEach((a) => {
+      if (a.pago) return;
+      const declarado = !!a.pagamentoDeclarado;
+      // "Aguardando" conta o tempo desde o aviso do aluno; "pendente" conta
+      // desde o fechamento do pedido (ou desde o cadastro, se ainda aberto).
+      const desde = declarado
+        ? finParaData(a.pagamentoDeclaradoEm)
+        : (fechadoEm || finParaData(a.criadoEm));
+      lista.push({
+        turmaId,
+        turma: turma.nome,
+        alunoId: a.id,
+        aluno: a.nome,
+        tamanho: a.tamanho,
+        valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
+        tipo: declarado ? "aguardando" : "pendente",
+        bloqueado: !!a.ajusteSolicitado, // ajuste em aberto trava o pagamento
+        contato: a.ajusteContato || "",
+        desde,
+        dias: finDiasDesde(desde),
+        limite,
+        atrasado: !!(limite && limite.getTime() < Date.now()),
+        status: statusPedidoDe(turma)
+      });
+    });
+  });
+  return lista;
+}
+
+// Início/fim do período escolhido no filtro (null = sem limite).
+function finLimitesPeriodo() {
+  const hoje = new Date();
+  const fimDoDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59, 999);
+
+  if (finPeriodo === "custom") {
+    const de = finDe ? new Date(finDe + "T00:00:00") : null;
+    const ate = finAte ? new Date(finAte + "T23:59:59") : null;
+    return { de, ate, label: "período personalizado" };
+  }
+  const p = FIN_PERIODOS.find((x) => x.id === finPeriodo) || FIN_PERIODOS[2];
+  if (!p.dias) return { de: null, ate: null, label: "desde o início" };
+  const de = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - (p.dias - 1));
+  return { de, ate: fimDoDia, label: p.label.toLowerCase() };
+}
+
+// Aplica o filtro de período + turma. Lançamentos sem data ficam de fora do
+// recorte por data (voltam separados, para não sumirem do extrato).
+function finFiltrar(lista) {
+  const { de, ate } = finLimitesPeriodo();
+  const dentro = [];
+  const semData = [];
+  lista.forEach((l) => {
+    if (finTurmaFiltro && l.turmaId !== finTurmaFiltro) return;
+    if (!l.data) { semData.push(l); return; }
+    if (de && l.data < de) return;
+    if (ate && l.data > ate) return;
+    dentro.push(l);
+  });
+  return { dentro, semData };
+}
+
+// Agrupa lançamentos por dia e calcula o acumulado (do mais antigo ao mais novo).
+function finAgruparPorDia(lista) {
+  const mapa = {};
+  lista.forEach((l) => {
+    if (!l.data) return;
+    const chave = finChaveDia(l.data);
+    if (!mapa[chave]) mapa[chave] = { chave, qtd: 0, total: 0, pix: 0, dinheiro: 0, online: 0, custo: 0, itens: [] };
+    const d = mapa[chave];
+    d.qtd++;
+    d.total += l.valor;
+    d.custo += l.custo;
+    if (l.forma === "dinheiro") d.dinheiro += l.valor; else d.pix += l.valor;
+    if (l.online) d.online += l.valor;
+    d.itens.push(l);
+  });
+
+  const dias = Object.values(mapa).sort((a, b) => a.chave.localeCompare(b.chave));
+  let acc = 0;
+  dias.forEach((d) => {
+    acc += d.total;
+    d.acumulado = acc;
+    d.itens.sort((a, b) => b.data - a.data);
+  });
+  return dias;
+}
+
+// Soma dos lançamentos entre duas datas (usado nos comparativos).
+function finSomaEntre(lista, ini, fim) {
+  let total = 0, qtd = 0;
+  lista.forEach((l) => {
+    if (!l.data) return;
+    if (l.data < ini || l.data > fim) return;
+    total += l.valor;
+    qtd++;
+  });
+  return { total, qtd };
+}
+
+// ---------------- Render principal (sub-abas + visão ativa) ----------------
 
 function renderizarFinanceiro() {
   const el = document.getElementById("financeiroConteudo");
@@ -752,10 +972,109 @@ function renderizarFinanceiro() {
     return;
   }
 
+  const abas = FIN_VISOES.map((v) =>
+    `<button type="button" class="fin-subaba${v.id === finVisao ? " ativa" : ""}" data-fin-visao="${v.id}">${v.label}</button>`
+  ).join("");
+
+  el.innerHTML = `
+    <nav class="fin-subabas">${abas}</nav>
+    <div id="finVisaoConteudo"></div>
+  `;
+
+  el.querySelectorAll("[data-fin-visao]").forEach((btn) => {
+    btn.onclick = () => {
+      finVisao = btn.dataset.finVisao;
+      renderizarFinanceiro();
+    };
+  });
+
+  renderizarVisaoFinanceira(f);
+}
+
+function renderizarVisaoFinanceira(f) {
+  const alvo = document.getElementById("finVisaoConteudo");
+  if (!alvo) return;
+  if (finVisao === "extrato") return finViewExtrato(alvo, f);
+  if (finVisao === "evolucao") return finViewEvolucao(alvo, f);
+  if (finVisao === "cobranca") return finViewCobranca(alvo, f);
+  if (finVisao === "resultado") return finViewResultado(alvo, f);
+  return finViewGeral(alvo, f);
+}
+
+// Barra de filtros (período rápido, datas personalizadas e turma).
+function finBarraFiltrosHtml(comPeriodo = true) {
+  const botoes = FIN_PERIODOS.map((p) =>
+    `<button type="button" class="fin-chip${finPeriodo === p.id ? " ativa" : ""}" data-fin-periodo="${p.id}">${p.label}</button>`
+  ).join("");
+
+  const turmas = Object.entries(estadoTurmas)
+    .map(([id, { turma }]) => ({ id, nome: turma.nome }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+    .map((t) => `<option value="${t.id}"${finTurmaFiltro === t.id ? " selected" : ""}>${escapeHtmlAdmin(t.nome)}</option>`)
+    .join("");
+
+  if (!comPeriodo) {
+    return `
+      <div class="fin-filtros">
+        <div class="fin-filtros-linha">
+          <label for="finTurma">Turma</label>
+          <select id="finTurma"><option value="">Todas as turmas</option>${turmas}</select>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="fin-filtros">
+      <div class="fin-chips">
+        ${botoes}
+        <button type="button" class="fin-chip${finPeriodo === "custom" ? " ativa" : ""}" data-fin-periodo="custom">Personalizado</button>
+      </div>
+      <div class="fin-filtros-linha${finPeriodo === "custom" ? "" : " oculto"}" id="finDatasCustom">
+        <label for="finDe">De</label>
+        <input type="date" id="finDe" value="${finDe}" />
+        <label for="finAte">Até</label>
+        <input type="date" id="finAte" value="${finAte}" />
+      </div>
+      <div class="fin-filtros-linha">
+        <label for="finTurma">Turma</label>
+        <select id="finTurma"><option value="">Todas as turmas</option>${turmas}</select>
+      </div>
+    </div>
+  `;
+}
+
+// Liga os eventos da barra de filtros (re-renderiza só a visão ativa).
+function finLigarFiltros(alvo, f) {
+  alvo.querySelectorAll("[data-fin-periodo]").forEach((btn) => {
+    btn.onclick = () => {
+      finPeriodo = btn.dataset.finPeriodo;
+      renderizarVisaoFinanceira(f);
+    };
+  });
+  const de = alvo.querySelector("#finDe");
+  const ate = alvo.querySelector("#finAte");
+  if (de) de.onchange = () => { finDe = de.value; renderizarVisaoFinanceira(f); };
+  if (ate) ate.onchange = () => { finAte = ate.value; renderizarVisaoFinanceira(f); };
+  const sel = alvo.querySelector("#finTurma");
+  if (sel) sel.onchange = () => { finTurmaFiltro = sel.value; renderizarVisaoFinanceira(f); };
+}
+
+// ---------------- Visão 1: geral ----------------
+
+function finViewGeral(alvo, f) {
   const semPrecos = f.previsto === 0;
   const avisoPrecos = semPrecos
     ? '<p class="aviso">Defina os preços por grupo na aba <strong>Pagamentos</strong> para ver os valores de faturamento.</p>'
     : "";
+
+  // Recorte rápido do caixa recente (o resto está no extrato).
+  const lanc = finLancamentos();
+  const agora = new Date();
+  const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const hoje = finSomaEntre(lanc, inicioHoje, agora);
+  const inicio7 = new Date(inicioHoje.getTime() - 6 * 86400000);
+  const semana = finSomaEntre(lanc, inicio7, agora);
 
   const linhasTurma = f.porTurma.map((t, idx) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
@@ -771,20 +1090,7 @@ function renderizarFinanceiro() {
     </tr>`;
   }).join("");
 
-  const gruposOrdenados = Object.keys(f.porGrupo).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const linhasGrupo = gruposOrdenados.map((g) => {
-    const d = f.porGrupo[g];
-    const lucro = d.venda - d.custo;
-    return `<tr>
-      <td>${escapeHtmlAdmin(g)}</td>
-      <td>${d.qtd}</td>
-      <td>${formatarReais(d.venda)}</td>
-      <td>${formatarReais(d.custo)}</td>
-      <td>${formatarReais(lucro)}</td>
-    </tr>`;
-  }).join("");
-
-  el.innerHTML = `
+  alvo.innerHTML = `
     ${avisoPrecos}
 
     <!-- Destaque principal: quanto vai chegar / já chegou / falta chegar -->
@@ -812,8 +1118,10 @@ function renderizarFinanceiro() {
       <div class="fin-barra-legenda">${Math.round(f.pctRecebido)}% recebido do previsto</div>
     </div>
 
-    <!-- Detalhe do "falta chegar" -->
+    <!-- Caixa recente (detalhe completo no Extrato diário) -->
     <div class="resumo-tamanhos">
+      <span class="badge pago">Entrou hoje: ${formatarReais(hoje.total)} (${hoje.qtd})</span>
+      <span class="badge pago">Últimos 7 dias: ${formatarReais(semana.total)} (${semana.qtd})</span>
       <span class="badge aguardando">Aguardando confirmação: ${formatarReais(f.aguardando)} (${f.qtdAguardando})</span>
       <span class="badge pendente">Pendente (sem aviso): ${formatarReais(f.pendente)} (${f.qtdPendentes})</span>
     </div>
@@ -861,21 +1169,10 @@ function renderizarFinanceiro() {
         <tbody>${linhasTurma}</tbody>
       </table>
     </div>
-
-    <!-- Por grupo de tamanho -->
-    <h3 class="fin-titulo">Por grupo de tamanho</h3>
-    <div class="fin-tabela-wrap">
-      <table class="fin-tabela">
-        <thead><tr>
-          <th>Grupo</th><th>Qtd</th><th>Venda</th><th>Custo</th><th>Lucro</th>
-        </tr></thead>
-        <tbody>${linhasGrupo}</tbody>
-      </table>
-    </div>
   `;
 
   // Liga os cliques que abrem o pop-up de detalhe de custo (total e por turma).
-  const cardTotal = el.querySelector('[data-fin-modal="total"]');
+  const cardTotal = alvo.querySelector('[data-fin-modal="total"]');
   if (cardTotal) {
     const abrir = () => abrirModalCusto("Custo previsto — total", {
       impressao: f.custoImpressao, costureira: f.custoCostureira, total: f.custos, qtd: f.qtd
@@ -883,7 +1180,7 @@ function renderizarFinanceiro() {
     cardTotal.onclick = abrir;
     cardTotal.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
   }
-  el.querySelectorAll(".fin-custo-cel").forEach((cel) => {
+  alvo.querySelectorAll(".fin-custo-cel").forEach((cel) => {
     const t = f.porTurma[Number(cel.dataset.turmaIdx)];
     if (!t) return;
     const abrir = () => abrirModalCusto("Custo previsto — " + t.nome, {
@@ -892,6 +1189,472 @@ function renderizarFinanceiro() {
     cel.onclick = abrir;
     cel.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
   });
+}
+
+// ---------------- Visão 2: extrato diário de recebimentos ----------------
+
+function finViewExtrato(alvo, f) {
+  const { dentro, semData } = finFiltrar(finLancamentos());
+  const dias = finAgruparPorDia(dentro).reverse(); // mais recente primeiro
+  const { label } = finLimitesPeriodo();
+
+  const total = dentro.reduce((s, l) => s + l.valor, 0);
+  const pix = dentro.filter((l) => l.forma === "pix").reduce((s, l) => s + l.valor, 0);
+  const dinheiro = total - pix;
+  const online = dentro.filter((l) => l.forma === "pix" && l.online).reduce((s, l) => s + l.valor, 0);
+  const ticket = dentro.length > 0 ? total / dentro.length : 0;
+  const mediaDia = dias.length > 0 ? total / dias.length : 0;
+
+  const linhas = dias.map((d) => {
+    const aberto = !!finDiasAbertos[d.chave];
+    const detalhe = d.itens.map((l) => `
+      <tr class="fin-linha-item">
+        <td>${finHora(l.data)}</td>
+        <td>${escapeHtmlAdmin(l.aluno)}</td>
+        <td>${escapeHtmlAdmin(l.turma)}</td>
+        <td>${escapeHtmlAdmin(l.tamanho)}</td>
+        <td>${l.forma === "dinheiro" ? "Dinheiro" : (l.online ? "PIX (online)" : "PIX")}</td>
+        <td class="fin-verde">${formatarReais(l.valor)}</td>
+      </tr>`).join("");
+
+    return `
+      <tbody class="fin-grupo-dia">
+        <tr class="fin-linha-dia" data-fin-dia="${d.chave}" role="button" tabindex="0">
+          <td><span class="fin-seta">${aberto ? "▾" : "▸"}</span> ${finRotuloDia(d.chave)}</td>
+          <td>${d.qtd}</td>
+          <td>${formatarReais(d.pix)}</td>
+          <td>${formatarReais(d.dinheiro)}</td>
+          <td class="fin-verde"><strong>${formatarReais(d.total)}</strong></td>
+          <td>${formatarReais(d.acumulado)}</td>
+        </tr>
+        ${aberto ? `<tr class="fin-linha-detalhe"><td colspan="6">
+          <table class="fin-tabela fin-tabela-interna">
+            <thead><tr><th>Hora</th><th>Aluno</th><th>Turma</th><th>Tam.</th><th>Forma</th><th>Valor</th></tr></thead>
+            <tbody>${detalhe}</tbody>
+          </table>
+        </td></tr>` : ""}
+      </tbody>`;
+  }).join("");
+
+  const avisoSemData = semData.length > 0
+    ? `<p class="aviso">${semData.length} pagamento(s) confirmado(s) antes do registro de data (marcados manualmente no início) somam ${formatarReais(semData.reduce((s, l) => s + l.valor, 0))} e não aparecem no extrato por dia.</p>`
+    : "";
+
+  alvo.innerHTML = `
+    ${finBarraFiltrosHtml()}
+
+    <div class="fin-destaques fin-destaques-4">
+      <div class="fin-card fin-card-verde">
+        <span class="fin-rotulo">Recebido no período</span>
+        <span class="fin-valor">${formatarReais(total)}</span>
+        <span class="fin-sub">${dentro.length} pagamento(s) · ${label}</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Média por dia com entrada</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(mediaDia)}</span>
+        <span class="fin-sub">${dias.length} dia(s) com recebimento</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Ticket médio</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(ticket)}</span>
+        <span class="fin-sub">por camiseta paga</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Recebido em PIX</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(pix)}</span>
+        <span class="fin-sub">dinheiro ${formatarReais(dinheiro)} · ${formatarReais(online)} confirmados automaticamente</span>
+      </div>
+    </div>
+
+    ${avisoSemData}
+
+    <h3 class="fin-titulo">Extrato por dia <span class="fin-dica">(clique no dia para ver os pagamentos)</span></h3>
+    ${dias.length === 0
+      ? "<p>Nenhum recebimento neste período.</p>"
+      : `<div class="fin-tabela-wrap">
+          <table class="fin-tabela fin-tabela-extrato">
+            <thead><tr><th>Dia</th><th>Qtd</th><th>PIX</th><th>Dinheiro</th><th>Total do dia</th><th>Acumulado no período</th></tr></thead>
+            ${linhas}
+          </table>
+        </div>`}
+  `;
+
+  finLigarFiltros(alvo, f);
+  alvo.querySelectorAll("[data-fin-dia]").forEach((linha) => {
+    const alternar = () => {
+      const chave = linha.dataset.finDia;
+      finDiasAbertos[chave] = !finDiasAbertos[chave];
+      renderizarVisaoFinanceira(f);
+    };
+    linha.onclick = alternar;
+    linha.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alternar(); } };
+  });
+}
+
+// ---------------- Visão 3: evolução (ritmo de entrada) ----------------
+
+function finViewEvolucao(alvo, f) {
+  const lanc = finLancamentos();
+  const { dentro } = finFiltrar(lanc);
+  const dias = finAgruparPorDia(dentro); // ordem cronológica
+
+  const agora = new Date();
+  const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const hoje = finSomaEntre(lanc, inicioHoje, agora);
+  const ontem = finSomaEntre(lanc, new Date(inicioHoje.getTime() - 86400000), new Date(inicioHoje.getTime() - 1));
+  const sem1 = finSomaEntre(lanc, new Date(inicioHoje.getTime() - 6 * 86400000), agora);
+  const sem2 = finSomaEntre(lanc, new Date(inicioHoje.getTime() - 13 * 86400000), new Date(inicioHoje.getTime() - 7 * 86400000 - 1));
+  const variacao = sem2.total > 0 ? ((sem1.total - sem2.total) / sem2.total) * 100 : null;
+
+  // Série contínua do período (inclui dias sem entrada, para mostrar buracos).
+  const serie = [];
+  if (dias.length > 0) {
+    const { de, ate } = finLimitesPeriodo();
+    const ini = de ? new Date(de.getFullYear(), de.getMonth(), de.getDate()) : finDataDaChave(dias[0].chave);
+    const fim = ate ? new Date(ate.getFullYear(), ate.getMonth(), ate.getDate()) : inicioHoje;
+    const porChave = {};
+    dias.forEach((d) => { porChave[d.chave] = d; });
+    let acc = 0;
+    for (let d = new Date(ini); d <= fim; d = new Date(d.getTime() + 86400000)) {
+      const chave = finChaveDia(d);
+      const dia = porChave[chave];
+      acc += dia ? dia.total : 0;
+      serie.push({ chave, total: dia ? dia.total : 0, qtd: dia ? dia.qtd : 0, acumulado: acc });
+      if (serie.length > 120) break; // trava de segurança para períodos longos
+    }
+  }
+
+  const maxDia = serie.reduce((m, d) => Math.max(m, d.total), 0);
+  // Com muitos dias o gráfico entra em modo compacto: sem o valor em cima de
+  // cada barra e com a data só de tantos em tantos dias (evita virar borrão).
+  const compacto = serie.length > 14;
+  const passo = Math.max(1, Math.ceil(serie.length / 12));
+  const barras = serie.map((d, i) => {
+    const alt = maxDia > 0 ? Math.max(2, Math.round((d.total / maxDia) * 100)) : 2;
+    const mostraData = !compacto || i % passo === 0 || i === serie.length - 1;
+    return `<div class="fin-gr-col" title="${finRotuloDia(d.chave)} — ${formatarReais(d.total)} (${d.qtd} pgto)">
+      ${compacto ? "" : `<div class="fin-gr-topo">${d.total > 0 ? formatarReais(d.total).replace("R$ ", "") : ""}</div>`}
+      <div class="fin-gr-trilho"><div class="fin-gr-barra${d.total === 0 ? " fin-gr-vazia" : ""}" style="height:${alt}%"></div></div>
+      <div class="fin-gr-dia">${mostraData ? d.chave.slice(8, 10) + "/" + d.chave.slice(5, 7) : "&nbsp;"}</div>
+    </div>`;
+  }).join("");
+
+  // Ritmo e projeção: com a média diária dos últimos 7 dias, em quanto tempo
+  // o valor que falta entra? Serve para decidir se precisa apertar a cobrança.
+  const ritmo = sem1.total / 7;
+  let projecao = "Sem recebimentos nos últimos 7 dias — não dá para projetar o fechamento.";
+  if (f.previsto <= 0) {
+    projecao = "Defina os preços por grupo na aba Pagamentos para projetar o fechamento do caixa.";
+  } else if (f.aReceber <= 0) {
+    projecao = "Tudo o que estava previsto já foi recebido. 🎉";
+  } else if (ritmo > 0) {
+    const diasFalta = Math.ceil(f.aReceber / ritmo);
+    const dataFim = new Date(inicioHoje.getTime() + diasFalta * 86400000);
+    projecao = `No ritmo dos últimos 7 dias (${formatarReais(ritmo)}/dia), faltam ~${diasFalta} dia(s) para receber os ${formatarReais(f.aReceber)} em aberto (por volta de ${dataFim.toLocaleDateString("pt-BR")}).`;
+  }
+
+  // Fechamento por semana (segunda a domingo) dentro do período.
+  const semanas = {};
+  dentro.forEach((l) => {
+    const d = l.data;
+    const diaSemana = (d.getDay() + 6) % 7; // 0 = segunda
+    const ini = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diaSemana);
+    const chave = finChaveDia(ini);
+    if (!semanas[chave]) semanas[chave] = { ini, qtd: 0, total: 0 };
+    semanas[chave].qtd++;
+    semanas[chave].total += l.valor;
+  });
+  const listaSemanas = Object.values(semanas).sort((a, b) => a.ini - b.ini);
+  let accSem = 0;
+  const linhasSemana = listaSemanas.map((s) => {
+    accSem += s.total;
+    const fim = new Date(s.ini.getTime() + 6 * 86400000);
+    return `<tr>
+      <td>${s.ini.toLocaleDateString("pt-BR")} a ${fim.toLocaleDateString("pt-BR")}</td>
+      <td>${s.qtd}</td>
+      <td class="fin-verde">${formatarReais(s.total)}</td>
+      <td>${formatarReais(accSem)}</td>
+    </tr>`;
+  }).reverse().join("");
+
+  const setaVar = variacao === null ? "" :
+    (variacao >= 0 ? `<span class="fin-verde">▲ ${variacao.toFixed(0)}%</span>` : `<span class="fin-vermelho">▼ ${Math.abs(variacao).toFixed(0)}%</span>`);
+
+  alvo.innerHTML = `
+    ${finBarraFiltrosHtml()}
+
+    <div class="fin-destaques fin-destaques-4">
+      <div class="fin-card fin-card-verde">
+        <span class="fin-rotulo">Hoje</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(hoje.total)}</span>
+        <span class="fin-sub">${hoje.qtd} pagamento(s)</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Ontem</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(ontem.total)}</span>
+        <span class="fin-sub">${ontem.qtd} pagamento(s)</span>
+      </div>
+      <div class="fin-card fin-card-azul">
+        <span class="fin-rotulo">Últimos 7 dias</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(sem1.total)}</span>
+        <span class="fin-sub">${setaVar || "sem base de comparação"} vs. 7 dias anteriores (${formatarReais(sem2.total)})</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Progresso do previsto</span>
+        <span class="fin-valor fin-valor-md">${Math.round(f.pctRecebido)}%</span>
+        <span class="fin-sub">${formatarReais(f.recebido)} de ${formatarReais(f.previsto)}</span>
+      </div>
+    </div>
+
+    <h3 class="fin-titulo">Entradas por dia</h3>
+    ${serie.length === 0
+      ? "<p>Nenhum recebimento neste período.</p>"
+      : `<div class="fin-grafico${compacto ? " fin-grafico-compacto" : ""}"><div class="fin-gr-barras">${barras}</div></div>`}
+
+    <p class="fin-projecao">${projecao}</p>
+
+    <h3 class="fin-titulo">Por semana</h3>
+    ${listaSemanas.length === 0
+      ? "<p>Sem dados para o período.</p>"
+      : `<div class="fin-tabela-wrap">
+          <table class="fin-tabela">
+            <thead><tr><th>Semana</th><th>Qtd</th><th>Recebido</th><th>Acumulado</th></tr></thead>
+            <tbody>${linhasSemana}</tbody>
+          </table>
+        </div>`}
+  `;
+
+  finLigarFiltros(alvo, f);
+}
+
+// ---------------- Visão 4: a receber (cobrança e conciliação) ----------------
+
+function finViewCobranca(alvo, f) {
+  const pend = finPendencias().filter((p) => !finTurmaFiltro || p.turmaId === finTurmaFiltro);
+  const aguardando = pend.filter((p) => p.tipo === "aguardando").sort((a, b) => (b.dias || 0) - (a.dias || 0));
+  const pendentes = pend.filter((p) => p.tipo === "pendente");
+  const bloqueados = pendentes.filter((p) => p.bloqueado);
+
+  const valAguardando = aguardando.reduce((s, p) => s + p.valor, 0);
+  const valPendente = pendentes.reduce((s, p) => s + p.valor, 0);
+
+  // Envelhecimento: quanto tempo cada pendência está em aberto.
+  const faixas = [
+    { label: "Até 3 dias", min: 0, max: 3 },
+    { label: "4 a 7 dias", min: 4, max: 7 },
+    { label: "8 a 15 dias", min: 8, max: 15 },
+    { label: "Mais de 15 dias", min: 16, max: Infinity }
+  ].map((fx) => {
+    const itens = pendentes.filter((p) => p.dias !== null && p.dias >= fx.min && p.dias <= fx.max);
+    return { ...fx, qtd: itens.length, valor: itens.reduce((s, p) => s + p.valor, 0) };
+  });
+  const semIdade = pendentes.filter((p) => p.dias === null);
+
+  const linhasAguardando = aguardando.map((p) => `
+    <tr>
+      <td>${escapeHtmlAdmin(p.aluno)}</td>
+      <td>${escapeHtmlAdmin(p.turma)}</td>
+      <td>${formatarReais(p.valor)}</td>
+      <td>${p.dias === null ? "-" : p.dias + " dia(s)"}</td>
+      <td><button type="button" class="sucesso fin-btn-confirmar" data-turma="${p.turmaId}" data-aluno="${p.alunoId}">Confirmar PIX</button></td>
+    </tr>`).join("");
+
+  // Turmas ordenadas pelo que falta receber, com o tempo médio em aberto.
+  const porTurma = {};
+  pend.forEach((p) => {
+    if (!porTurma[p.turmaId]) porTurma[p.turmaId] = { nome: p.turma, qtd: 0, valor: 0, dias: [], status: p.status, atrasado: p.atrasado };
+    const t = porTurma[p.turmaId];
+    t.qtd++;
+    t.valor += p.valor;
+    if (p.dias !== null) t.dias.push(p.dias);
+  });
+  const listaTurmas = Object.values(porTurma).sort((a, b) => b.valor - a.valor);
+  const linhasTurma = listaTurmas.map((t) => {
+    const medio = t.dias.length > 0 ? Math.round(t.dias.reduce((s, d) => s + d, 0) / t.dias.length) : null;
+    return `<tr>
+      <td>${escapeHtmlAdmin(t.nome)}${t.atrasado ? ' <span class="badge fechado">prazo vencido</span>' : ""}</td>
+      <td>${t.qtd}</td>
+      <td class="fin-vermelho">${formatarReais(t.valor)}</td>
+      <td>${medio === null ? "-" : medio + " dia(s)"}</td>
+      <td>${escapeHtmlAdmin(labelStatus(t.status))}</td>
+    </tr>`;
+  }).join("");
+
+  // Maiores valores individuais em aberto (foco da cobrança).
+  const maiores = [...pendentes].sort((a, b) => b.valor - a.valor || (b.dias || 0) - (a.dias || 0)).slice(0, 15);
+  const linhasMaiores = maiores.map((p) => `
+    <tr>
+      <td>${escapeHtmlAdmin(p.aluno)}${p.bloqueado ? ' <span class="badge aguardando">ajuste pendente</span>' : ""}</td>
+      <td>${escapeHtmlAdmin(p.turma)}</td>
+      <td>${escapeHtmlAdmin(p.tamanho)}</td>
+      <td class="fin-vermelho">${formatarReais(p.valor)}</td>
+      <td>${p.dias === null ? "-" : p.dias + " dia(s)"}</td>
+    </tr>`).join("");
+
+  alvo.innerHTML = `
+    ${finBarraFiltrosHtml(false)}
+    <p class="fin-dica">Esta visão mostra tudo o que está em aberto hoje, independente de período.</p>
+
+    <div class="fin-destaques fin-destaques-3">
+      <div class="fin-card fin-card-vermelho">
+        <span class="fin-rotulo">Total a receber</span>
+        <span class="fin-valor">${formatarReais(valAguardando + valPendente)}</span>
+        <span class="fin-sub">${pend.length} camiseta(s) em aberto</span>
+      </div>
+      <div class="fin-card fin-card-amarelo">
+        <span class="fin-rotulo">Aguardando confirmação</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(valAguardando)}</span>
+        <span class="fin-sub">${aguardando.length} aluno(s) avisaram que pagaram</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Pendente (sem aviso)</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(valPendente)}</span>
+        <span class="fin-sub">${pendentes.length} camiseta(s)${bloqueados.length > 0 ? ` · ${bloqueados.length} travada(s) por ajuste` : ""}</span>
+      </div>
+    </div>
+
+    <h3 class="fin-titulo">Fila de conferência (avisaram que pagaram)</h3>
+    ${aguardando.length === 0
+      ? "<p>Nada para conferir agora.</p>"
+      : `<div class="fin-tabela-wrap">
+          <table class="fin-tabela">
+            <thead><tr><th>Aluno</th><th>Turma</th><th>Valor</th><th>Esperando há</th><th></th></tr></thead>
+            <tbody>${linhasAguardando}</tbody>
+          </table>
+        </div>`}
+
+    <h3 class="fin-titulo">Tempo em aberto (pendentes sem aviso)</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Faixa</th><th>Qtd</th><th>Valor</th></tr></thead>
+        <tbody>
+          ${faixas.map((fx) => `<tr><td>${fx.label}</td><td>${fx.qtd}</td><td>${formatarReais(fx.valor)}</td></tr>`).join("")}
+          ${semIdade.length > 0 ? `<tr><td>Sem data de referência</td><td>${semIdade.length}</td><td>${formatarReais(semIdade.reduce((s, p) => s + p.valor, 0))}</td></tr>` : ""}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="fin-titulo">Por turma (maior valor em aberto primeiro)</h3>
+    ${listaTurmas.length === 0
+      ? "<p>Nenhuma pendência. Tudo pago! 🎉</p>"
+      : `<div class="fin-tabela-wrap">
+          <table class="fin-tabela">
+            <thead><tr><th>Turma</th><th>Em aberto</th><th>Valor</th><th>Tempo médio</th><th>Status do pedido</th></tr></thead>
+            <tbody>${linhasTurma}</tbody>
+          </table>
+        </div>`}
+
+    ${maiores.length === 0 ? "" : `
+    <h3 class="fin-titulo">Maiores pendências individuais</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Aluno</th><th>Turma</th><th>Tam.</th><th>Valor</th><th>Em aberto há</th></tr></thead>
+        <tbody>${linhasMaiores}</tbody>
+      </table>
+    </div>`}
+  `;
+
+  finLigarFiltros(alvo, f);
+  alvo.querySelectorAll(".fin-btn-confirmar").forEach((btn) => {
+    btn.onclick = () => {
+      if (!confirm("Confirmar o recebimento por PIX desta camiseta?")) return;
+      atualizarPagamento(btn.dataset.turma, btn.dataset.aluno, "pix");
+    };
+  });
+}
+
+// ---------------- Visão 5: resultado (DRE) ----------------
+
+function finViewResultado(alvo, f) {
+  const gruposOrdenados = Object.keys(f.porGrupo).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const linhasGrupo = gruposOrdenados.map((g) => {
+    const d = f.porGrupo[g];
+    const lucro = d.venda - d.custo;
+    const margem = d.venda > 0 ? (lucro / d.venda) * 100 : 0;
+    return `<tr>
+      <td>${escapeHtmlAdmin(g)}</td>
+      <td>${d.qtd}</td>
+      <td>${formatarReais(d.venda)}</td>
+      <td>${formatarReais(d.custo)}</td>
+      <td>${formatarReais(lucro)}</td>
+      <td>${margem.toFixed(0)}%</td>
+    </tr>`;
+  }).join("");
+
+  // Ranking de rentabilidade por turma (quem dá mais lucro previsto).
+  const ranking = [...f.porTurma].sort((a, b) => b.lucro - a.lucro).map((t) => `
+    <tr>
+      <td>${escapeHtmlAdmin(t.nome)}</td>
+      <td>${t.qtd}${t.internas > 0 ? ` <span class="fin-sub">(${t.internas} int.)</span>` : ""}</td>
+      <td>${formatarReais(t.previsto)}</td>
+      <td>${formatarReais(t.custos)}</td>
+      <td>${formatarReais(t.lucro)}</td>
+      <td>${t.margem.toFixed(0)}%</td>
+    </tr>`).join("");
+
+  const dre = [
+    ["Receita prevista (camisetas vendáveis)", f.previsto, "linha"],
+    ["(-) Custo de impressão", -f.custoImpressao, "linha"],
+    ["(-) Custo de costureira", -f.custoCostureira, "linha"],
+    ["(=) Lucro previsto", f.lucroPrevisto, "total"],
+    ["Receita já recebida", f.recebido, "linha"],
+    ["(-) Custo das camisetas já pagas", -f.custosRecebido, "linha"],
+    ["(=) Lucro realizado", f.lucroRealizado, "total"],
+    ["Custo das camisetas internas (sem receita)", -f.custoInterno, "linha"],
+    ["(=) Caixa a receber", f.aReceber, "total"]
+  ].map(([rotulo, valor, tipo]) => `
+    <tr class="${tipo === "total" ? "fin-linha-total" : ""}">
+      <td>${rotulo}</td>
+      <td class="${valor < 0 ? "fin-vermelho" : "fin-verde"}">${formatarReais(Math.abs(valor))}</td>
+    </tr>`).join("");
+
+  alvo.innerHTML = `
+    <div class="fin-destaques fin-destaques-4">
+      <div class="fin-card fin-card-azul">
+        <span class="fin-rotulo">Ticket médio</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(f.ticketMedio)}</span>
+        <span class="fin-sub">por camiseta vendável</span>
+      </div>
+      <div class="fin-card">
+        <span class="fin-rotulo">Custo médio unitário</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(f.custoMedio)}</span>
+        <span class="fin-sub">impressão + costureira</span>
+      </div>
+      <div class="fin-card fin-card-verde">
+        <span class="fin-rotulo">Margem prevista</span>
+        <span class="fin-valor fin-valor-md">${f.margem.toFixed(0)}%</span>
+        <span class="fin-sub">lucro ${formatarReais(f.lucroPrevisto)}</span>
+      </div>
+      <div class="fin-card fin-card-interno">
+        <span class="fin-rotulo">Camisetas internas</span>
+        <span class="fin-valor fin-valor-md">${f.qtdInternas} un</span>
+        <span class="fin-sub">custo ${formatarReais(f.custoInterno)} · sem receita</span>
+      </div>
+    </div>
+
+    <h3 class="fin-titulo">Demonstrativo do resultado</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela fin-tabela-dre">
+        <tbody>${dre}</tbody>
+      </table>
+    </div>
+
+    <h3 class="fin-titulo">Rentabilidade por turma</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Turma</th><th>Qtd</th><th>Receita prev.</th><th>Custo</th><th>Lucro prev.</th><th>Margem</th></tr></thead>
+        <tbody>${ranking}</tbody>
+      </table>
+    </div>
+
+    <h3 class="fin-titulo">Por grupo de tamanho</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Grupo</th><th>Qtd</th><th>Venda</th><th>Custo</th><th>Lucro</th><th>Margem</th></tr></thead>
+        <tbody>${linhasGrupo}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 // Pop-up com o detalhe do custo (Impressão + Costureira).
@@ -919,13 +1682,23 @@ function fecharModalCusto() {
   if (modal) modal.classList.add("oculto");
 }
 
-// Exporta o relatório financeiro (por turma + totais) em CSV.
+// ---------------- Exportação (segue a visão aberta) ----------------
+
 function exportarFinanceiro() {
   const f = finUltimo || calcularFinanceiro();
   if (f.qtd === 0) {
     alert("Não há dados financeiros para exportar.");
     return;
   }
+  if (finVisao === "extrato") return exportarExtrato();
+  if (finVisao === "evolucao") return exportarEvolucao();
+  if (finVisao === "cobranca") return exportarCobranca();
+  if (finVisao === "resultado") return exportarResultado(f);
+  return exportarResumoPorTurma(f);
+}
+
+// Visão geral / resumo por turma (formato original do relatório).
+function exportarResumoPorTurma(f) {
   const linhas = [["Turma", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
   f.porTurma.forEach((t) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
@@ -942,6 +1715,106 @@ function exportarFinanceiro() {
     Math.round(f.pctRecebido) + "%", f.custoImpressao.toFixed(2), f.custoCostureira.toFixed(2), f.custos.toFixed(2), f.lucroPrevisto.toFixed(2)
   ]);
   baixarCSV("financeiro-interclasse.csv", linhas);
+}
+
+// Extrato analítico: uma linha por pagamento, na ordem do extrato.
+function exportarExtrato() {
+  const { dentro, semData } = finFiltrar(finLancamentos());
+  const todos = dentro.concat(semData);
+  if (todos.length === 0) {
+    alert("Não há recebimentos no período selecionado.");
+    return;
+  }
+  const linhas = [["Data", "Hora", "Aluno", "Turma", "Tamanho", "Forma", "Origem", "Valor"]];
+  todos.forEach((l) => {
+    linhas.push([
+      l.data ? l.data.toLocaleDateString("pt-BR") : "sem data",
+      l.data ? finHora(l.data) : "",
+      l.aluno, l.turma, l.tamanho,
+      l.forma === "dinheiro" ? "Dinheiro" : "PIX",
+      l.online ? "Mercado Pago" : "Manual",
+      l.valor.toFixed(2)
+    ]);
+  });
+  linhas.push([]);
+  linhas.push(["TOTAL", "", "", "", "", "", todos.length + " pgto", todos.reduce((s, l) => s + l.valor, 0).toFixed(2)]);
+  baixarCSV("extrato-recebimentos.csv", linhas);
+}
+
+// Consolidado por dia (com acumulado) — bom para colar em planilha/gráfico.
+function exportarEvolucao() {
+  const { dentro } = finFiltrar(finLancamentos());
+  const dias = finAgruparPorDia(dentro);
+  if (dias.length === 0) {
+    alert("Não há recebimentos no período selecionado.");
+    return;
+  }
+  const linhas = [["Dia", "Qtd", "PIX", "Dinheiro", "Total do dia", "Acumulado"]];
+  dias.forEach((d) => {
+    linhas.push([
+      finDataDaChave(d.chave).toLocaleDateString("pt-BR"),
+      d.qtd, d.pix.toFixed(2), d.dinheiro.toFixed(2), d.total.toFixed(2), d.acumulado.toFixed(2)
+    ]);
+  });
+  baixarCSV("recebimentos-por-dia.csv", linhas);
+}
+
+// Tudo o que está em aberto, do mais antigo para o mais novo.
+function exportarCobranca() {
+  const pend = finPendencias()
+    .filter((p) => !finTurmaFiltro || p.turmaId === finTurmaFiltro)
+    .sort((a, b) => (b.dias || 0) - (a.dias || 0));
+  if (pend.length === 0) {
+    alert("Não há pendências para exportar.");
+    return;
+  }
+  const linhas = [["Aluno", "Turma", "Tamanho", "Situacao", "Valor", "Em aberto (dias)", "Desde", "Bloqueado por ajuste"]];
+  pend.forEach((p) => {
+    linhas.push([
+      p.aluno, p.turma, p.tamanho,
+      p.tipo === "aguardando" ? "Aguardando confirmacao" : "Pendente",
+      p.valor.toFixed(2),
+      p.dias === null ? "" : p.dias,
+      p.desde ? p.desde.toLocaleDateString("pt-BR") : "",
+      p.bloqueado ? "sim" : "nao"
+    ]);
+  });
+  linhas.push([]);
+  linhas.push(["TOTAL", "", "", "", pend.reduce((s, p) => s + p.valor, 0).toFixed(2), "", "", ""]);
+  baixarCSV("a-receber-interclasse.csv", linhas);
+}
+
+// DRE + rentabilidade por turma e por grupo.
+function exportarResultado(f) {
+  const linhas = [["Demonstrativo", "Valor"]];
+  [
+    ["Receita prevista", f.previsto],
+    ["Custo de impressao", -f.custoImpressao],
+    ["Custo de costureira", -f.custoCostureira],
+    ["Lucro previsto", f.lucroPrevisto],
+    ["Receita recebida", f.recebido],
+    ["Custo das camisetas pagas", -f.custosRecebido],
+    ["Lucro realizado", f.lucroRealizado],
+    ["Custo das camisetas internas", -f.custoInterno],
+    ["Caixa a receber", f.aReceber]
+  ].forEach(([r, v]) => linhas.push([r, v.toFixed(2)]));
+
+  linhas.push([]);
+  linhas.push(["Turma", "Qtd", "Receita prevista", "Custo", "Lucro previsto", "Margem %"]);
+  [...f.porTurma].sort((a, b) => b.lucro - a.lucro).forEach((t) => {
+    linhas.push([t.nome, t.qtd, t.previsto.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2), t.margem.toFixed(0)]);
+  });
+
+  linhas.push([]);
+  linhas.push(["Grupo de tamanho", "Qtd", "Venda", "Custo", "Lucro", "Margem %"]);
+  Object.keys(f.porGrupo).sort((a, b) => a.localeCompare(b, "pt-BR")).forEach((g) => {
+    const d = f.porGrupo[g];
+    const lucro = d.venda - d.custo;
+    const margem = d.venda > 0 ? (lucro / d.venda) * 100 : 0;
+    linhas.push([g, d.qtd, d.venda.toFixed(2), d.custo.toFixed(2), lucro.toFixed(2), margem.toFixed(0)]);
+  });
+
+  baixarCSV("resultado-interclasse.csv", linhas);
 }
 
 const elBtnExportarFinanceiro = document.getElementById("btnExportarFinanceiro");

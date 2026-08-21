@@ -64,6 +64,22 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 4. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, a turma fica **Aberta** até o Super Admin fechar/avançar o status.
 5. No painel admin, acompanhe o status de todas as turmas. Quando todas estiverem fechadas (ou quando quiser), clique em **Exportar CSV geral** para baixar um único arquivo com todos os pedidos.
 
+## Aba Financeiro (Super Admin)
+
+A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam os preços por grupo (aba **Pagamentos**) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
+
+- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por turma.
+- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, turma, tamanho e forma).
+- **Evolução** — hoje, ontem, últimos 7 dias (com a variação em relação aos 7 anteriores), gráfico de entradas por dia, fechamento por semana e a projeção de quando o valor em aberto termina de entrar, no ritmo atual.
+- **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por turma e as maiores pendências individuais.
+- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira e as camisetas internas), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por turma e por grupo de tamanho.
+
+O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por turma; a visão **A receber** tem só o filtro por turma, porque mostra sempre a situação de hoje.
+
+O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por turma (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
+
+> O extrato por dia usa a data em que o pagamento foi confirmado. Pagamentos confirmados antes de o sistema passar a gravar essa data aparecem num aviso à parte, fora do agrupamento por dia (mas continuam somando no total recebido).
+
 ## Sobre o CSV exportado
 
 - Colunas: `Turma` (só no CSV geral), `Nome do Estudante`, `Tamanho`, `Numero`, `Nome na Camiseta`.
