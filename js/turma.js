@@ -33,6 +33,8 @@ const elMarcaImagemTurma = document.getElementById("marcaImagemTurma");
 const elArteTurma = document.getElementById("arteTurma");
 const elFigArteTurma = document.getElementById("figArteTurma");
 const elMarcaArteTurma = document.getElementById("marcaArteTurma");
+const elBlocoGuiaTamanhos = document.getElementById("blocoGuiaTamanhos");
+const elGuiaTamanhos = document.getElementById("guiaTamanhos");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
@@ -62,6 +64,7 @@ async function iniciar() {
   cadastrosGlobaisAbertos = configGeral.cadastrosAbertos !== false;
 
   preencherSelectTamanhos(document.getElementById("tamanho"));
+  renderizarGuiaTamanhos();
 
   const doc = await db.collection("turmas").doc(turmaId).get();
   if (!doc.exists) {
@@ -115,6 +118,9 @@ async function aplicarFechamentoAutomatico() {
 function mostrarImagemTurma(figura, img, marca, url) {
   if (!figura || !img) return;
   if (url) {
+    // Clicar amplia; a legenda vem do <figcaption> da própria figura.
+    const legenda = figura.querySelector("figcaption");
+    tornarImagemAmpliavel(img, legenda ? legenda.textContent : "", () => turmaAtual.marcaDagua === true);
     img.src = url;
     figura.classList.remove("oculto");
     if (marca) marca.classList.toggle("oculto", turmaAtual.marcaDagua !== true);
@@ -122,6 +128,36 @@ function mostrarImagemTurma(figura, img, marca, url) {
     figura.classList.add("oculto");
     img.removeAttribute("src");
   }
+}
+
+// Guia de tamanhos: uma imagem de medidas por grupo (Infantil, Normal, Plus Size...),
+// vinda de config/tamanhos. Só aparece quando algum grupo tem imagem cadastrada.
+function renderizarGuiaTamanhos() {
+  if (!elGuiaTamanhos || !elBlocoGuiaTamanhos) return;
+
+  const comImagem = GRUPOS_TAMANHO.filter((g) => g.imagemUrl);
+  elBlocoGuiaTamanhos.classList.toggle("oculto", comImagem.length === 0);
+  elGuiaTamanhos.innerHTML = "";
+
+  comImagem.forEach((g) => {
+    const figura = document.createElement("figure");
+    figura.className = "figura-camiseta";
+
+    const img = document.createElement("img");
+    img.className = "imagem-turma";
+    img.src = g.imagemUrl;
+    img.alt = "Medidas do grupo " + g.grupo;
+    img.loading = "lazy";
+    // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
+    tornarImagemAmpliavel(img, "Medidas — " + g.grupo, false);
+    figura.appendChild(img);
+
+    const legenda = document.createElement("figcaption");
+    legenda.textContent = g.grupo + " (" + g.tamanhos.join(", ") + ")";
+    figura.appendChild(legenda);
+
+    elGuiaTamanhos.appendChild(figura);
+  });
 }
 
 function atualizarBadge() {

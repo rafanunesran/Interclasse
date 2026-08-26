@@ -2422,6 +2422,9 @@ function renderizarEditorTamanhos() {
 
     box.appendChild(linhaAdd);
 
+    // Imagem de referência de medidas deste grupo (aparece na página do pedido).
+    box.appendChild(criarBlocoImagemGrupo(grupo, iGrupo));
+
     // Custos e lucro do grupo (Impressão, Costureira e Lucro = venda − custos).
     box.appendChild(criarBlocoCustos(grupo, iGrupo));
 
@@ -2433,6 +2436,98 @@ function renderizarEditorTamanhos() {
     p.textContent = "Nenhum grupo. Clique em \"Adicionar grupo\" para começar.";
     elEditorTamanhos.appendChild(p);
   }
+}
+
+// Imagem de referência de medidas do grupo (ex.: tabela de medidas do Infantil).
+// Fica salva em config/tamanhos junto com o grupo e aparece na página do pedido.
+function criarBlocoImagemGrupo(grupo, iGrupo) {
+  const bloco = document.createElement("div");
+  bloco.className = "bloco-imagem-grupo";
+
+  const titulo = document.createElement("div");
+  titulo.className = "bloco-custos-titulo";
+  titulo.textContent = "Imagem de referência de medidas";
+  bloco.appendChild(titulo);
+
+  const linha = document.createElement("div");
+  linha.className = "bloco-imagem-admin";
+
+  if (grupo.imagemUrl) {
+    const thumb = document.createElement("img");
+    thumb.className = "thumb-camiseta";
+    thumb.src = grupo.imagemUrl;
+    thumb.alt = "Medidas do grupo " + grupo.grupo;
+    // Clicar amplia, igual à página do pedido — para conferir antes de salvar.
+    tornarImagemAmpliavel(thumb, "Medidas — " + grupo.grupo, false);
+    linha.appendChild(thumb);
+  }
+
+  const inputImg = document.createElement("input");
+  inputImg.type = "file";
+  inputImg.accept = "image/*";
+  inputImg.style.display = "none";
+
+  const btnImg = document.createElement("button");
+  btnImg.type = "button";
+  btnImg.className = "secundario";
+  btnImg.textContent = grupo.imagemUrl ? "Trocar imagem" : "Enviar imagem de medidas";
+  btnImg.onclick = () => {
+    if (!driveScriptUrl) {
+      alert("Configure a URL do Apps Script na aba Configurações antes de enviar imagens.");
+      return;
+    }
+    inputImg.click();
+  };
+
+  inputImg.onchange = async () => {
+    const file = inputImg.files[0];
+    if (!file) return;
+    btnImg.disabled = true;
+    const antes = btnImg.textContent;
+    btnImg.textContent = "Enviando…";
+    try {
+      const nomeArquivo = slugify(gruposTamanhoEdit[iGrupo].grupo || "grupo");
+      const url = await enviarImagemDrive(driveScriptUrl, nomeArquivo, file, "tamanho");
+      gruposTamanhoEdit[iGrupo].imagemUrl = url;
+      renderizarEditorTamanhos();
+      // O upload já foi feito, mas o vínculo com o grupo só vale depois de salvar.
+      mostrarMensagem(elMsgTamanhos, 'Imagem enviada. Clique em "Salvar tamanhos" para aplicar.', "aviso");
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao enviar a imagem: " + e.message);
+      btnImg.disabled = false;
+      btnImg.textContent = antes;
+      inputImg.value = "";
+    }
+  };
+
+  linha.appendChild(btnImg);
+
+  if (grupo.imagemUrl) {
+    const btnRemover = document.createElement("button");
+    btnRemover.type = "button";
+    btnRemover.className = "perigo";
+    btnRemover.textContent = "Remover imagem";
+    btnRemover.onclick = () => {
+      if (!confirm("Remover a imagem de medidas do grupo " + grupo.grupo + "?")) return;
+      delete gruposTamanhoEdit[iGrupo].imagemUrl;
+      renderizarEditorTamanhos();
+      mostrarMensagem(elMsgTamanhos, 'Imagem removida. Clique em "Salvar tamanhos" para aplicar.', "aviso");
+    };
+    linha.appendChild(btnRemover);
+  }
+
+  linha.appendChild(inputImg);
+  bloco.appendChild(linha);
+
+  const ajuda = document.createElement("small");
+  ajuda.className = "pix-ajuda";
+  ajuda.textContent = grupo.imagemUrl
+    ? "Aparece na página de cada pedido, no guia de tamanhos. Clique na miniatura para conferir ampliada."
+    : "Ex.: a tabela de medidas deste grupo. Aparece na página de cada pedido, no guia de tamanhos.";
+  bloco.appendChild(ajuda);
+
+  return bloco;
 }
 
 // Bloco de custos de um grupo: Impressão, Costureira e Lucro calculado.
@@ -2543,6 +2638,8 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
       // Guarda os custos só quando informados (número >= 0).
       if (g.custoImpressao != null && !isNaN(g.custoImpressao)) grupo.custoImpressao = Number(g.custoImpressao);
       if (g.custoCostureira != null && !isNaN(g.custoCostureira)) grupo.custoCostureira = Number(g.custoCostureira);
+      // Imagem de referência de medidas (quando o grupo tiver uma).
+      if (g.imagemUrl) grupo.imagemUrl = g.imagemUrl;
       return grupo;
     })
     .filter((g) => g.grupo && g.tamanhos.length > 0);

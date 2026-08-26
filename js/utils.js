@@ -17,12 +17,14 @@ let GRUPOS_TAMANHO = clonarGrupos(TAMANHOS_PADRAO);
 // Lista simples de todos os tamanhos, na ordem de exibição do resumo.
 let TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
 
-// Cópia profunda simples dos grupos de tamanho (preserva os custos, quando houver).
+// Cópia profunda simples dos grupos de tamanho (preserva custos e a imagem
+// de referência de medidas, quando houver).
 function clonarGrupos(grupos) {
   return grupos.map((g) => {
     const copia = { grupo: g.grupo, tamanhos: [...g.tamanhos] };
     if (g.custoImpressao != null) copia.custoImpressao = g.custoImpressao;
     if (g.custoCostureira != null) copia.custoCostureira = g.custoCostureira;
+    if (g.imagemUrl) copia.imagemUrl = g.imagemUrl;
     return copia;
   });
 }
@@ -477,10 +479,14 @@ function redimensionarImagemBase64(file, maxLargura) {
   });
 }
 
+// Prefixo do arquivo no Drive conforme o tipo de imagem enviada.
+const PREFIXOS_IMAGEM = { arte: "arte", tamanho: "tamanho", camiseta: "camiseta" };
+
 // Envia um base64 já processado ao Apps Script (Google Drive) e retorna a URL pública.
-// `tipo` entra no nome do arquivo no Drive ("camiseta" = simulação, "arte" = arte pura).
+// `tipo` entra no nome do arquivo no Drive ("camiseta" = simulação, "arte" = arte
+// pura, "tamanho" = tabela de medidas de um grupo de tamanhos).
 async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo) {
-  const prefixo = tipo === "arte" ? "arte" : "camiseta";
+  const prefixo = PREFIXOS_IMAGEM[tipo] || PREFIXOS_IMAGEM.camiseta;
   const resp = await fetch(scriptUrl, {
     method: "POST",
     // text/plain (padrão do fetch com string) evita o preflight de CORS do Apps Script.
@@ -497,10 +503,114 @@ async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo) {
 }
 
 // Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
-// A arte pura vai um pouco maior (1600 px) para os detalhes continuarem legíveis.
+// A arte pura e a tabela de medidas vão maiores (1600 px) porque têm detalhes e
+// números que precisam continuar legíveis quando a imagem é ampliada.
 async function enviarImagemDrive(scriptUrl, turmaId, file, tipo) {
-  const dataBase64 = await redimensionarImagemBase64(file, tipo === "arte" ? 1600 : 1200);
+  const maiorResolucao = tipo === "arte" || tipo === "tamanho";
+  const dataBase64 = await redimensionarImagemBase64(file, maiorResolucao ? 1600 : 1200);
   return enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo);
+}
+
+// ---------------- Ampliar imagem (lightbox) ----------------
+
+let lightboxEls = null;      // elementos do lightbox, criados na primeira vez
+let focoAntesLightbox = null; // para devolver o foco ao fechar
+
+// Monta (uma única vez) a estrutura do lightbox e devolve seus elementos.
+function obterLightbox() {
+  if (lightboxEls) return lightboxEls;
+
+  const fundo = document.createElement("div");
+  fundo.className = "lightbox oculto";
+  fundo.setAttribute("role", "dialog");
+  fundo.setAttribute("aria-modal", "true");
+
+  const conteudo = document.createElement("div");
+  conteudo.className = "lightbox-conteudo";
+
+  const fechar = document.createElement("button");
+  fechar.type = "button";
+  fechar.className = "lightbox-fechar";
+  fechar.setAttribute("aria-label", "Fechar imagem ampliada");
+  fechar.textContent = "×";
+
+  const wrap = document.createElement("span");
+  wrap.className = "wrap-imagem";
+
+  const img = document.createElement("img");
+  img.className = "lightbox-img img-na-marca";
+  img.alt = "";
+
+  const marca = document.createElement("span");
+  marca.className = "marca-overlay oculto";
+  marca.setAttribute("aria-hidden", "true");
+
+  const legenda = document.createElement("p");
+  legenda.className = "lightbox-legenda";
+
+  wrap.appendChild(img);
+  wrap.appendChild(marca);
+  conteudo.appendChild(fechar);
+  conteudo.appendChild(wrap);
+  conteudo.appendChild(legenda);
+  fundo.appendChild(conteudo);
+  document.body.appendChild(fundo);
+
+  fechar.onclick = fecharLightbox;
+  // Clicar fora da imagem (no fundo escuro) também fecha.
+  fundo.onclick = (ev) => {
+    if (ev.target === fundo) fecharLightbox();
+  };
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !fundo.classList.contains("oculto")) fecharLightbox();
+  });
+
+  lightboxEls = { fundo, img, marca, legenda, fechar };
+  return lightboxEls;
+}
+
+// Abre a imagem ampliada. A marca d'água, quando ligada, acompanha a ampliação.
+function abrirLightbox(url, legenda, comMarca) {
+  if (!url) return;
+  const els = obterLightbox();
+  focoAntesLightbox = document.activeElement;
+  els.img.src = url;
+  els.img.alt = legenda || "Imagem ampliada";
+  els.legenda.textContent = legenda || "";
+  els.legenda.classList.toggle("oculto", !legenda);
+  els.marca.classList.toggle("oculto", comMarca !== true);
+  els.fundo.classList.remove("oculto");
+  document.body.classList.add("sem-rolagem");
+  els.fechar.focus();
+}
+
+function fecharLightbox() {
+  if (!lightboxEls) return;
+  lightboxEls.fundo.classList.add("oculto");
+  lightboxEls.img.removeAttribute("src");
+  document.body.classList.remove("sem-rolagem");
+  if (focoAntesLightbox && focoAntesLightbox.focus) focoAntesLightbox.focus();
+  focoAntesLightbox = null;
+}
+
+// Deixa uma <img> clicável (e acessível pelo teclado) para abrir ampliada.
+// `comMarca` é lido na hora do clique, então pode ser uma função.
+function tornarImagemAmpliavel(imgEl, legenda, comMarca) {
+  if (!imgEl) return imgEl;
+  imgEl.classList.add("imagem-ampliavel");
+  imgEl.tabIndex = 0;
+  imgEl.setAttribute("role", "button");
+  imgEl.title = "Clique para ampliar";
+  const marcaAtiva = () => (typeof comMarca === "function" ? comMarca() : comMarca === true);
+  const abrir = () => abrirLightbox(imgEl.currentSrc || imgEl.src, legenda, marcaAtiva());
+  imgEl.onclick = abrir;
+  imgEl.onkeydown = (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      abrir();
+    }
+  };
+  return imgEl;
 }
 
 function mostrarMensagem(elemento, texto, tipo) {

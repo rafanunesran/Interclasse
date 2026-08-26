@@ -95,6 +95,21 @@ Tamanhos padrão (usados enquanto nada foi salvo no painel):
 
 Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel administrativo (`admin.html`): dá para criar/remover grupos, adicionar/remover tamanhos e restaurar o padrão. O que for salvo fica em `config/tamanhos` no Firestore e passa a valer no cadastro de todas as turmas. O array `TAMANHOS_PADRAO` em `js/utils.js` continua servindo como fallback caso nada tenha sido salvo ainda.
 
+### Imagem de referência de medidas (por grupo)
+
+Cada grupo (Infantil, Normal, Plus Size…) pode ter uma **imagem de referência de medidas**
+— normalmente a tabela de medidas daquele grupo. Ela é enviada no próprio grupo, na aba
+**Tamanhos**, e fica guardada em `config/tamanhos` (campo `imagemUrl` do grupo).
+
+- Precisa da URL do Apps Script configurada (a mesma das imagens da camiseta).
+- O envio para o Drive acontece na hora, mas o vínculo com o grupo **só vale depois de
+  clicar em "Salvar tamanhos"** — o botão salva o editor inteiro de uma vez.
+- Na página de cada pedido, as imagens aparecem juntas no card **Guia de tamanhos**, com o
+  nome do grupo e seus tamanhos na legenda. Grupos sem imagem simplesmente não aparecem
+  ali, e o card some por inteiro se nenhum grupo tiver imagem.
+- A tabela de medidas **nunca** recebe marca d'água: ela é informação para o aluno escolher
+  o tamanho.
+
 > **Importante:** o painel grava em `config/geral` e `config/tamanhos`. Se você configurou o Firestore antes desta versão, republique as regras (`firestore.rules`) no console do Firebase — a versão anterior bloqueava toda escrita em `config/`.
 
 ## Pagamento por PIX
@@ -159,6 +174,9 @@ as imagens ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
 - A **marca d'água de referência** é um único interruptor por turma e vale para as duas
   imagens. Ela é apenas uma camada sobreposta na exibição — os arquivos enviados não são
   alterados.
+- Na página do pedido, **clicar em qualquer imagem abre ela ampliada** (fecha no ×, clicando
+  fora ou com Esc). A marca d'água acompanha a ampliação, então ampliar não é um jeito de
+  contornar a proteção.
 
 ## Limitações conhecidas
 

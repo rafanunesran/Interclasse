@@ -400,6 +400,72 @@ tr.duplicado td { background: #fef3c7; }
 /* No card da home a imagem ocupa a largura toda do card. */
 .wrap-imagem-card { display: block; width: 100%; }
 
+/* Imagem clicável (abre ampliada no lightbox). */
+.imagem-ampliavel { cursor: zoom-in; }
+.imagem-ampliavel:focus-visible {
+  outline: 2px solid var(--azul);
+  outline-offset: 2px;
+}
+
+/* Lightbox: imagem ampliada sobre o resto da página. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1100;
+}
+.lightbox.oculto { display: none; }
+.lightbox-conteudo {
+  position: relative;
+  max-width: 100%;
+  text-align: center;
+}
+.lightbox-img {
+  display: block;
+  max-width: 92vw;
+  max-height: 82vh;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  background: var(--branco);
+}
+.lightbox-legenda {
+  margin: 10px 0 0;
+  color: #f3f4f6;
+  font-size: 0.9rem;
+}
+.lightbox-fechar {
+  position: absolute;
+  top: -14px;
+  right: -10px;
+  z-index: 1;
+  background: var(--branco);
+  border: 1px solid var(--cinza-borda);
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #374151;
+}
+/* Trava a rolagem do fundo enquanto o lightbox está aberto. */
+body.sem-rolagem { overflow: hidden; }
+
+/* Imagem de medidas de um grupo, no editor de tamanhos. */
+.bloco-imagem-grupo {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--cinza-borda);
+}
+.bloco-imagem-grupo .bloco-imagem-admin { margin-top: 6px; }
+.bloco-imagem-grupo .pix-ajuda { margin-top: 6px; display: block; }
+
 /* Galeria da página da turma: simulação e arte lado a lado (empilham no celular). */
 .galeria-camiseta {
   display: flex;
