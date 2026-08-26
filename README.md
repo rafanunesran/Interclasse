@@ -104,9 +104,9 @@ Cada grupo (Infantil, Normal, Plus Size…) pode ter uma **imagem de referência
 - Precisa da URL do Apps Script configurada (a mesma das imagens da camiseta).
 - O envio para o Drive acontece na hora, mas o vínculo com o grupo **só vale depois de
   clicar em "Salvar tamanhos"** — o botão salva o editor inteiro de uma vez.
-- Na página de cada pedido, as imagens aparecem juntas no card **Guia de tamanhos**, com o
-  nome do grupo e seus tamanhos na legenda. Grupos sem imagem simplesmente não aparecem
-  ali, e o card some por inteiro se nenhum grupo tiver imagem.
+- Na página de cada pedido, essas imagens entram na **galeria do topo**, logo depois da
+  simulação e da arte, com o nome do grupo e seus tamanhos na legenda. Grupos sem imagem
+  simplesmente não aparecem.
 - A tabela de medidas **nunca** recebe marca d'água: ela é informação para o aluno escolher
   o tamanho.
 
@@ -165,6 +165,10 @@ As duas são independentes: dá para ter só uma, as duas ou nenhuma. Se a turma
 arte, ela é usada como capa no card da tela inicial. Como o Firebase Storage exige plano pago,
 as imagens ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
 
+Na página do pedido elas ficam numa **galeria deslizante** junto com as imagens de medidas
+de cada grupo de tamanhos (ver [Imagem de referência de medidas](#imagem-de-referência-de-medidas-por-grupo)):
+arrasta para o lado no celular, setas no computador.
+
 - Publique o Apps Script e cole a URL em **Super Admin → Configurações**. Passo a passo em
   [`apps-script/README.md`](apps-script/README.md).
 - Depois, em cada turma (Super Admin → Inicial), use **"Enviar simulação da camiseta"** e/ou
@@ -175,8 +179,9 @@ as imagens ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
   imagens. Ela é apenas uma camada sobreposta na exibição — os arquivos enviados não são
   alterados.
 - Na página do pedido, **clicar em qualquer imagem abre ela ampliada** (fecha no ×, clicando
-  fora ou com Esc). A marca d'água acompanha a ampliação, então ampliar não é um jeito de
-  contornar a proteção.
+  fora ou com Esc; passa de uma para outra pelas setas na tela ou pelas setas ← → do
+  teclado). A marca d'água acompanha a ampliação, então ampliar não é um jeito de contornar
+  a proteção.
 
 ## Limitações conhecidas
 

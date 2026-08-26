@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Turma — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260826b" />
+<link rel="stylesheet" href="css/style.css?v=20260826c" />
 </head>
 <body>
 
@@ -20,21 +20,11 @@
     <h2 id="nomeTurma">Carregando...</h2>
     <span id="badgeStatus" class="badge"></span>
     <p id="infoDataLimite" class="pix-ajuda oculto"></p>
-    <div class="galeria-camiseta">
-      <figure id="figImagemTurma" class="figura-camiseta oculto">
-        <span class="wrap-imagem">
-          <img id="imagemTurma" class="imagem-turma img-na-marca" alt="Simulação da camiseta desta turma" />
-          <span id="marcaImagemTurma" class="marca-overlay oculto" aria-hidden="true"></span>
-        </span>
-        <figcaption>Simulação na camiseta</figcaption>
-      </figure>
-      <figure id="figArteTurma" class="figura-camiseta oculto">
-        <span class="wrap-imagem">
-          <img id="arteTurma" class="imagem-turma img-na-marca" alt="Arte da camiseta desta turma, sem simulação" />
-          <span id="marcaArteTurma" class="marca-overlay oculto" aria-hidden="true"></span>
-        </span>
-        <figcaption>Arte (sem simulação)</figcaption>
-      </figure>
+    <!-- Galeria: simulação, arte e as medidas de cada grupo, deslizando para o lado. -->
+    <div id="galeriaImagens" class="carrossel oculto">
+      <button type="button" id="galeriaAntes" class="carrossel-seta carrossel-antes" aria-label="Imagem anterior">‹</button>
+      <div id="galeriaTrilho" class="carrossel-trilho"></div>
+      <button type="button" id="galeriaDepois" class="carrossel-seta carrossel-depois" aria-label="Próxima imagem">›</button>
     </div>
     <div id="barraStatus"></div>
     <p id="mensagemSuspenso" class="aviso oculto">
@@ -46,12 +36,6 @@
     <p id="mensagemGlobalFechado" class="aviso oculto">
       Os cadastros estão temporariamente fechados pela organização do interclasse. Tente novamente mais tarde.
     </p>
-  </div>
-
-  <div class="card oculto" id="blocoGuiaTamanhos">
-    <h2>Guia de tamanhos</h2>
-    <p class="pix-ajuda">Confira as medidas antes de escolher o tamanho. Clique em uma imagem para ampliar.</p>
-    <div id="guiaTamanhos" class="galeria-camiseta"></div>
   </div>
 
   <div class="card" id="formSenha">

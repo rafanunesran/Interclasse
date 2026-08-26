@@ -332,14 +332,6 @@ tr.duplicado td { background: #fef3c7; }
 }
 
 /* Imagem da camiseta. */
-.imagem-turma {
-  display: block;
-  max-width: 100%;
-  max-height: 320px;
-  border-radius: 10px;
-  border: 1px solid var(--cinza-borda);
-  margin: 12px 0;
-}
 .turma-card-img {
   width: 100%;
   height: 130px;
@@ -438,6 +430,24 @@ tr.duplicado td { background: #fef3c7; }
   color: #f3f4f6;
   font-size: 0.9rem;
 }
+.lightbox-seta {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--cinza-borda);
+  background: rgba(255, 255, 255, 0.9);
+  color: #374151;
+  font-size: 1.7rem;
+  line-height: 1;
+}
+.lightbox-antes { left: -10px; }
+.lightbox-depois { right: -10px; }
 .lightbox-fechar {
   position: absolute;
   top: -14px;
@@ -466,24 +476,64 @@ body.sem-rolagem { overflow: hidden; }
 .bloco-imagem-grupo .bloco-imagem-admin { margin-top: 6px; }
 .bloco-imagem-grupo .pix-ajuda { margin-top: 6px; display: block; }
 
-/* Galeria da página da turma: simulação e arte lado a lado (empilham no celular). */
-.galeria-camiseta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+/* Galeria da página da turma: simulação, arte e as medidas de cada grupo,
+   lado a lado, deslizando para o lado (arrastar no celular, setas no desktop). */
+.carrossel {
+  position: relative;
   margin: 12px 0;
 }
-.figura-camiseta {
-  margin: 0;
-  flex: 1 1 240px;
-  min-width: 0;
+.carrossel-trilho {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
 }
-.figura-camiseta .imagem-turma { margin: 0; }
-.figura-camiseta figcaption {
+.carrossel-slide {
+  margin: 0;
+  flex: 0 0 260px;
+  max-width: 100%;
+  scroll-snap-align: start;
+  text-align: center;
+}
+.imagem-galeria {
+  display: block;
+  width: 100%;
+  height: 220px;
+  object-fit: contain;
+  background: var(--cinza-bg);
+  border-radius: 10px;
+  border: 1px solid var(--cinza-borda);
+}
+.carrossel-slide .wrap-imagem { display: block; width: 100%; }
+.carrossel-slide figcaption {
   margin-top: 6px;
   font-size: 0.82rem;
   color: #6b7280;
 }
+/* Setas do carrossel: sobre as bordas da faixa de imagens. */
+.carrossel-seta {
+  position: absolute;
+  top: 110px;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--cinza-borda);
+  background: var(--branco);
+  color: #374151;
+  font-size: 1.4rem;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.carrossel-antes { left: -6px; }
+.carrossel-depois { right: -6px; }
 
 /* Barra superior do painel administrativo (identificação + sair). */
 .barra-admin {

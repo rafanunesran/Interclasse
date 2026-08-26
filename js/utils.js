@@ -513,8 +513,10 @@ async function enviarImagemDrive(scriptUrl, turmaId, file, tipo) {
 
 // ---------------- Ampliar imagem (lightbox) ----------------
 
-let lightboxEls = null;      // elementos do lightbox, criados na primeira vez
+let lightboxEls = null;       // elementos do lightbox, criados na primeira vez
 let focoAntesLightbox = null; // para devolver o foco ao fechar
+let lightboxItens = [];       // imagens da ampliação atual
+let lightboxIndice = 0;       // qual delas está sendo exibida
 
 // Monta (uma única vez) a estrutura do lightbox e devolve seus elementos.
 function obterLightbox() {
@@ -548,61 +550,110 @@ function obterLightbox() {
   const legenda = document.createElement("p");
   legenda.className = "lightbox-legenda";
 
+  // Setas para passar de uma imagem à outra sem sair da ampliação.
+  const antes = document.createElement("button");
+  antes.type = "button";
+  antes.className = "lightbox-seta lightbox-antes";
+  antes.setAttribute("aria-label", "Imagem anterior");
+  antes.textContent = "‹";
+
+  const depois = document.createElement("button");
+  depois.type = "button";
+  depois.className = "lightbox-seta lightbox-depois";
+  depois.setAttribute("aria-label", "Próxima imagem");
+  depois.textContent = "›";
+
   wrap.appendChild(img);
   wrap.appendChild(marca);
   conteudo.appendChild(fechar);
+  conteudo.appendChild(antes);
   conteudo.appendChild(wrap);
+  conteudo.appendChild(depois);
   conteudo.appendChild(legenda);
   fundo.appendChild(conteudo);
   document.body.appendChild(fundo);
 
   fechar.onclick = fecharLightbox;
+  antes.onclick = () => passarLightbox(-1);
+  depois.onclick = () => passarLightbox(1);
   // Clicar fora da imagem (no fundo escuro) também fecha.
   fundo.onclick = (ev) => {
-    if (ev.target === fundo) fecharLightbox();
+    if (ev.target === fundo || ev.target === conteudo) fecharLightbox();
   };
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && !fundo.classList.contains("oculto")) fecharLightbox();
+    if (fundo.classList.contains("oculto")) return;
+    if (ev.key === "Escape") fecharLightbox();
+    if (ev.key === "ArrowLeft") passarLightbox(-1);
+    if (ev.key === "ArrowRight") passarLightbox(1);
   });
 
-  lightboxEls = { fundo, img, marca, legenda, fechar };
+  lightboxEls = { fundo, img, marca, legenda, fechar, antes, depois };
   return lightboxEls;
 }
 
-// Abre a imagem ampliada. A marca d'água, quando ligada, acompanha a ampliação.
-function abrirLightbox(url, legenda, comMarca) {
-  if (!url) return;
-  const els = obterLightbox();
+// Abre a galeria ampliada a partir de `indice`. Cada item é
+// { url, legenda, comMarca } — a marca d'água, quando ligada, acompanha a
+// ampliação, então ampliar não é um jeito de contornar a proteção.
+function abrirLightbox(itens, indice) {
+  const lista = (Array.isArray(itens) ? itens : [itens]).filter((i) => i && i.url);
+  if (lista.length === 0) return;
+  lightboxItens = lista;
   focoAntesLightbox = document.activeElement;
-  els.img.src = url;
-  els.img.alt = legenda || "Imagem ampliada";
-  els.legenda.textContent = legenda || "";
-  els.legenda.classList.toggle("oculto", !legenda);
-  els.marca.classList.toggle("oculto", comMarca !== true);
+  const els = obterLightbox();
   els.fundo.classList.remove("oculto");
   document.body.classList.add("sem-rolagem");
+  mostrarNoLightbox(Math.min(Math.max(indice || 0, 0), lista.length - 1));
   els.fechar.focus();
+}
+
+// Troca a imagem exibida na ampliação (usado pelas setas e pelo teclado).
+function mostrarNoLightbox(indice) {
+  const els = obterLightbox();
+  const item = lightboxItens[indice];
+  if (!item) return;
+  lightboxIndice = indice;
+  els.img.src = item.url;
+  els.img.alt = item.legenda || "Imagem ampliada";
+  els.legenda.textContent = item.legenda || "";
+  els.legenda.classList.toggle("oculto", !item.legenda);
+  els.marca.classList.toggle("oculto", item.comMarca !== true);
+  // Com uma imagem só, as setas não fazem sentido.
+  const varias = lightboxItens.length > 1;
+  els.antes.classList.toggle("oculto", !varias);
+  els.depois.classList.toggle("oculto", !varias);
+}
+
+// Passa para a imagem anterior/seguinte, dando a volta no fim da lista.
+function passarLightbox(direcao) {
+  if (lightboxItens.length < 2) return;
+  const total = lightboxItens.length;
+  mostrarNoLightbox((lightboxIndice + direcao + total) % total);
 }
 
 function fecharLightbox() {
   if (!lightboxEls) return;
   lightboxEls.fundo.classList.add("oculto");
   lightboxEls.img.removeAttribute("src");
+  lightboxItens = [];
   document.body.classList.remove("sem-rolagem");
   if (focoAntesLightbox && focoAntesLightbox.focus) focoAntesLightbox.focus();
   focoAntesLightbox = null;
 }
 
 // Deixa uma <img> clicável (e acessível pelo teclado) para abrir ampliada.
-// `comMarca` é lido na hora do clique, então pode ser uma função.
-function tornarImagemAmpliavel(imgEl, legenda, comMarca) {
+// `comMarca` é lido na hora do clique, então pode ser uma função. Passando
+// `itens`/`indice`, a ampliação já abre com a galeria inteira para navegar.
+function tornarImagemAmpliavel(imgEl, legenda, comMarca, itens, indice) {
   if (!imgEl) return imgEl;
   imgEl.classList.add("imagem-ampliavel");
   imgEl.tabIndex = 0;
   imgEl.setAttribute("role", "button");
   imgEl.title = "Clique para ampliar";
   const marcaAtiva = () => (typeof comMarca === "function" ? comMarca() : comMarca === true);
-  const abrir = () => abrirLightbox(imgEl.currentSrc || imgEl.src, legenda, marcaAtiva());
+  const abrir = () =>
+    Array.isArray(itens) && itens.length > 0
+      ? abrirLightbox(itens, indice || 0)
+      : abrirLightbox([{ url: imgEl.currentSrc || imgEl.src, legenda, comMarca: marcaAtiva() }], 0);
   imgEl.onclick = abrir;
   imgEl.onkeydown = (ev) => {
     if (ev.key === "Enter" || ev.key === " ") {

@@ -27,14 +27,10 @@ const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
 const elMensagemSuspenso = document.getElementById("mensagemSuspenso");
 const elBarraStatus = document.getElementById("barraStatus");
-const elImagemTurma = document.getElementById("imagemTurma");
-const elFigImagemTurma = document.getElementById("figImagemTurma");
-const elMarcaImagemTurma = document.getElementById("marcaImagemTurma");
-const elArteTurma = document.getElementById("arteTurma");
-const elFigArteTurma = document.getElementById("figArteTurma");
-const elMarcaArteTurma = document.getElementById("marcaArteTurma");
-const elBlocoGuiaTamanhos = document.getElementById("blocoGuiaTamanhos");
-const elGuiaTamanhos = document.getElementById("guiaTamanhos");
+const elGaleria = document.getElementById("galeriaImagens");
+const elGaleriaTrilho = document.getElementById("galeriaTrilho");
+const elGaleriaAntes = document.getElementById("galeriaAntes");
+const elGaleriaDepois = document.getElementById("galeriaDepois");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
@@ -64,7 +60,6 @@ async function iniciar() {
   cadastrosGlobaisAbertos = configGeral.cadastrosAbertos !== false;
 
   preencherSelectTamanhos(document.getElementById("tamanho"));
-  renderizarGuiaTamanhos();
 
   const doc = await db.collection("turmas").doc(turmaId).get();
   if (!doc.exists) {
@@ -113,52 +108,102 @@ async function aplicarFechamentoAutomatico() {
   }
 }
 
-// Mostra (ou esconde) uma das imagens da turma, com a marca d'água sobreposta
-// quando o flag da turma estiver ligado — a sobreposição não altera o arquivo.
-function mostrarImagemTurma(figura, img, marca, url) {
-  if (!figura || !img) return;
-  if (url) {
-    // Clicar amplia; a legenda vem do <figcaption> da própria figura.
-    const legenda = figura.querySelector("figcaption");
-    tornarImagemAmpliavel(img, legenda ? legenda.textContent : "", () => turmaAtual.marcaDagua === true);
-    img.src = url;
-    figura.classList.remove("oculto");
-    if (marca) marca.classList.toggle("oculto", turmaAtual.marcaDagua !== true);
-  } else {
-    figura.classList.add("oculto");
-    img.removeAttribute("src");
+// Monta a lista de imagens da galeria, na ordem em que aparecem: a simulação
+// na camiseta, a arte pura e, em seguida, as medidas de cada grupo de tamanhos.
+function imagensDaGaleria() {
+  const itens = [];
+  // Marca d'água sobreposta nas imagens da camiseta, conforme o flag da turma.
+  const comMarca = turmaAtual && turmaAtual.marcaDagua === true;
+  if (turmaAtual && turmaAtual.imagemUrl) {
+    itens.push({ url: turmaAtual.imagemUrl, legenda: "Simulação na camiseta", comMarca });
   }
+  if (turmaAtual && turmaAtual.arteUrl) {
+    itens.push({ url: turmaAtual.arteUrl, legenda: "Arte (sem simulação)", comMarca });
+  }
+  // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
+  GRUPOS_TAMANHO.filter((g) => g.imagemUrl).forEach((g) => {
+    itens.push({
+      url: g.imagemUrl,
+      legenda: "Medidas — " + g.grupo + " (" + g.tamanhos.join(", ") + ")",
+      comMarca: false
+    });
+  });
+  return itens;
 }
 
-// Guia de tamanhos: uma imagem de medidas por grupo (Infantil, Normal, Plus Size...),
-// vinda de config/tamanhos. Só aparece quando algum grupo tem imagem cadastrada.
-function renderizarGuiaTamanhos() {
-  if (!elGuiaTamanhos || !elBlocoGuiaTamanhos) return;
+let assinaturaGaleria = null; // evita remontar (e perder a posição) sem necessidade
 
-  const comImagem = GRUPOS_TAMANHO.filter((g) => g.imagemUrl);
-  elBlocoGuiaTamanhos.classList.toggle("oculto", comImagem.length === 0);
-  elGuiaTamanhos.innerHTML = "";
+// Galeria deslizante do topo da página. Cada imagem abre ampliada ao clicar, e
+// dentro da ampliação dá para passar para a próxima com as setas.
+function renderizarGaleria() {
+  if (!elGaleria || !elGaleriaTrilho) return;
 
-  comImagem.forEach((g) => {
+  const itens = imagensDaGaleria();
+  const comMarcaDagua = turmaAtual && turmaAtual.marcaDagua === true;
+  const assinatura = JSON.stringify([itens.map((i) => i.url), comMarcaDagua]);
+  if (assinatura === assinaturaGaleria) return; // nada mudou: preserva a rolagem
+  assinaturaGaleria = assinatura;
+
+  elGaleria.classList.toggle("oculto", itens.length === 0);
+  elGaleriaTrilho.innerHTML = "";
+
+  itens.forEach((item, indice) => {
     const figura = document.createElement("figure");
-    figura.className = "figura-camiseta";
+    figura.className = "carrossel-slide";
+
+    const wrap = document.createElement("span");
+    wrap.className = "wrap-imagem";
 
     const img = document.createElement("img");
-    img.className = "imagem-turma";
-    img.src = g.imagemUrl;
-    img.alt = "Medidas do grupo " + g.grupo;
-    img.loading = "lazy";
-    // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
-    tornarImagemAmpliavel(img, "Medidas — " + g.grupo, false);
-    figura.appendChild(img);
+    img.className = "imagem-galeria img-na-marca";
+    img.src = item.url;
+    img.alt = item.legenda;
+    img.loading = indice === 0 ? "eager" : "lazy";
+    // Clicar (ou Enter/Espaço) amplia, já dentro da galeria toda.
+    tornarImagemAmpliavel(img, item.legenda, item.comMarca, itens, indice);
+    wrap.appendChild(img);
+
+    // Marca d'água sobreposta (não altera o arquivo), conforme o flag da turma.
+    if (item.comMarca) {
+      const marca = document.createElement("span");
+      marca.className = "marca-overlay";
+      marca.setAttribute("aria-hidden", "true");
+      wrap.appendChild(marca);
+    }
 
     const legenda = document.createElement("figcaption");
-    legenda.textContent = g.grupo + " (" + g.tamanhos.join(", ") + ")";
-    figura.appendChild(legenda);
+    legenda.textContent = item.legenda;
 
-    elGuiaTamanhos.appendChild(figura);
+    figura.appendChild(wrap);
+    figura.appendChild(legenda);
+    elGaleriaTrilho.appendChild(figura);
   });
+
+  atualizarSetasGaleria();
 }
+
+// Rola a galeria uma "página" para o lado.
+function deslizarGaleria(direcao) {
+  if (!elGaleriaTrilho) return;
+  const slide = elGaleriaTrilho.querySelector(".carrossel-slide");
+  const passo = slide ? slide.getBoundingClientRect().width + 12 : elGaleriaTrilho.clientWidth;
+  elGaleriaTrilho.scrollBy({ left: direcao * passo, behavior: "smooth" });
+}
+
+// As setas só aparecem quando há mais imagens do que cabem na tela, e cada uma
+// some quando a galeria já chegou ao fim daquele lado.
+function atualizarSetasGaleria() {
+  if (!elGaleriaTrilho || !elGaleriaAntes || !elGaleriaDepois) return;
+  const sobra = elGaleriaTrilho.scrollWidth - elGaleriaTrilho.clientWidth;
+  const x = elGaleriaTrilho.scrollLeft;
+  elGaleriaAntes.classList.toggle("oculto", sobra <= 1 || x <= 1);
+  elGaleriaDepois.classList.toggle("oculto", sobra <= 1 || x >= sobra - 1);
+}
+
+if (elGaleriaAntes) elGaleriaAntes.onclick = () => deslizarGaleria(-1);
+if (elGaleriaDepois) elGaleriaDepois.onclick = () => deslizarGaleria(1);
+if (elGaleriaTrilho) elGaleriaTrilho.addEventListener("scroll", atualizarSetasGaleria, { passive: true });
+window.addEventListener("resize", atualizarSetasGaleria);
 
 function atualizarBadge() {
   const statusId = statusPedidoDe(turmaAtual);
@@ -167,9 +212,8 @@ function atualizarBadge() {
 
   renderizarBarraStatus(elBarraStatus, statusId);
 
-  // Imagens da camiseta (referência para os alunos): a simulação e a arte pura.
-  mostrarImagemTurma(elFigImagemTurma, elImagemTurma, elMarcaImagemTurma, turmaAtual.imagemUrl);
-  mostrarImagemTurma(elFigArteTurma, elArteTurma, elMarcaArteTurma, turmaAtual.arteUrl);
+  // Galeria de referência: simulação, arte e as medidas de cada grupo.
+  renderizarGaleria();
 
   // Info da data limite.
   if (elInfoDataLimite) {
