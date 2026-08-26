@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Turma — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260821a" />
+<link rel="stylesheet" href="css/style.css?v=20260826a" />
 </head>
 <body>
 
@@ -20,10 +20,22 @@
     <h2 id="nomeTurma">Carregando...</h2>
     <span id="badgeStatus" class="badge"></span>
     <p id="infoDataLimite" class="pix-ajuda oculto"></p>
-    <span id="wrapImagemTurma" class="wrap-imagem oculto">
-      <img id="imagemTurma" class="imagem-turma img-na-marca" alt="Imagem da camiseta desta turma" />
-      <span id="marcaImagemTurma" class="marca-overlay oculto" aria-hidden="true"></span>
-    </span>
+    <div class="galeria-camiseta">
+      <figure id="figImagemTurma" class="figura-camiseta oculto">
+        <span class="wrap-imagem">
+          <img id="imagemTurma" class="imagem-turma img-na-marca" alt="Simulação da camiseta desta turma" />
+          <span id="marcaImagemTurma" class="marca-overlay oculto" aria-hidden="true"></span>
+        </span>
+        <figcaption>Simulação na camiseta</figcaption>
+      </figure>
+      <figure id="figArteTurma" class="figura-camiseta oculto">
+        <span class="wrap-imagem">
+          <img id="arteTurma" class="imagem-turma img-na-marca" alt="Arte da camiseta desta turma, sem simulação" />
+          <span id="marcaArteTurma" class="marca-overlay oculto" aria-hidden="true"></span>
+        </span>
+        <figcaption>Arte (sem simulação)</figcaption>
+      </figure>
+    </div>
     <div id="barraStatus"></div>
     <p id="mensagemSuspenso" class="aviso oculto">
       ⏸ Este pedido está <strong>suspenso</strong> pela organização do interclasse. No momento não é possível cadastrar nomes nem realizar pagamentos. Tente novamente mais tarde.

@@ -137,16 +137,28 @@ Detalhes técnicos:
 - A **imagem** do QR Code é renderizada por um serviço externo (`api.qrserver.com`) apenas para desenhar o quadradinho; se preferir 100% offline, dá para trocar por uma biblioteca embutida — é só pedir.
 - Os dados de pagamento ficam em `config/geral` (só o admin grava; leitura é pública, como o resto).
 
-## Imagem da camiseta (Google Drive)
+## Imagens da camiseta (Google Drive)
 
-Cada turma pode ter uma **foto da camiseta** (referência do que será produzido), que aparece no
-card da tela inicial e na página da turma. Como o Firebase Storage exige plano pago, as imagens
-ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
+Cada turma pode ter **duas imagens** de referência, que aparecem na página da turma (e a
+primeira delas também no card da tela inicial):
+
+- **Simulação na camiseta** (campo `imagemUrl`) — a foto/mockup do que será produzido.
+- **Arte (sem simulação)** (campo `arteUrl`) — a arte pura, do jeito que foi desenhada, sem
+  a camiseta em volta.
+
+As duas são independentes: dá para ter só uma, as duas ou nenhuma. Se a turma tiver apenas a
+arte, ela é usada como capa no card da tela inicial. Como o Firebase Storage exige plano pago,
+as imagens ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
 
 - Publique o Apps Script e cole a URL em **Super Admin → Configurações**. Passo a passo em
   [`apps-script/README.md`](apps-script/README.md).
-- Depois, em cada turma (Super Admin → Inicial), use **"Enviar imagem da camiseta"**.
-- No Firestore fica guardada só a **URL** da imagem; o arquivo em si fica no seu Drive.
+- Depois, em cada turma (Super Admin → Inicial), use **"Enviar simulação da camiseta"** e/ou
+  **"Enviar arte (sem simulação)"**.
+- No Firestore fica guardada só a **URL** de cada imagem; os arquivos ficam no seu Drive
+  (`camiseta-<turma>.jpg` e `arte-<turma>.jpg`).
+- A **marca d'água de referência** é um único interruptor por turma e vale para as duas
+  imagens. Ela é apenas uma camada sobreposta na exibição — os arquivos enviados não são
+  alterados.
 
 ## Limitações conhecidas
 

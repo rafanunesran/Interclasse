@@ -28,8 +28,11 @@ const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado")
 const elMensagemSuspenso = document.getElementById("mensagemSuspenso");
 const elBarraStatus = document.getElementById("barraStatus");
 const elImagemTurma = document.getElementById("imagemTurma");
-const elWrapImagemTurma = document.getElementById("wrapImagemTurma");
+const elFigImagemTurma = document.getElementById("figImagemTurma");
 const elMarcaImagemTurma = document.getElementById("marcaImagemTurma");
+const elArteTurma = document.getElementById("arteTurma");
+const elFigArteTurma = document.getElementById("figArteTurma");
+const elMarcaArteTurma = document.getElementById("marcaArteTurma");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
@@ -107,6 +110,20 @@ async function aplicarFechamentoAutomatico() {
   }
 }
 
+// Mostra (ou esconde) uma das imagens da turma, com a marca d'água sobreposta
+// quando o flag da turma estiver ligado — a sobreposição não altera o arquivo.
+function mostrarImagemTurma(figura, img, marca, url) {
+  if (!figura || !img) return;
+  if (url) {
+    img.src = url;
+    figura.classList.remove("oculto");
+    if (marca) marca.classList.toggle("oculto", turmaAtual.marcaDagua !== true);
+  } else {
+    figura.classList.add("oculto");
+    img.removeAttribute("src");
+  }
+}
+
 function atualizarBadge() {
   const statusId = statusPedidoDe(turmaAtual);
   elBadgeStatus.textContent = labelStatus(statusId);
@@ -114,20 +131,9 @@ function atualizarBadge() {
 
   renderizarBarraStatus(elBarraStatus, statusId);
 
-  // Imagem da camiseta (referência para os alunos).
-  if (elImagemTurma && elWrapImagemTurma) {
-    if (turmaAtual.imagemUrl) {
-      elImagemTurma.src = turmaAtual.imagemUrl;
-      elWrapImagemTurma.classList.remove("oculto");
-      // Marca d'água sobreposta (não altera o arquivo), conforme o flag da turma.
-      if (elMarcaImagemTurma) {
-        elMarcaImagemTurma.classList.toggle("oculto", turmaAtual.marcaDagua !== true);
-      }
-    } else {
-      elWrapImagemTurma.classList.add("oculto");
-      elImagemTurma.removeAttribute("src");
-    }
-  }
+  // Imagens da camiseta (referência para os alunos): a simulação e a arte pura.
+  mostrarImagemTurma(elFigImagemTurma, elImagemTurma, elMarcaImagemTurma, turmaAtual.imagemUrl);
+  mostrarImagemTurma(elFigArteTurma, elArteTurma, elMarcaArteTurma, turmaAtual.arteUrl);
 
   // Info da data limite.
   if (elInfoDataLimite) {

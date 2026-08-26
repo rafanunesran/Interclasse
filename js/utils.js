@@ -449,6 +449,8 @@ function envolverImagemComMarca(imgEl, comMarca) {
 }
 
 // Reduz a imagem para no máximo `maxLargura` px e devolve base64 (JPEG, sem prefixo).
+// O fundo é pintado de branco antes de desenhar porque o JPEG não tem
+// transparência — sem isso, uma arte em PNG transparente sairia com fundo preto.
 function redimensionarImagemBase64(file, maxLargura) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -461,7 +463,10 @@ function redimensionarImagemBase64(file, maxLargura) {
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
     };
     img.onerror = () => {
@@ -473,13 +478,15 @@ function redimensionarImagemBase64(file, maxLargura) {
 }
 
 // Envia um base64 já processado ao Apps Script (Google Drive) e retorna a URL pública.
-async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64) {
+// `tipo` entra no nome do arquivo no Drive ("camiseta" = simulação, "arte" = arte pura).
+async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo) {
+  const prefixo = tipo === "arte" ? "arte" : "camiseta";
   const resp = await fetch(scriptUrl, {
     method: "POST",
     // text/plain (padrão do fetch com string) evita o preflight de CORS do Apps Script.
     body: JSON.stringify({
       turmaId: turmaId,
-      nome: "camiseta-" + turmaId + ".jpg",
+      nome: prefixo + "-" + turmaId + ".jpg",
       mimeType: "image/jpeg",
       dataBase64: dataBase64
     })
@@ -490,9 +497,10 @@ async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64) {
 }
 
 // Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
-async function enviarImagemDrive(scriptUrl, turmaId, file) {
-  const dataBase64 = await redimensionarImagemBase64(file, 1200);
-  return enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64);
+// A arte pura vai um pouco maior (1600 px) para os detalhes continuarem legíveis.
+async function enviarImagemDrive(scriptUrl, turmaId, file, tipo) {
+  const dataBase64 = await redimensionarImagemBase64(file, tipo === "arte" ? 1600 : 1200);
+  return enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo);
 }
 
 function mostrarMensagem(elemento, texto, tipo) {

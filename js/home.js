@@ -48,9 +48,11 @@ async function carregarTurmas() {
       const marcaOverlay = turma.marcaDagua === true
         ? '<span class="marca-overlay" aria-hidden="true"></span>'
         : "";
-      const imagem = turma.imagemUrl
+      // No card mostramos a simulação; se a turma só tiver a arte, ela serve de capa.
+      const capaUrl = turma.imagemUrl || turma.arteUrl;
+      const imagem = capaUrl
         ? `<span class="wrap-imagem wrap-imagem-card">
-             <img class="turma-card-img img-na-marca" src="${encodeURI(turma.imagemUrl)}" alt="Camiseta de ${escaparHtml(turma.nome)}" />
+             <img class="turma-card-img img-na-marca" src="${encodeURI(capaUrl)}" alt="Camiseta de ${escaparHtml(turma.nome)}" />
              ${marcaOverlay}
            </span>`
         : "";

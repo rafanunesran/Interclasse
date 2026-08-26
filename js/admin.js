@@ -250,7 +250,7 @@ function renderizarTurmasAdmin() {
     }
     card.appendChild(linhaData);
 
-    // Imagem da camiseta (Google Drive via Apps Script).
+    // Imagens da camiseta — simulação e arte (Google Drive via Apps Script).
     card.appendChild(criarBlocoImagemTurma(turmaId, turma));
 
     const botoes = document.createElement("div");
@@ -2007,27 +2007,39 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
   tr.appendChild(tdAcoes);
 }
 
-// Bloco de imagem da camiseta no card do Super Admin (enviar/trocar/remover).
+// Imagens de cada turma: a simulação na camiseta e a arte pura (sem simulação).
+// `campo` é o nome do campo na turma; as duas seguem o mesmo fluxo de upload.
+const IMAGENS_TURMA = [
+  {
+    campo: "imagemUrl",
+    tipo: "camiseta",
+    alt: "Simulação da camiseta",
+    titulo: "Simulação na camiseta",
+    labelEnviar: "Enviar simulação da camiseta",
+    labelTrocar: "Trocar simulação",
+    labelRemover: "Remover simulação",
+    confirmRemover: "Remover a simulação da camiseta desta turma?"
+  },
+  {
+    campo: "arteUrl",
+    tipo: "arte",
+    alt: "Arte da camiseta (sem simulação)",
+    titulo: "Arte (sem simulação)",
+    labelEnviar: "Enviar arte (sem simulação)",
+    labelTrocar: "Trocar arte",
+    labelRemover: "Remover arte",
+    confirmRemover: "Remover a arte (sem simulação) desta turma?"
+  }
+];
+
+// Bloco de imagens da camiseta no card do Super Admin (enviar/trocar/remover).
 function criarBlocoImagemTurma(turmaId, turma) {
   const bloco = document.createElement("div");
-  bloco.className = "bloco-imagem-admin";
+  bloco.className = "bloco-imagens-admin";
 
-  if (turma.imagemUrl) {
-    const thumb = document.createElement("img");
-    thumb.className = "thumb-camiseta";
-    thumb.src = turma.imagemUrl;
-    thumb.alt = "Imagem da camiseta";
-    // Sobrepõe a marca d'água (sem alterar o arquivo) quando ativada na turma.
-    bloco.appendChild(envolverImagemComMarca(thumb, turma.marcaDagua === true));
-  }
-
-  const inputImg = document.createElement("input");
-  inputImg.type = "file";
-  inputImg.accept = "image/*";
-  inputImg.style.display = "none";
-
-  // Checkbox: liga/desliga a marca d'água SOBREPOSTA (não altera o arquivo).
-  // Vale na hora e para imagens já enviadas — é só uma camada na exibição.
+  // Checkbox: liga/desliga a marca d'água SOBREPOSTA (não altera os arquivos).
+  // Vale na hora e para imagens já enviadas — é só uma camada na exibição,
+  // aplicada tanto na simulação quanto na arte.
   const lblMarca = document.createElement("label");
   lblMarca.className = "checkbox-inline check-marca";
   const chkMarca = document.createElement("input");
@@ -2041,11 +2053,45 @@ function criarBlocoImagemTurma(turmaId, turma) {
       .catch((e) => console.error("Falha ao salvar a marca d'água:", e));
   };
   lblMarca.appendChild(chkMarca);
-  lblMarca.appendChild(document.createTextNode(" Marca d'água de referência (sobreposta)"));
+  lblMarca.appendChild(document.createTextNode(" Marca d'água de referência (sobreposta nas duas imagens)"));
+  bloco.appendChild(lblMarca);
+
+  IMAGENS_TURMA.forEach((cfg) => {
+    bloco.appendChild(criarLinhaImagemTurma(turmaId, turma, cfg));
+  });
+
+  return bloco;
+}
+
+// Uma linha do bloco acima: miniatura + botões de enviar/trocar e remover.
+function criarLinhaImagemTurma(turmaId, turma, cfg) {
+  const linha = document.createElement("div");
+  linha.className = "bloco-imagem-admin";
+
+  const rotulo = document.createElement("span");
+  rotulo.className = "rotulo-imagem";
+  rotulo.textContent = cfg.titulo;
+  linha.appendChild(rotulo);
+
+  const urlAtual = turma[cfg.campo];
+
+  if (urlAtual) {
+    const thumb = document.createElement("img");
+    thumb.className = "thumb-camiseta";
+    thumb.src = urlAtual;
+    thumb.alt = cfg.alt;
+    // Sobrepõe a marca d'água (sem alterar o arquivo) quando ativada na turma.
+    linha.appendChild(envolverImagemComMarca(thumb, turma.marcaDagua === true));
+  }
+
+  const inputImg = document.createElement("input");
+  inputImg.type = "file";
+  inputImg.accept = "image/*";
+  inputImg.style.display = "none";
 
   const btnImg = document.createElement("button");
   btnImg.className = "secundario";
-  btnImg.textContent = turma.imagemUrl ? "Trocar imagem" : "Enviar imagem da camiseta";
+  btnImg.textContent = urlAtual ? cfg.labelTrocar : cfg.labelEnviar;
   btnImg.onclick = () => {
     if (!driveScriptUrl) {
       alert("Configure a URL do Apps Script na aba Configurações antes de enviar imagens.");
@@ -2061,8 +2107,8 @@ function criarBlocoImagemTurma(turmaId, turma) {
     const antes = btnImg.textContent;
     btnImg.textContent = "Enviando…";
     try {
-      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file);
-      await db.collection("turmas").doc(turmaId).update({ imagemUrl: url });
+      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file, cfg.tipo);
+      await db.collection("turmas").doc(turmaId).update({ [cfg.campo]: url });
     } catch (e) {
       console.error(e);
       alert("Erro ao enviar a imagem: " + e.message);
@@ -2073,23 +2119,23 @@ function criarBlocoImagemTurma(turmaId, turma) {
     }
   };
 
-  bloco.appendChild(lblMarca);
-  bloco.appendChild(btnImg);
+  linha.appendChild(btnImg);
 
-  if (turma.imagemUrl) {
+  if (urlAtual) {
     const btnRemover = document.createElement("button");
     btnRemover.className = "perigo";
-    btnRemover.textContent = "Remover imagem";
+    btnRemover.textContent = cfg.labelRemover;
     btnRemover.onclick = () => {
-      if (confirm("Remover a imagem da camiseta desta turma?")) {
-        db.collection("turmas").doc(turmaId).update({ imagemUrl: firebase.firestore.FieldValue.delete() });
+      if (confirm(cfg.confirmRemover)) {
+        db.collection("turmas").doc(turmaId)
+          .update({ [cfg.campo]: firebase.firestore.FieldValue.delete() });
       }
     };
-    bloco.appendChild(btnRemover);
+    linha.appendChild(btnRemover);
   }
 
-  bloco.appendChild(inputImg);
-  return bloco;
+  linha.appendChild(inputImg);
+  return linha;
 }
 
 function escapeHtmlAdmin(texto) {
