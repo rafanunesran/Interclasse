@@ -8,7 +8,9 @@ Roda de graça na **Vercel** (plano Hobby, sem cartão). Funções:
 
 - `api/criar-preferencia.js` — **Checkout Pro** (padrão): cria uma preferência e devolve a URL
   da página hospedada do Mercado Pago; o site redireciona o pagador para lá (com o layout do MP,
-  QR gerado pelo próprio MP). O valor é calculado aqui pelo tamanho do aluno (nunca vem do cliente).
+  QR gerado pelo próprio MP). O valor é calculado aqui pelo tamanho do aluno e pela turma
+  dele — a tabela geral `config/geral.precosPorGrupo` com o preço próprio da turma
+  (`config/geral.precosPorTurma[turmaId]`) por cima —, nunca vindo do cliente.
 - `api/webhook-mp.js` — recebe o aviso do Mercado Pago (payment e merchant_order), valida a
   assinatura e grava `pago: true` no aluno.
 - `api/criar-pagamento.js` — alternativa "transparente" (QR dentro do próprio site). Não é usada

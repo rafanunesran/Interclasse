@@ -12,6 +12,8 @@
 const PAGINA_LOGIN = "admin.html";
 
 const estadoTurmas = {}; // turmaId -> { turma, alunos, expandido }
+const precosTurmaAbertos = {}; // turmaId -> true quando o bloco de preços está aberto
+const precosTurmaSalvos = {};  // turmaId -> aviso a mostrar depois de salvar/limpar
 
 const elPainel = document.getElementById("painelAdmin");
 const elEmailLogado = document.getElementById("emailLogado");
@@ -257,6 +259,9 @@ function renderizarTurmasAdmin() {
       linhaData.appendChild(semData);
     }
     card.appendChild(linhaData);
+
+    // Preço personalizado desta turma (sobrepõe a tabela geral, grupo a grupo).
+    card.appendChild(criarBlocoPrecosTurma(turmaId));
 
     // Imagens da camiseta — simulação e arte (Google Drive via Apps Script).
     card.appendChild(criarBlocoImagemTurma(turmaId, turma));
@@ -667,6 +672,63 @@ function renderizarResumoPagamentos() {
       <span class="badge pendente">Pendentes: ${pendentes}</span>
     </div>
   `;
+
+  renderizarResumoPrecosTurmas();
+}
+
+// Lista as turmas que têm um preço próprio para um grupo de tamanho.
+function turmasComPrecoProprio(nomeGrupo) {
+  return Object.entries(configGeralAtual.precosPorTurma || {})
+    .filter(([, mapa]) => mapa && mapa[nomeGrupo] != null && !isNaN(Number(mapa[nomeGrupo])))
+    .map(([id, mapa]) => ({
+      turmaId: id,
+      nome: (estadoTurmas[id] && estadoTurmas[id].turma.nome) || id,
+      valor: Number(mapa[nomeGrupo])
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+// Tabela (aba Pagamentos) com o preço que vale em cada turma, por grupo.
+// Quem não tem preço próprio aparece com o valor geral, em cinza.
+function renderizarResumoPrecosTurmas() {
+  const el = document.getElementById("precosTurmasResumo");
+  if (!el) return;
+
+  const ids = Object.keys(estadoTurmas).sort((a, b) =>
+    estadoTurmas[a].turma.nome.localeCompare(estadoTurmas[b].turma.nome, "pt-BR")
+  );
+
+  if (ids.length === 0 || GRUPOS_TAMANHO.length === 0) {
+    el.innerHTML = "<p>Cadastre turmas e tamanhos para ver os preços aqui.</p>";
+    return;
+  }
+
+  const cabecalho = GRUPOS_TAMANHO.map((g) => `<th>${escapeHtmlAdmin(g.grupo)}</th>`).join("");
+
+  const linhas = ids.map((id) => {
+    const proprios = precosPersonalizadosDaTurma(configGeralAtual, id);
+    const efetivos = precosDaTurma(configGeralAtual, id);
+    const celulas = GRUPOS_TAMANHO.map((g) => {
+      const valor = efetivos[g.grupo];
+      if (valor == null) return '<td class="fin-sub">—</td>';
+      const proprio = proprios[g.grupo] != null;
+      return `<td class="${proprio ? "preco-proprio" : "fin-sub"}">${formatarReais(valor)}</td>`;
+    }).join("");
+    const marca = Object.keys(proprios).length > 0
+      ? ' <span class="badge interno">próprio</span>'
+      : "";
+    return `<tr><td>${escapeHtmlAdmin(estadoTurmas[id].turma.nome)}${marca}</td>${celulas}</tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Turma</th>${cabecalho}</tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>
+    <p class="pix-ajuda">Em destaque, os preços próprios da turma; em cinza, os da tabela geral. Para mudar, use "Preço da camiseta nesta turma" no card da turma (aba Inicial).</p>
+  `;
 }
 
 // ============================================================
@@ -758,11 +820,11 @@ function finDiasDesde(data) {
 // ---------------- Coleta dos dados ----------------
 
 // Percorre todas as turmas/alunos e calcula os números do financeiro.
-// venda = preço do tamanho (aba Pagamentos); custo = Impressão + Costureira
-// do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" = declarado mas
-// não confirmado; "pendente" = nem declarado.
+// venda = preço do tamanho na turma (o geral da aba Pagamentos ou o preço
+// personalizado da turma); custo = Impressão + Costureira do grupo (aba
+// Tamanhos). "Já chegou" = pagos; "aguardando" = declarado mas não
+// confirmado; "pendente" = nem declarado.
 function calcularFinanceiro() {
-  const precos = precosPorGrupoAtual || {};
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
     custos: 0, custosRecebido: 0, custoImpressao: 0, custoCostureira: 0,
@@ -773,7 +835,8 @@ function calcularFinanceiro() {
     porGrupo: {}
   };
 
-  Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
+  Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
+    const precos = precosDaTurma(configGeralAtual, turmaId);
     const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
@@ -848,9 +911,9 @@ function calcularFinanceiro() {
 // Lista de lançamentos de RECEBIMENTO (uma linha por camiseta paga).
 // É a base do extrato, da evolução e da conciliação por forma de pagamento.
 function finLancamentos() {
-  const precos = precosPorGrupoAtual || {};
   const lista = [];
   Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
+    const precos = precosDaTurma(configGeralAtual, turmaId);
     alunos.forEach((a) => {
       if (!a.pago || ehInterno(a)) return; // interna não gera receita
       lista.push({
@@ -874,9 +937,9 @@ function finLancamentos() {
 
 // Lista de PENDÊNCIAS (camisetas ainda não pagas), com o tempo em aberto.
 function finPendencias() {
-  const precos = precosPorGrupoAtual || {};
   const lista = [];
   Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
+    const precos = precosDaTurma(configGeralAtual, turmaId);
     const fechadoEm = finParaData(turma.fechadoEm);
     const limite = turma.dataLimite ? finParaData(turma.dataLimite) : null;
     alunos.forEach((a) => {
@@ -1933,6 +1996,15 @@ async function excluirTurma(turmaId, turma) {
       await lote.commit();
     }
     await db.collection("turmas").doc(turmaId).delete();
+    // Os preços próprios da turma ficam em config/geral; apaga junto para não
+    // sobrar lixo (se falhar, não atrapalha: a turma já não existe).
+    try {
+      await limparPrecosDaTurma(turmaId);
+    } catch (e) {
+      console.warn("Turma excluída, mas não deu para apagar os preços dela.", e);
+    }
+    delete precosTurmaAbertos[turmaId];
+    delete precosTurmaSalvos[turmaId];
     // O onSnapshot das turmas remove o card automaticamente.
   } catch (erro) {
     console.error(erro);
@@ -2051,6 +2123,188 @@ const IMAGENS_TURMA = [
     confirmRemover: "Remover a arte (sem simulação) desta turma?"
   }
 ];
+
+// ---------------- Preço personalizado por turma ----------------
+// Cada turma pode ter preços próprios, grupo a grupo. O que ela não define
+// continua valendo o preço geral (aba Pagamentos). Os valores ficam em
+// config/geral -> precosPorTurma[turmaId], documento que só o admin grava.
+
+// Bloco recolhível, no card da turma, com um campo de preço por grupo.
+function criarBlocoPrecosTurma(turmaId) {
+  const bloco = document.createElement("details");
+  bloco.className = "precos-turma";
+  bloco.open = !!precosTurmaAbertos[turmaId];
+  bloco.addEventListener("toggle", () => {
+    precosTurmaAbertos[turmaId] = bloco.open;
+  });
+
+  const personalizados = precosPersonalizadosDaTurma(configGeralAtual, turmaId);
+  const nPersonalizados = Object.keys(personalizados).length;
+
+  const resumo = document.createElement("summary");
+  resumo.innerHTML =
+    "Preço da camiseta nesta turma " +
+    (nPersonalizados > 0
+      ? `<span class="badge interno">${nPersonalizados} preço(s) próprio(s)</span>`
+      : '<span class="badge pendente">tabela geral</span>');
+  bloco.appendChild(resumo);
+
+  const corpo = document.createElement("div");
+  corpo.className = "precos-turma-corpo";
+
+  if (GRUPOS_TAMANHO.length === 0) {
+    corpo.innerHTML = "<p>Cadastre os tamanhos primeiro (aba Tamanhos).</p>";
+    bloco.appendChild(corpo);
+    return bloco;
+  }
+
+  const ajuda = document.createElement("small");
+  ajuda.className = "pix-ajuda";
+  ajuda.textContent =
+    "Deixe em branco para usar o preço geral (aba Pagamentos). O valor preenchido " +
+    "vale só para esta turma — no PIX, no Mercado Pago e no Financeiro.";
+  corpo.appendChild(ajuda);
+
+  const grade = document.createElement("div");
+  grade.className = "linha-custos precos-turma-grade";
+
+  const gerais = configGeralAtual.precosPorGrupo || {};
+
+  GRUPOS_TAMANHO.forEach((g) => {
+    const wrap = document.createElement("div");
+    wrap.className = "campo-custo";
+
+    const lbl = document.createElement("label");
+    lbl.textContent = `${g.grupo} (R$)`;
+
+    const geral = gerais[g.grupo] != null ? Number(gerais[g.grupo]) : null;
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.min = "0";
+    inp.dataset.grupo = g.grupo;
+    inp.placeholder = geral != null ? Number(geral).toFixed(2) : "0,00";
+    inp.value = personalizados[g.grupo] != null ? personalizados[g.grupo] : "";
+
+    const base = document.createElement("small");
+    base.className = "pix-ajuda";
+    base.textContent = geral != null ? `Geral: ${formatarReais(geral)}` : "Sem preço geral";
+
+    wrap.appendChild(lbl);
+    wrap.appendChild(inp);
+    wrap.appendChild(base);
+    grade.appendChild(wrap);
+  });
+
+  corpo.appendChild(grade);
+
+  const msg = document.createElement("p");
+  msg.className = "oculto";
+  const acoes = document.createElement("div");
+
+  const btnSalvar = document.createElement("button");
+  btnSalvar.className = "sucesso";
+  btnSalvar.textContent = "Salvar preços da turma";
+  btnSalvar.onclick = async () => {
+    const paraGravar = {};   // o que vai para o Firestore (número ou delete)
+    const paraEstado = {};   // espelho local, só com os números
+    let invalido = false;
+
+    grade.querySelectorAll("input").forEach((inp) => {
+      const grupo = inp.dataset.grupo;
+      const bruto = inp.value.trim();
+      if (bruto === "") {
+        // Campo vazio = volta a usar o preço geral (apaga o personalizado).
+        paraGravar[grupo] = firebase.firestore.FieldValue.delete();
+        return;
+      }
+      const v = parseFloat(bruto);
+      if (isNaN(v) || v < 0) {
+        invalido = true;
+        return;
+      }
+      paraGravar[grupo] = v;
+      paraEstado[grupo] = v;
+    });
+
+    if (invalido) {
+      mostrarMensagem(msg, "Informe valores válidos (0 ou mais) ou deixe em branco.", "erro");
+      return;
+    }
+
+    btnSalvar.disabled = true;
+    try {
+      await db.collection("config").doc("geral")
+        .set({ precosPorTurma: { [turmaId]: paraGravar } }, { merge: true });
+      aplicarPrecosTurmaNoEstado(turmaId, paraEstado);
+      precosTurmaAbertos[turmaId] = true;
+      precosTurmaSalvos[turmaId] = Object.keys(paraEstado).length > 0
+        ? "Preços desta turma salvos."
+        : "Sem preço próprio: esta turma volta a usar a tabela geral.";
+      renderizarTurmasAdmin();
+    } catch (erro) {
+      console.error(erro);
+      btnSalvar.disabled = false;
+      mostrarMensagem(
+        msg,
+        "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
+        "erro"
+      );
+    }
+  };
+  acoes.appendChild(btnSalvar);
+
+  if (nPersonalizados > 0) {
+    const btnLimpar = document.createElement("button");
+    btnLimpar.className = "secundario";
+    btnLimpar.textContent = "Usar a tabela geral";
+    btnLimpar.title = "Apaga os preços próprios desta turma";
+    btnLimpar.onclick = async () => {
+      if (!confirm("Apagar os preços próprios desta turma e voltar para a tabela geral?")) return;
+      btnLimpar.disabled = true;
+      try {
+        await limparPrecosDaTurma(turmaId);
+        precosTurmaAbertos[turmaId] = true;
+        precosTurmaSalvos[turmaId] = "Preços próprios apagados: vale a tabela geral.";
+        renderizarTurmasAdmin();
+      } catch (erro) {
+        console.error(erro);
+        btnLimpar.disabled = false;
+        mostrarMensagem(msg, "Erro ao apagar os preços desta turma.", "erro");
+      }
+    };
+    acoes.appendChild(btnLimpar);
+  }
+
+  corpo.appendChild(acoes);
+  corpo.appendChild(msg);
+
+  // Aviso de "salvo" que sobrevive ao re-render disparado pelo próprio salvar.
+  if (precosTurmaSalvos[turmaId]) {
+    mostrarMensagem(msg, precosTurmaSalvos[turmaId], "aviso");
+    delete precosTurmaSalvos[turmaId];
+  }
+  bloco.appendChild(corpo);
+  return bloco;
+}
+
+// Espelha no estado local o que acabou de ser gravado, para o Financeiro e os
+// cards reagirem na hora (config/geral não é lido por onSnapshot).
+function aplicarPrecosTurmaNoEstado(turmaId, mapa) {
+  const todos = { ...(configGeralAtual.precosPorTurma || {}) };
+  if (Object.keys(mapa).length > 0) todos[turmaId] = mapa;
+  else delete todos[turmaId];
+  configGeralAtual = { ...configGeralAtual, precosPorTurma: todos };
+}
+
+// Apaga os preços próprios de uma turma (volta a valer só a tabela geral).
+async function limparPrecosDaTurma(turmaId) {
+  await db.collection("config").doc("geral").set(
+    { precosPorTurma: { [turmaId]: firebase.firestore.FieldValue.delete() } },
+    { merge: true }
+  );
+  aplicarPrecosTurmaNoEstado(turmaId, {});
+}
 
 // Bloco de imagens da camiseta no card do Super Admin (enviar/trocar/remover).
 function criarBlocoImagemTurma(turmaId, turma) {
@@ -2263,6 +2517,7 @@ let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
 let precosPorGrupoAtual = {}; // preço de venda por grupo (aba Pagamentos) — usado p/ o lucro
+let configGeralAtual = {};    // config/geral inteiro (inclui precosPorTurma)
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -2278,6 +2533,7 @@ async function carregarPainelConfig() {
   if (elDriveScriptUrl) elDriveScriptUrl.value = cfg.driveScriptUrl || "";
   driveScriptUrl = cfg.driveScriptUrl || "";
 
+  configGeralAtual = cfg || {};
   precosPorGrupoAtual = cfg.precosPorGrupo || {};
 
   await carregarTamanhos();
@@ -2292,8 +2548,10 @@ async function carregarPainelConfig() {
   elMpBackendUrl.value = cfg.mpBackendUrl || "";
   renderizarPrecosPorGrupo(cfg.precosPorGrupo || {});
 
-  // Com preços e custos já carregados, atualiza o financeiro.
+  // Com preços e custos já carregados, atualiza o financeiro e os cards das
+  // turmas (que mostram o preço em vigor em cada uma).
   renderizarFinanceiro();
+  renderizarTurmasAdmin();
 }
 
 // ---------------- Pagamento (PIX) ----------------
@@ -2343,7 +2601,10 @@ elFormPix.addEventListener("submit", async (ev) => {
     await db.collection("config").doc("geral").set(dados, { merge: true });
     // Mantém o lucro do editor de tamanhos em dia com o novo preço de venda.
     precosPorGrupoAtual = precosPorGrupo;
+    configGeralAtual = { ...configGeralAtual, ...dados };
     renderizarEditorTamanhos();
+    // Os preços das turmas partem do geral: re-renderiza para refletir a base.
+    renderizarTurmasAdmin();
     mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
   } catch (erro) {
     console.error(erro);
@@ -2668,6 +2929,18 @@ function criarBlocoCustos(grupo, iGrupo) {
     aviso.className = "pix-ajuda";
     aviso.textContent = "Defina o preço de venda deste grupo na aba Pagamentos para calcular o lucro.";
     bloco.appendChild(aviso);
+  }
+
+  // Turmas que cobram um valor diferente do geral neste grupo — o lucro acima
+  // é o da tabela geral; nessas turmas ele muda.
+  const excecoes = turmasComPrecoProprio(grupo.grupo);
+  if (excecoes.length > 0) {
+    const nota = document.createElement("small");
+    nota.className = "pix-ajuda";
+    nota.textContent =
+      "Preço próprio em " + excecoes.map((e) => `${e.nome} (${formatarReais(e.valor)})`).join(", ") +
+      ". O lucro acima usa o preço geral.";
+    bloco.appendChild(nota);
   }
 
   return bloco;

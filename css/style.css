@@ -483,6 +483,33 @@ tr.duplicado td { background: #fef3c7; }
 /* Trava a rolagem do fundo enquanto o lightbox está aberto. */
 body.sem-rolagem { overflow: hidden; }
 
+/* Preço personalizado por turma (card da turma, no Super Admin). */
+.precos-turma {
+  margin: 12px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  background: var(--cinza-bg);
+}
+.precos-turma > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+.precos-turma > summary .badge { margin-left: 6px; }
+.precos-turma-corpo { margin-top: 10px; }
+.precos-turma-grade { margin-top: 8px; }
+.precos-turma-grade .campo-custo input { background: var(--branco); }
+.precos-turma-grade .pix-ajuda { display: block; margin-top: 4px; }
+.precos-turma-corpo button { margin-top: 10px; }
+
+/* Preço próprio da turma na tabela da aba Pagamentos. */
+.preco-proprio {
+  font-weight: 700;
+  color: #5b21b6;
+}
+
 /* Imagem de medidas de um grupo, no editor de tamanhos. */
 .bloco-imagem-grupo {
   margin-top: 10px;

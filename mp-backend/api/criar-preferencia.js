@@ -3,7 +3,7 @@
 // página hospedada do MP (init_point). O site redireciona o pagador para lá.
 // O valor é calculado AQUI (a partir do Firestore), nunca vem do cliente.
 const { db } = require("../lib/firebase");
-const { GRUPOS_PADRAO, precoDoTamanho } = require("../lib/preco");
+const { GRUPOS_PADRAO, precoDoTamanhoNaTurma } = require("../lib/preco");
 const { setCors } = require("../lib/http");
 
 module.exports = async (req, res) => {
@@ -33,7 +33,8 @@ module.exports = async (req, res) => {
     const geral = geralSnap.exists ? geralSnap.data() : {};
     const grupos = tamSnap.exists && Array.isArray(tamSnap.data().grupos) ? tamSnap.data().grupos : GRUPOS_PADRAO;
 
-    const valor = precoDoTamanho(aluno.tamanho, geral.precosPorGrupo, grupos);
+    // Usa o preço da turma (o geral, ou o personalizado dela, se houver).
+    const valor = precoDoTamanhoNaTurma(aluno.tamanho, geral, turmaId, grupos);
     if (!valor || valor <= 0) {
       return res.status(400).json({ erro: "Não há preço definido para o tamanho deste aluno." });
     }

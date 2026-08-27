@@ -33,6 +33,7 @@ const elGaleriaTrilho = document.getElementById("galeriaTrilho");
 const elGaleriaAntes = document.getElementById("galeriaAntes");
 const elGaleriaDepois = document.getElementById("galeriaDepois");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
+const elInfoPrecos = document.getElementById("infoPrecos");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
 const elBtnSalvarDataLimite = document.getElementById("btnSalvarDataLimite");
@@ -216,6 +217,9 @@ function atualizarBadge() {
   // Galeria de referência: simulação, arte e as medidas de cada grupo.
   renderizarGaleria();
 
+  // Valor da camiseta nesta turma (geral ou o preço próprio dela).
+  mostrarPrecosDaTurma();
+
   // Info da data limite.
   if (elInfoDataLimite) {
     if (turmaAtual.dataLimite) {
@@ -227,6 +231,23 @@ function atualizarBadge() {
       elInfoDataLimite.classList.add("oculto");
     }
   }
+}
+
+// Mostra quanto custa a camiseta nesta turma, por grupo de tamanho. Usa os
+// preços em vigor aqui: os gerais, com o preço próprio da turma por cima.
+function mostrarPrecosDaTurma() {
+  if (!elInfoPrecos) return;
+  const precos = precosDaTurma(configGeral, turmaId);
+  const partes = GRUPOS_TAMANHO
+    .filter((g) => precos[g.grupo] != null)
+    .map((g) => `${g.grupo}: ${formatarReais(precos[g.grupo])}`);
+
+  if (partes.length === 0) {
+    elInfoPrecos.classList.add("oculto");
+    return;
+  }
+  elInfoPrecos.textContent = "Valor da camiseta — " + partes.join(" · ");
+  elInfoPrecos.classList.remove("oculto");
 }
 
 function atualizarVisibilidade() {
@@ -384,7 +405,9 @@ function renderizarTabela() {
       if (podePagar && !ajustePendente) {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
-        btnPagar.textContent = "Pagar";
+        // Mostra o valor no botão (o desta turma, se ela tiver preço próprio).
+        const valorLinha = precoDoTamanhoNaTurma(aluno.tamanho, configGeral, turmaId);
+        btnPagar.textContent = valorLinha ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
         btnPagar.onclick = () => abrirPagamentoPix(aluno);
         tdAcoes.appendChild(btnPagar);
       }
@@ -773,7 +796,8 @@ function abrirPagamentoPix(aluno) {
 
 // Modo padrão: PIX estático gerado no próprio site (chave direta, sem taxa).
 function gerarPagamentoEstatico(aluno) {
-  const valor = precoDoTamanho(aluno.tamanho, configGeral.precosPorGrupo);
+  // Preço da turma: o geral, ou o personalizado dela, quando houver.
+  const valor = precoDoTamanhoNaTurma(aluno.tamanho, configGeral, turmaId);
   const codigo = pixCopiaECola({
     chave: configGeral.pixChave,
     nome: configGeral.pixNome,

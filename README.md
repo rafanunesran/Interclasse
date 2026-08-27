@@ -9,7 +9,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`index.html`** — lista as turmas cadastradas.
 - **`turma.html?id=NOME-DA-TURMA`** — página do representante: digita a senha da turma, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
-- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada turma, edita qualquer turma e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada turma, edita qualquer turma e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada turma), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar turmas e alterar tamanhos/configurações. Já a **senha de cada turma** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -66,7 +66,7 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 
 ## Aba Financeiro (Super Admin)
 
-A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam os preços por grupo (aba **Pagamentos**) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
+A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada turma (a tabela geral da aba **Pagamentos** ou o [preço personalizado da turma](#preço-personalizado-por-turma)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
 - **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por turma.
 - **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, turma, tamanho e forma).
@@ -163,7 +163,34 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 
 - **Chave PIX** — e-mail, telefone, CPF/CNPJ ou chave aleatória da conta que vai receber.
 - **Nome do recebedor** (máx. 25 caracteres) e **Cidade** (máx. 15) — como no seu cadastro bancário.
-- **Preço por grupo de tamanho** — um valor para cada grupo (ex.: Normal R$ 45, Plus Size R$ 55). O valor cobrado em cada linha é o do grupo do tamanho daquele aluno. Se um grupo ficar sem preço, o PIX é gerado sem valor (o pagador digita no app).
+- **Preço por grupo de tamanho (geral)** — um valor para cada grupo (ex.: Normal R$ 45, Plus Size R$ 55). O valor cobrado em cada linha é o do grupo do tamanho daquele aluno. Se um grupo ficar sem preço, o PIX é gerado sem valor (o pagador digita no app). Esse é o preço **padrão**, usado por todas as turmas que não tiverem um preço próprio — ver [Preço personalizado por turma](#preço-personalizado-por-turma).
+
+### Preço personalizado por turma
+
+Dá para cobrar um valor diferente em uma turma específica (patrocínio, tecido
+diferente, turma que fechou em outra data…), sem mexer no preço das outras.
+
+1. No **Super Admin → Inicial**, abra o card da turma e clique em **"Preço da camiseta nesta turma"**.
+2. Preencha só os grupos que devem mudar (ex.: Normal R$ 50) e clique em **Salvar preços da turma**.
+3. Os grupos deixados **em branco** continuam usando o preço geral da aba Pagamentos — cada campo mostra qual é esse valor ("Geral: R$ 45,00").
+
+O botão **"Usar a tabela geral"** apaga os preços próprios da turma de uma vez.
+Ao excluir uma turma, os preços dela são apagados junto.
+
+O preço personalizado vale em todo o sistema:
+
+- no **PIX** (estático e Mercado Pago) gerado na página da turma — o valor no botão "Pagar" já é o da turma;
+- no **Financeiro** inteiro (previsto, recebido, a receber, extrato, DRE, rentabilidade por turma);
+- na página do pedido, numa linha logo abaixo do status ("Valor da camiseta — Normal: R$ 50,00 · …").
+
+Para conferir tudo de uma vez, a aba **Pagamentos** tem a tabela **"Preço em vigor por turma"**:
+uma linha por turma, uma coluna por grupo, com os preços próprios em destaque e os da tabela
+geral em cinza.
+
+> Onde ficam guardados: em `config/geral`, no campo `precosPorTurma` (`{ "id-da-turma": { "Normal": 50 } }`).
+> É de propósito: `config/geral` só pode ser gravado pela conta administradora, então o
+> representante da turma não consegue alterar o próprio preço — nem no site, nem na cobrança
+> do Mercado Pago, que também calcula o valor a partir desse documento.
 
 ### Status de pagamento
 

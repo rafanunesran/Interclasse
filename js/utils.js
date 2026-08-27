@@ -207,6 +207,43 @@ function precoDoTamanho(tamanho, precosPorGrupo) {
   return null;
 }
 
+// ---------------- Preços personalizados por turma ----------------
+// A tabela geral (config/geral -> precosPorGrupo) vale para todo mundo.
+// Cada turma pode ter preços próprios em config/geral -> precosPorTurma:
+//   precosPorTurma: { "3o-ano-a-manha": { "Normal": 50, "Plus Size": 60 } }
+// A personalização é grupo a grupo: o que a turma não define continua
+// usando o preço geral. Fica em config/geral (e não na turma) porque só o
+// admin grava nesse documento — assim o representante não muda o próprio preço.
+
+// Só os preços personalizados de uma turma (mapa {grupo: valor}), sem os gerais.
+function precosPersonalizadosDaTurma(cfg, turmaId) {
+  const mapa = (cfg && cfg.precosPorTurma && cfg.precosPorTurma[turmaId]) || {};
+  const saida = {};
+  Object.keys(mapa).forEach((g) => {
+    const v = Number(mapa[g]);
+    if (mapa[g] != null && !isNaN(v)) saida[g] = v;
+  });
+  return saida;
+}
+
+// Preços que valem de fato numa turma: os gerais com o personalizado por cima.
+function precosDaTurma(cfg, turmaId) {
+  const geral = (cfg && cfg.precosPorGrupo) || {};
+  const efetivos = {};
+  Object.keys(geral).forEach((g) => {
+    const v = Number(geral[g]);
+    if (geral[g] != null && !isNaN(v)) efetivos[g] = v;
+  });
+  const proprios = precosPersonalizadosDaTurma(cfg, turmaId);
+  Object.keys(proprios).forEach((g) => (efetivos[g] = proprios[g]));
+  return efetivos;
+}
+
+// Preço de um tamanho já considerando o preço personalizado da turma.
+function precoDoTamanhoNaTurma(tamanho, cfg, turmaId) {
+  return precoDoTamanho(tamanho, precosDaTurma(cfg, turmaId));
+}
+
 // Grupo de tamanho ao qual um tamanho pertence (ou null).
 function grupoDoTamanho(tamanho) {
   return GRUPOS_TAMANHO.find((g) => g.tamanhos.includes(tamanho)) || null;

@@ -16,4 +16,29 @@ function precoDoTamanho(tamanho, precosPorGrupo, grupos) {
   return null;
 }
 
-module.exports = { GRUPOS_PADRAO, precoDoTamanho };
+// Preços que valem numa turma: a tabela geral (geral.precosPorGrupo) com o
+// preço personalizado da turma por cima (geral.precosPorTurma[turmaId]),
+// grupo a grupo. Espelha precosDaTurma() de js/utils.js.
+// Os dois mapas vêm de config/geral, que só o admin grava — por isso o valor
+// da cobrança continua confiável mesmo com preço por turma.
+function precosDaTurma(geral, turmaId) {
+  const base = (geral && geral.precosPorGrupo) || {};
+  const proprios = (geral && geral.precosPorTurma && geral.precosPorTurma[turmaId]) || {};
+  const efetivos = {};
+  Object.keys(base).forEach((g) => {
+    const v = Number(base[g]);
+    if (base[g] != null && !isNaN(v)) efetivos[g] = v;
+  });
+  Object.keys(proprios).forEach((g) => {
+    const v = Number(proprios[g]);
+    if (proprios[g] != null && !isNaN(v)) efetivos[g] = v;
+  });
+  return efetivos;
+}
+
+// Preço de um tamanho já considerando o preço personalizado da turma.
+function precoDoTamanhoNaTurma(tamanho, geral, turmaId, grupos) {
+  return precoDoTamanho(tamanho, precosDaTurma(geral, turmaId), grupos);
+}
+
+module.exports = { GRUPOS_PADRAO, precoDoTamanho, precosDaTurma, precoDoTamanhoNaTurma };
