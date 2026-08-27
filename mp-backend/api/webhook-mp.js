@@ -73,19 +73,29 @@ module.exports = async (req, res) => {
     }
 
     if (externalReference) {
-      const [timeId, alunoId] = String(externalReference).split("__");
-      if (timeId && alunoId) {
-        await db
-          .collection(COL_TIMES).doc(timeId)
-          .collection("alunos").doc(alunoId)
-          .update({
+      const alvo = await resolverCobranca(externalReference);
+      if (alvo && alvo.timeId && alvo.alunoIds.length > 0) {
+        // Uma cobrança pode ter várias camisetas (carrinho): todas viram pagas
+        // no mesmo lote, para nenhuma ficar para trás se algo falhar no meio.
+        const lote = db.batch();
+        const colecao = db.collection(COL_TIMES).doc(alvo.timeId).collection("alunos");
+        alvo.alunoIds.forEach((alunoId) => {
+          lote.update(colecao.doc(alunoId), {
             pago: true,
             pagamentoForma: "pix",
             pagamentoDeclarado: false,
             pagamentoMpId: pagamentoId ? String(pagamentoId) : admin.firestore.FieldValue.delete(),
             pagamentoEm: admin.firestore.FieldValue.serverTimestamp()
           });
-        console.log(`Pagamento aprovado: time ${timeId}, aluno ${alunoId}.`);
+        });
+        if (alvo.cobrancaId) {
+          lote.update(db.collection("cobrancas").doc(alvo.cobrancaId), {
+            status: "paga",
+            pagaEm: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+        await lote.commit();
+        console.log(`Pagamento aprovado: time ${alvo.timeId}, ${alvo.alunoIds.length} camiseta(s).`);
       }
     }
 
@@ -96,6 +106,33 @@ module.exports = async (req, res) => {
     return res.status(200).end();
   }
 };
+
+// Descobre quais camisetas a cobrança paga, a partir do external_reference.
+// Dois formatos:
+//   "lote:<id>"        -> documento em `cobrancas` com a lista das camisetas
+//                         (o campo do MP é curto demais para levar os ids).
+//   "<timeId>__<id>"   -> formato antigo, de uma camiseta só. Continua aceito
+//                         para as cobranças criadas antes desta versão.
+async function resolverCobranca(externalReference) {
+  const ref = String(externalReference);
+
+  if (ref.startsWith("lote:")) {
+    const cobrancaId = ref.slice("lote:".length);
+    if (!cobrancaId) return null;
+    const snap = await db.collection("cobrancas").doc(cobrancaId).get();
+    if (!snap.exists) {
+      console.warn("Cobrança não encontrada:", cobrancaId);
+      return null;
+    }
+    const dados = snap.data();
+    const alunoIds = Array.isArray(dados.alunoIds) ? dados.alunoIds.filter((x) => typeof x === "string") : [];
+    return { timeId: dados.timeId, alunoIds, cobrancaId };
+  }
+
+  const [timeId, alunoId] = ref.split("__");
+  if (!timeId || !alunoId) return null;
+  return { timeId, alunoIds: [alunoId], cobrancaId: null };
+}
 
 // Valida a assinatura do webhook (cabeçalho x-signature) conforme o padrão do MP:
 //   manifest = "id:<data.id>;request-id:<x-request-id>;ts:<ts>;"

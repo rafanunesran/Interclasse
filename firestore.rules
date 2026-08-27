@@ -44,6 +44,14 @@ service cloud.firestore {
       allow create, update, delete: if ehAdmin();
     }
 
+    // Cobranças do Mercado Pago (uma cobrança pode ter várias camisetas,
+    // quando o pagador junta o carrinho). Só o backend na Vercel escreve e lê
+    // aqui, pelo Admin SDK, que não passa por estas regras — então o site
+    // fica sem nenhum acesso: ninguém consegue forjar uma cobrança paga.
+    match /cobrancas/{cobrancaId} {
+      allow read, write: if false;
+    }
+
     // Times (a coleção continua com o nome antigo, "turmas", para não
     // quebrar os dados já cadastrados — ver COL_TIMES em js/utils.js).
     match /turmas/{timeId} {

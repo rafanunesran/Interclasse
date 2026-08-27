@@ -1,9 +1,12 @@
 // POST /api/criar-preferencia
 // Checkout Pro: cria uma "preferência" no Mercado Pago e devolve a URL da
 // página hospedada do MP (init_point). O site redireciona o pagador para lá.
-// O valor é calculado AQUI (a partir do Firestore), nunca vem do cliente.
-const { db, COL_TIMES } = require("../lib/firebase");
-const { GRUPOS_PADRAO, precoDoTamanhoNoTime } = require("../lib/preco");
+// Aceita uma camiseta ou o carrinho inteiro: sai uma cobrança só, com um
+// item por camiseta. O valor é calculado AQUI (a partir do Firestore),
+// nunca vem do cliente.
+const { db, admin, COL_TIMES } = require("../lib/firebase");
+const { GRUPOS_PADRAO } = require("../lib/preco");
+const { idsDoPedido, carregarItens, registrarCobranca } = require("../lib/itens");
 const { setCors } = require("../lib/http");
 
 module.exports = async (req, res) => {
@@ -16,48 +19,46 @@ module.exports = async (req, res) => {
     // da renomeação continuar funcionando até atualizar.
     const entrada = req.body || {};
     const timeId = entrada.timeId || entrada.turmaId;
-    const { alunoId, retornoUrl } = entrada;
-    if (!timeId || !alunoId) {
-      return res.status(400).json({ erro: "Informe timeId e alunoId." });
+    const retornoUrl = entrada.retornoUrl;
+    const ids = idsDoPedido(entrada);
+    if (!timeId || ids.length === 0) {
+      return res.status(400).json({ erro: "Informe timeId e alunoIds." });
     }
     if (!process.env.MP_ACCESS_TOKEN) {
       return res.status(500).json({ erro: "Backend sem MP_ACCESS_TOKEN configurado." });
     }
 
-    const alunoRef = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
-    const [alunoSnap, geralSnap, tamSnap] = await Promise.all([
-      alunoRef.get(),
+    const [geralSnap, tamSnap] = await Promise.all([
       db.collection("config").doc("geral").get(),
       db.collection("config").doc("tamanhos").get()
     ]);
-
-    if (!alunoSnap.exists) return res.status(404).json({ erro: "Aluno não encontrado." });
-
-    const aluno = alunoSnap.data();
     const geral = geralSnap.exists ? geralSnap.data() : {};
     const grupos = tamSnap.exists && Array.isArray(tamSnap.data().grupos) ? tamSnap.data().grupos : GRUPOS_PADRAO;
 
-    // Usa o preço do time (o geral, ou o personalizado dela, se houver).
-    const valor = precoDoTamanhoNoTime(aluno.tamanho, geral, timeId, grupos);
-    if (!valor || valor <= 0) {
-      return res.status(400).json({ erro: "Não há preço definido para o tamanho deste aluno." });
-    }
+    // Usa o preço do time (o geral, ou o personalizado dele, se houver).
+    const { itens, total, erro, status } = await carregarItens({
+      db, colecao: COL_TIMES, timeId, ids, geral, grupos
+    });
+    if (erro) return res.status(status).json({ erro });
 
     const baseUrl = `https://${req.headers.host}`;
     // URL de retorno ao site (validada como http/https para o auto_return).
     let retorno = typeof retornoUrl === "string" ? retornoUrl : "";
     if (!/^https?:\/\//i.test(retorno)) retorno = "";
 
+    // Uma cobrança, um item por camiseta: o pagador vê a lista no Mercado Pago.
+    const { cobrancaId, referencia } = await registrarCobranca({
+      db, admin, timeId, itens, total, origem: "checkout-pro"
+    });
+
     const corpo = {
-      items: [
-        {
-          title: `Camiseta interclasse - ${aluno.nome || ""}`.trim().slice(0, 250),
-          quantity: 1,
-          unit_price: Number(Number(valor).toFixed(2)),
-          currency_id: "BRL"
-        }
-      ],
-      external_reference: `${timeId}__${alunoId}`,
+      items: itens.map((i) => ({
+        title: `Camiseta interclasse - ${i.aluno.nome || ""}`.trim().slice(0, 250),
+        quantity: 1,
+        unit_price: i.valor,
+        currency_id: "BRL"
+      })),
+      external_reference: referencia,
       // Deixa essencialmente o PIX (exclui cartão/boleto).
       payment_methods: {
         excluded_payment_types: [
@@ -90,12 +91,17 @@ module.exports = async (req, res) => {
       return res.status(502).json({ erro: "Falha ao criar a cobrança no Mercado Pago.", detalhe: pref && pref.message });
     }
 
-    await alunoRef.update({ pagamentoMpPreferencia: String(pref.id || "") });
+    const lote = db.batch();
+    itens.forEach((i) => lote.update(i.ref, { pagamentoMpPreferencia: String(pref.id || "") }));
+    lote.update(db.collection("cobrancas").doc(cobrancaId), { preferenciaId: String(pref.id || "") });
+    await lote.commit();
 
     return res.status(200).json({
       preferenciaId: pref.id,
+      cobrancaId,
       initPoint: pref.init_point || pref.sandbox_init_point || "",
-      valor: Number(valor)
+      itens: itens.length,
+      valor: total
     });
   } catch (erro) {
     console.error("Erro interno em criar-preferencia:", erro);

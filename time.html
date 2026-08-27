@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Time — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260828a" />
+<link rel="stylesheet" href="css/style.css?v=20260829a" />
 </head>
 <body>
 
@@ -93,6 +93,7 @@
           <th>Número</th>
           <th>Nome na camiseta</th>
           <th>Pagamento</th>
+          <th>Carrinho</th>
           <th>Ações</th>
         </tr>
       </thead>
@@ -102,6 +103,19 @@
     <button id="btnExportar" class="secundario">Exportar CSV deste time</button>
   </div>
 </main>
+
+<!-- Carrinho: marque as camisetas na lista e pague todas de uma vez.
+     Fica guardado só neste navegador — não precisa de cadastro nem login. -->
+<div id="barraCarrinho" class="barra-carrinho oculto" role="region" aria-label="Carrinho de pagamento">
+  <div class="carrinho-info">
+    <span class="carrinho-icone" aria-hidden="true">🛒</span>
+    <span id="carrinhoResumo">Carrinho vazio</span>
+  </div>
+  <div class="carrinho-acoes">
+    <button type="button" id="btnEsvaziarCarrinho" class="secundario">Esvaziar</button>
+    <button type="button" id="btnPagarCarrinho" class="primario">Pagar</button>
+  </div>
+</div>
 
 <!-- Modal: solicitar ajuste (corrige os campos e envia a correção pronta) -->
 <div id="modalAjuste" class="modal-pix oculto">
@@ -137,8 +151,9 @@
 <div id="modalPix" class="modal-pix oculto">
   <div class="modal-pix-conteudo">
     <button id="fecharModalPix" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
-    <h3>Pagamento via PIX</h3>
+    <h3 id="pixTitulo">Pagamento via PIX</h3>
     <p id="pixAluno"></p>
+    <ul id="pixItens" class="pix-itens oculto"></ul>
     <p id="pixStatus" class="oculto"></p>
     <div id="pixConteudo">
       <p id="pixValor" class="pix-valor"></p>
@@ -150,6 +165,7 @@
       <p class="pix-ajuda">Abra o app do banco → PIX → "Pagar com QR Code" (escaneie) ou "PIX copia e cola" (cole o código).</p>
       <hr class="pix-divisor" />
       <button id="pixJaPaguei" class="sucesso" type="button">Já fiz o pagamento</button>
+      <p id="pixAvisoLote" class="pix-ajuda oculto">O aviso vale para todas as camisetas listadas acima.</p>
       <p id="pixDeclarado" class="aviso oculto">Pagamento informado! A organização vai confirmar.</p>
     </div>
   </div>
@@ -164,7 +180,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260828a"></script>
-<script src="js/time.js?v=20260828a"></script>
+<script src="js/utils.js?v=20260829a"></script>
+<script src="js/time.js?v=20260829a"></script>
 </body>
 </html>

@@ -189,7 +189,7 @@ Cada grupo (Infantil, Normal, Plus Size…) pode ter uma **imagem de referência
 
 ## Pagamento por PIX
 
-Nos times com o **pedido fechado**, cada linha (ainda não paga) ganha um botão **"Pagar"** que abre o pagamento PIX com o valor da camiseta.
+Nos times com o **pedido fechado**, cada linha (ainda não paga) ganha um botão **"Pagar"** que abre o pagamento PIX com o valor da camiseta. Para pagar várias de uma vez, use o [carrinho](#carrinho-pagar-várias-camisetas-de-uma-vez) — sem login, sem cadastro.
 
 Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 
@@ -228,12 +228,37 @@ geral em cinza.
 > antigo (para não perder o que já foi salvo) e **grava nos dois**, para o backend do
 > Mercado Pago ainda não republicado continuar cobrando o valor certo.
 
+### Carrinho: pagar várias camisetas de uma vez
+
+Quem vai pagar não precisa fazer uma cobrança por camiseta. Na lista do pedido, cada
+camiseta ainda não paga tem a caixinha **"somar"** na coluna **Carrinho**: marque quantas
+quiser e a barra no rodapé mostra a quantidade e o total, com o botão **Pagar**.
+
+- **Sem login e sem cadastro.** O carrinho é só uma lista guardada no navegador de quem
+  está pagando (`localStorage`), então cada pessoa tem o seu: dois pais pagando pelo mesmo
+  link, cada um no seu celular, não se atrapalham. Ele sobrevive a recarregar a página e
+  some sozinho quando as camisetas são pagas.
+- **PIX (padrão):** sai **um** QR Code / copia e cola com a **soma** das camisetas
+  escolhidas. O botão **"Já paguei as N camisetas"** avisa a organização de todas de uma
+  vez (elas ficam *Aguardando confirmação*, e você confirma cada uma no Super Admin).
+- **Mercado Pago (opcional):** sai **uma** cobrança com um item por camiseta — o pagador vê
+  a lista na tela do Mercado Pago. Quando o PIX cai, o webhook marca **todas** como pagas.
+- O botão **Pagar** de cada linha continua ali para quem quer pagar só aquela camiseta.
+- Uma camiseta só entra no carrinho se puder ser paga agora: pedido na fase de pagamento,
+  não suspenso, ainda não paga e **sem ajuste pendente** (ajuste em aberto trava o
+  pagamento, como antes).
+
+> Com o Mercado Pago ligado, a lista de camisetas de cada cobrança fica em `cobrancas` no
+> Firestore — o campo de referência do Mercado Pago é curto demais para levar todos os ids.
+> Essa coleção é **fechada para o site** (`firestore.rules`): só o backend escreve e lê
+> nela, pelo Admin SDK. Cobranças criadas antes desta versão continuam sendo reconhecidas.
+
 ### Status de pagamento
 
 Cada aluno tem um status: **Pendente**, **Aguardando confirmação** ou **Pago (PIX/dinheiro)**.
 
 - **Pagamento em dinheiro:** você marca manualmente no Super Admin, na lista do time (aba **Inicial** → "Ver lista"), pelo seletor de pagamento de cada linha.
-- **Pagamento por PIX:** como o PIX estático não avisa o site automaticamente, o pagante clica em **"Já fiz o pagamento"** no modal do PIX (fica *Aguardando confirmação*); você confere na sua conta e confirma marcando **Pago (PIX)** no seletor.
+- **Pagamento por PIX:** como o PIX estático não avisa o site automaticamente, o pagante clica em **"Já fiz o pagamento"** no modal do PIX (fica *Aguardando confirmação*); você confere na sua conta e confirma marcando **Pago (PIX)** no seletor. Se ele pagou várias de uma vez pelo [carrinho](#carrinho-pagar-várias-camisetas-de-uma-vez), todas ficam aguardando juntas — confirme uma a uma na lista.
 - O CSV exportado inclui as colunas `Pago` e `Forma Pagto`.
 
 ### Confirmação automática (Mercado Pago) — opcional

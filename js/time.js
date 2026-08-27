@@ -8,6 +8,7 @@ const timeId = params.get("id");
 let timeAtual = null;
 let desbloqueado = false;
 let alunosAtuais = []; // cache da última leitura, para exportar/resumir
+let alunosCarregados = false; // true depois da primeira leitura da lista
 let cadastrosGlobaisAbertos = true; // controlado nas configurações gerais (admin)
 let configGeral = {}; // config/geral (inclui dados de PIX e preços)
 
@@ -39,6 +40,10 @@ const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
 const elBtnSalvarDataLimite = document.getElementById("btnSalvarDataLimite");
 const elMsgDataLimite = document.getElementById("msgDataLimite");
+const elBarraCarrinho = document.getElementById("barraCarrinho");
+const elCarrinhoResumo = document.getElementById("carrinhoResumo");
+const elBtnPagarCarrinho = document.getElementById("btnPagarCarrinho");
+const elBtnEsvaziarCarrinho = document.getElementById("btnEsvaziarCarrinho");
 
 if (!timeId) {
   elNomeTime.textContent = "Time não especificado.";
@@ -74,6 +79,8 @@ async function iniciar() {
   await mostrarCliente();
   await aplicarFechamentoAutomatico();
   atualizarBadge();
+
+  carregarCarrinho();
 
   // Se já desbloqueou nesta aba antes, não pede senha de novo.
   if (sessionStorage.getItem("desbloqueado-" + timeId) === "1") {
@@ -337,6 +344,130 @@ elFormSenha.addEventListener("submit", (ev) => {
   }
 });
 
+// ============================================================
+// CARRINHO — pagar várias camisetas de uma vez, sem login
+// ============================================================
+// O carrinho é só uma lista de ids de aluno guardada NESTE navegador
+// (localStorage). Não existe conta, nem cadastro: quem abre o link marca as
+// camisetas que vai pagar e paga tudo num PIX (ou numa cobrança só do
+// Mercado Pago). Como é local, cada pessoa tem o seu — dois pais pagando
+// pelo mesmo link, cada um no seu celular, não se atrapalham.
+
+const CHAVE_CARRINHO = "carrinho-" + timeId;
+
+let carrinho = []; // ids de aluno escolhidos para pagar juntos
+
+// localStorage pode falhar (janela anônima, site sem permissão de dados):
+// o carrinho só deixa de sobreviver ao recarregar, o resto continua igual.
+function carregarCarrinho() {
+  try {
+    const bruto = localStorage.getItem(CHAVE_CARRINHO);
+    const lista = bruto ? JSON.parse(bruto) : [];
+    carrinho = Array.isArray(lista) ? lista.filter((id) => typeof id === "string") : [];
+  } catch (e) {
+    carrinho = [];
+  }
+}
+
+function salvarCarrinho() {
+  try {
+    localStorage.setItem(CHAVE_CARRINHO, JSON.stringify(carrinho));
+  } catch (e) {
+    console.warn("Não deu para guardar o carrinho neste navegador.", e);
+  }
+}
+
+// Uma camiseta pode entrar no carrinho? Mesmas regras do botão "Pagar":
+// pedido na fase de pagamento, não suspenso, ainda não paga, sem ajuste
+// pendente e com alguma forma de cobrança configurada.
+function podeEntrarNoCarrinho(aluno) {
+  if (!timeAtual || pedidoSuspenso(timeAtual)) return false;
+  if (!pedidoAceitaPagamento(timeAtual)) return false;
+  if (!aluno || aluno.pago || aluno.ajusteSolicitado) return false;
+  const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
+  return !!(configGeral.pixChave || temMp);
+}
+
+function estaNoCarrinho(alunoId) {
+  return carrinho.includes(alunoId);
+}
+
+function alternarNoCarrinho(aluno) {
+  if (estaNoCarrinho(aluno.id)) {
+    carrinho = carrinho.filter((id) => id !== aluno.id);
+  } else if (podeEntrarNoCarrinho(aluno)) {
+    carrinho = carrinho.concat([aluno.id]);
+  }
+  salvarCarrinho();
+  renderizarTabela();
+}
+
+function esvaziarCarrinho() {
+  carrinho = [];
+  salvarCarrinho();
+  renderizarTabela();
+}
+
+// Tira do carrinho o que não pode mais ser pago (camiseta paga, removida da
+// lista, com ajuste aberto ou pedido que saiu da fase de pagamento).
+// Antes da primeira leitura da lista não dá para saber nada: mexer aqui
+// apagaria o carrinho guardado da visita anterior.
+function limparCarrinho() {
+  if (!alunosCarregados) return;
+  const antes = carrinho.length;
+  carrinho = carrinho.filter((id) => {
+    const aluno = alunosAtuais.find((a) => a.id === id);
+    return aluno && podeEntrarNoCarrinho(aluno);
+  });
+  if (carrinho.length !== antes) salvarCarrinho();
+}
+
+// Os alunos do carrinho, na ordem em que aparecem na lista.
+function itensDoCarrinho() {
+  return alunosAtuais.filter((a) => carrinho.includes(a.id));
+}
+
+// Soma dos preços do carrinho e quantos itens estão sem preço definido.
+function totalDoCarrinho(itens) {
+  let total = 0;
+  let semPreco = 0;
+  (itens || itensDoCarrinho()).forEach((a) => {
+    const valor = precoDoTamanhoNoTime(a.tamanho, configGeral, timeId);
+    if (valor) total += valor; else semPreco++;
+  });
+  return { total, semPreco };
+}
+
+// Barra fixa do rodapé: quantidade, total e o botão de pagar tudo.
+function renderizarCarrinho() {
+  if (!elBarraCarrinho) return;
+  const itens = itensDoCarrinho();
+  elBarraCarrinho.classList.toggle("oculto", itens.length === 0);
+  // A barra é fixa no rodapé: a classe abre espaço para ela não tampar nada.
+  document.body.classList.toggle("com-carrinho", itens.length > 0);
+  if (itens.length === 0) return;
+
+  const { total, semPreco } = totalDoCarrinho(itens);
+  const valor = total > 0 ? " · " + formatarReais(total) : "";
+  const aviso = semPreco > 0 ? ` (${semPreco} sem preço definido)` : "";
+  elCarrinhoResumo.textContent = `${itens.length} camiseta(s)${valor}${aviso}`;
+  if (elBtnPagarCarrinho) {
+    elBtnPagarCarrinho.textContent = total > 0 ? `Pagar ${formatarReais(total)}` : "Pagar";
+  }
+}
+
+if (elBtnEsvaziarCarrinho) {
+  elBtnEsvaziarCarrinho.addEventListener("click", () => {
+    if (carrinho.length > 0 && confirm("Tirar todas as camisetas do carrinho?")) esvaziarCarrinho();
+  });
+}
+if (elBtnPagarCarrinho) {
+  elBtnPagarCarrinho.addEventListener("click", () => {
+    const itens = itensDoCarrinho();
+    if (itens.length > 0) abrirPagamento(itens);
+  });
+}
+
 // ---------------- Listagem em tempo real ----------------
 
 function escutarAlunos() {
@@ -349,6 +480,7 @@ function escutarAlunos() {
         alunosAtuais = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+        alunosCarregados = true;
         renderizarTabela();
         verificarConfirmacaoPix();
       },
@@ -376,6 +508,9 @@ function renderizarTabela() {
     esconderMensagem(elAvisoDuplicado);
   }
 
+  // Tira do carrinho o que já foi pago ou saiu da lista antes de desenhar.
+  limparCarrinho();
+
   elTabelaCorpo.innerHTML = "";
   alunosAtuais.forEach((aluno) => {
     const tr = document.createElement("tr");
@@ -397,8 +532,27 @@ function renderizarTabela() {
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
       <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
+      <td class="cel-carrinho"></td>
       <td class="acoes-linha"></td>
     `;
+
+    // Carrinho: marque quantas quiser e pague todas de uma vez lá embaixo.
+    const tdCarrinho = tr.querySelector(".cel-carrinho");
+    if (podeEntrarNoCarrinho(aluno)) {
+      const rotulo = document.createElement("label");
+      rotulo.className = "check-carrinho";
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.checked = estaNoCarrinho(aluno.id);
+      chk.setAttribute("aria-label", "Colocar a camiseta de " + aluno.nome + " no carrinho");
+      chk.onchange = () => alternarNoCarrinho(aluno);
+      rotulo.appendChild(chk);
+      rotulo.appendChild(document.createTextNode(estaNoCarrinho(aluno.id) ? " no carrinho" : " somar"));
+      tdCarrinho.appendChild(rotulo);
+      if (estaNoCarrinho(aluno.id)) tr.classList.add("linha-no-carrinho");
+    } else {
+      tdCarrinho.textContent = "-";
+    }
 
     const tdAcoes = tr.querySelector(".acoes-linha");
 
@@ -433,7 +587,8 @@ function renderizarTabela() {
         // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
         const valorLinha = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
         btnPagar.textContent = valorLinha ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
-        btnPagar.onclick = () => abrirPagamentoPix(aluno);
+        btnPagar.title = "Pagar só esta camiseta (para juntar várias, use o carrinho)";
+        btnPagar.onclick = () => abrirPagamento([aluno]);
         tdAcoes.appendChild(btnPagar);
       }
 
@@ -465,6 +620,7 @@ function renderizarTabela() {
     elTabelaCorpo.appendChild(tr);
   });
 
+  renderizarCarrinho();
   renderizarResumo();
 }
 
@@ -610,12 +766,14 @@ function editarLinha(tr, aluno) {
   tdAcoes.appendChild(btnCancelar);
 
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
+  const tdCarrinho = document.createElement("td");  // coluna do carrinho (vazia na edição)
 
   tr.appendChild(tdNome);
   tr.appendChild(tdTamanho);
   tr.appendChild(tdNumero);
   tr.appendChild(tdCostas);
   tr.appendChild(tdPagamento);
+  tr.appendChild(tdCarrinho);
   tr.appendChild(tdAcoes);
 }
 
@@ -748,8 +906,11 @@ const elPixJaPaguei = document.getElementById("pixJaPaguei");
 const elPixDeclarado = document.getElementById("pixDeclarado");
 const elPixStatus = document.getElementById("pixStatus");
 const elPixConteudo = document.getElementById("pixConteudo");
+const elPixTitulo = document.getElementById("pixTitulo");
+const elPixItens = document.getElementById("pixItens");
+const elPixAvisoLote = document.getElementById("pixAvisoLote");
 
-let pixAlunoAtual = null; // aluno aberto no modal de pagamento
+let pagamentoAtual = []; // camisetas abertas agora no modal (uma ou o carrinho)
 
 function definirStatusPix(texto, tipo) {
   if (!elPixStatus) return;
@@ -765,47 +926,89 @@ function definirStatusPix(texto, tipo) {
     tipo === "pago" ? "pix-ok" : "pix-ajuda";
 }
 
-function abrirPagamentoPix(aluno) {
+// Uma linha de resumo por camiseta ("Ana Souza — M · R$ 45,00").
+function descricaoDoItem(aluno) {
+  const valor = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
+  return `${aluno.nome} — ${aluno.tamanho}` + (valor ? ` · ${formatarReais(valor)}` : " · sem preço");
+}
+
+// Abre o pagamento de UMA camiseta ou de várias (o carrinho) de uma vez.
+// O caminho é o mesmo nos dois casos: muda só a quantidade de itens.
+function abrirPagamento(alunos) {
+  const itens = (alunos || []).filter(Boolean);
+  if (itens.length === 0) return;
+
   // Segurança: pedido suspenso não recebe pagamento.
   if (pedidoSuspenso(timeAtual)) {
     alert("Os pagamentos estão temporariamente suspensos para este time.");
     return;
   }
   // Segurança: unidade com ajuste pendente fica bloqueada para pagamento.
-  if (aluno.ajusteSolicitado) {
-    alert("Esta camiseta tem um ajuste pendente. O pagamento libera assim que a organização resolver o ajuste.");
+  const comAjuste = itens.filter((a) => a.ajusteSolicitado);
+  if (comAjuste.length > 0) {
+    alert(
+      comAjuste.length === 1
+        ? "Esta camiseta tem um ajuste pendente. O pagamento libera assim que a organização resolver o ajuste."
+        : `${comAjuste.length} camisetas do carrinho têm ajuste pendente. Tire-as do carrinho ou espere a organização resolver.`
+    );
     return;
   }
+
   // Confirmação: pagar confirma os dados e encerra a possibilidade de ajuste.
+  const { total, semPreco } = totalDoCarrinho(itens);
+  const lista = itens.slice(0, 12).map((a) =>
+    `• ${a.nome} — ${a.tamanho}, nº ${a.numero || "-"}, nas costas "${a.nomeCamiseta || "-"}"`
+  );
+  if (itens.length > lista.length) lista.push(`• …e mais ${itens.length - lista.length}`);
+
   const confirmar = confirm(
-    `Confira os dados desta camiseta antes de pagar:\n\n` +
-    `• Nome: ${aluno.nome}\n` +
-    `• Tamanho: ${aluno.tamanho}\n` +
-    `• Número: ${aluno.numero || "-"}\n` +
-    `• Nome na camiseta: ${aluno.nomeCamiseta || "-"}\n\n` +
-    `Ao pagar, você CONFIRMA que estes dados estão corretos. ` +
-    `Depois do pagamento, NÃO será mais possível solicitar ajuste desta unidade.\n\n` +
-    `Deseja continuar?`
+    (itens.length === 1
+      ? "Confira os dados desta camiseta antes de pagar:\n\n"
+      : `Confira as ${itens.length} camisetas antes de pagar:\n\n`) +
+    lista.join("\n") +
+    (total > 0 ? `\n\nTotal: ${formatarReais(total)}` : "") +
+    (semPreco > 0 ? `\n(${semPreco} sem preço definido — digite o valor no app do banco)` : "") +
+    "\n\nAo pagar, você CONFIRMA que estes dados estão corretos. " +
+    (itens.length === 1
+      ? "Depois do pagamento, NÃO será mais possível solicitar ajuste desta unidade.\n\n"
+      : "Depois do pagamento, NÃO será mais possível solicitar ajuste dessas unidades.\n\n") +
+    "Deseja continuar?"
   );
   if (!confirmar) return;
 
-  pixAlunoAtual = aluno;
+  pagamentoAtual = itens;
 
-  elPixAluno.textContent = `${aluno.nome} — tamanho ${aluno.tamanho}`;
+  if (elPixTitulo) {
+    elPixTitulo.textContent = itens.length === 1 ? "Pagamento via PIX" : `Pagamento de ${itens.length} camisetas`;
+  }
+  elPixAluno.textContent = itens.length === 1
+    ? descricaoDoItem(itens[0])
+    : `${itens.length} camisetas neste pagamento`;
+
+  // Com mais de uma camiseta, lista tudo para a pessoa conferir.
+  if (elPixItens) {
+    elPixItens.innerHTML = itens.length > 1
+      ? itens.map((a) => `<li>${escapeHtml(descricaoDoItem(a))}</li>`).join("")
+      : "";
+    elPixItens.classList.toggle("oculto", itens.length <= 1);
+  }
+  if (elPixAvisoLote) elPixAvisoLote.classList.toggle("oculto", itens.length <= 1);
+
   elPixCopiado.classList.add("oculto");
   elPixDeclarado.classList.add("oculto");
   definirStatusPix("", "");
   elModalPix.classList.remove("oculto");
 
   const usarMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
+  const todasPagas = itens.every((a) => a.pago);
 
   if (usarMp) {
     // Checkout Pro: o conteúdo de PIX estático não é usado (vamos redirecionar).
     if (elPixConteudo) elPixConteudo.classList.add("oculto");
-    if (aluno.pago) {
+    if (todasPagas) {
       definirStatusPix("Pagamento confirmado! ✅", "pago");
     } else {
-      irParaCheckoutMp(aluno);
+      irParaCheckoutMp(itens);
     }
     return;
   }
@@ -813,26 +1016,37 @@ function abrirPagamentoPix(aluno) {
   // Modo PIX estático (no próprio site).
   if (elPixConteudo) elPixConteudo.classList.remove("oculto");
   if (elPixJaPaguei) {
-    elPixJaPaguei.classList.toggle("oculto", !!(aluno.pago || aluno.pagamentoDeclarado));
+    const jaAvisou = itens.every((a) => a.pago || a.pagamentoDeclarado);
+    elPixJaPaguei.classList.toggle("oculto", jaAvisou);
+    elPixJaPaguei.textContent = itens.length === 1
+      ? "Já fiz o pagamento"
+      : `Já paguei as ${itens.length} camisetas`;
   }
-  if (aluno.pago) definirStatusPix("Pagamento confirmado! ✅", "pago");
-  gerarPagamentoEstatico(aluno);
+  if (todasPagas) definirStatusPix("Pagamento confirmado! ✅", "pago");
+  gerarPagamentoEstatico(itens);
 }
 
 // Modo padrão: PIX estático gerado no próprio site (chave direta, sem taxa).
-function gerarPagamentoEstatico(aluno) {
-  // Preço do time: o geral, ou o personalizado dele, quando houver.
-  const valor = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
+// Com várias camisetas é um código só, com a soma — o banco cobra de uma vez.
+function gerarPagamentoEstatico(itens) {
+  const { total, semPreco } = totalDoCarrinho(itens);
   const codigo = pixCopiaECola({
     chave: configGeral.pixChave,
     nome: configGeral.pixNome,
     cidade: configGeral.pixCidade,
-    valor: valor
+    valor: total
   });
 
-  elPixValor.textContent = valor
-    ? formatarReais(valor)
-    : "Valor não definido para este tamanho — digite no app do banco.";
+  if (total > 0 && semPreco === 0) {
+    elPixValor.textContent = formatarReais(total) +
+      (itens.length > 1 ? ` (${itens.length} camisetas)` : "");
+  } else if (total > 0) {
+    elPixValor.textContent = formatarReais(total) +
+      ` — ${semPreco} camiseta(s) sem preço ficaram de fora; combine o valor com a organização.`;
+  } else {
+    elPixValor.textContent = "Valor não definido para estes tamanhos — digite no app do banco.";
+  }
+
   elPixCodigo.value = codigo;
   elPixQr.src =
     "https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=" +
@@ -842,10 +1056,12 @@ function gerarPagamentoEstatico(aluno) {
 // Modo Mercado Pago (Checkout Pro): pede a preferência ao backend e redireciona
 // para a página hospedada do Mercado Pago. Depois de pagar, o pagador volta ao
 // site e o status vira "Pago" sozinho (webhook -> Firestore -> onSnapshot).
-async function irParaCheckoutMp(aluno) {
+// Vão todos os ids do carrinho: é uma cobrança só, com um item por camiseta.
+async function irParaCheckoutMp(itens) {
   definirStatusPix("Abrindo o Mercado Pago…", "");
   try {
     const url = configGeral.mpBackendUrl.replace(/\/$/, "") + "/api/criar-preferencia";
+    const ids = itens.map((a) => a.id);
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -854,7 +1070,10 @@ async function irParaCheckoutMp(aluno) {
         // Nome antigo do campo: mantido para o backend publicado antes da
         // renomeação continuar aceitando a cobrança até ser atualizado.
         turmaId: timeId,
-        alunoId: aluno.id,
+        alunoIds: ids,
+        // Backend antigo só entende uma camiseta: mandamos a primeira, para
+        // pelo menos essa cobrança sair enquanto ele não é republicado.
+        alunoId: ids[0],
         retornoUrl: window.location.href
       })
     });
@@ -869,19 +1088,28 @@ async function irParaCheckoutMp(aluno) {
   }
 }
 
-// Se o pagamento do aluno aberto no modal for confirmado (em tempo real),
-// mostra a confirmação sem precisar recarregar.
+// Se o pagamento aberto no modal for confirmado (em tempo real), mostra a
+// confirmação sem precisar recarregar. Com várias camisetas, acompanha
+// quantas já entraram.
 function verificarConfirmacaoPix() {
-  if (!pixAlunoAtual || !elModalPix || elModalPix.classList.contains("oculto")) return;
-  const atual = alunosAtuais.find((a) => a.id === pixAlunoAtual.id);
-  if (atual && atual.pago) {
+  if (pagamentoAtual.length === 0 || !elModalPix || elModalPix.classList.contains("oculto")) return;
+  const atuais = pagamentoAtual
+    .map((a) => alunosAtuais.find((x) => x.id === a.id))
+    .filter(Boolean);
+  const pagas = atuais.filter((a) => a.pago).length;
+  if (pagas === 0) return;
+
+  if (pagas === pagamentoAtual.length) {
     definirStatusPix("Pagamento confirmado! ✅", "pago");
     if (elPixJaPaguei) elPixJaPaguei.classList.add("oculto");
+  } else {
+    definirStatusPix(`${pagas} de ${pagamentoAtual.length} camisetas já confirmadas.`, "aguardando");
   }
 }
 
 function fecharPagamentoPix() {
   elModalPix.classList.add("oculto");
+  pagamentoAtual = [];
 }
 
 if (elPixFechar) elPixFechar.addEventListener("click", fecharPagamentoPix);
@@ -906,19 +1134,36 @@ if (elPixCopiar) {
 }
 if (elPixJaPaguei) {
   elPixJaPaguei.addEventListener("click", async () => {
-    if (!pixAlunoAtual) return;
+    if (pagamentoAtual.length === 0) return;
     if (pedidoSuspenso(timeAtual)) {
       alert("Os pagamentos estão temporariamente suspensos para este time.");
       return;
     }
     elPixJaPaguei.disabled = true;
     try {
-      await db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(pixAlunoAtual.id).update({
-        pagamentoDeclarado: true,
-        pagamentoForma: "pix",
-        pagamentoDeclaradoEm: firebase.firestore.FieldValue.serverTimestamp()
+      // Um aviso por camiseta do lote: a organização confere e confirma cada
+      // uma. Vai em lote para as linhas não ficarem pela metade.
+      const lote = db.batch();
+      const colecao = db.collection(COL_TIMES).doc(timeId).collection("alunos");
+      pagamentoAtual.forEach((aluno) => {
+        lote.update(colecao.doc(aluno.id), {
+          pagamentoDeclarado: true,
+          pagamentoForma: "pix",
+          pagamentoDeclaradoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
       });
+      await lote.commit();
+
+      // Já avisado: sai do carrinho para não ser pago duas vezes sem querer.
+      const pagos = pagamentoAtual.map((a) => a.id);
+      carrinho = carrinho.filter((id) => !pagos.includes(id));
+      salvarCarrinho();
+      renderizarCarrinho();
+
       elPixJaPaguei.classList.add("oculto");
+      elPixDeclarado.textContent = pagamentoAtual.length === 1
+        ? "Pagamento informado! A organização vai confirmar."
+        : `Pagamento das ${pagamentoAtual.length} camisetas informado! A organização vai confirmar.`;
       elPixDeclarado.classList.remove("oculto");
     } catch (erro) {
       console.error(erro);

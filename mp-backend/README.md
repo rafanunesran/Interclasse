@@ -12,9 +12,26 @@ Roda de graça na **Vercel** (plano Hobby, sem cartão). Funções:
   dele — a tabela geral `config/geral.precosPorGrupo` com o preço próprio do time
   (`config/geral.precosPorTime[timeId]`) por cima —, nunca vindo do cliente.
 - `api/webhook-mp.js` — recebe o aviso do Mercado Pago (payment e merchant_order), valida a
-  assinatura e grava `pago: true` no aluno.
+  assinatura e grava `pago: true` nas camisetas da cobrança.
 - `api/criar-pagamento.js` — alternativa "transparente" (QR dentro do próprio site). Não é usada
   pelo padrão atual, fica disponível se quiser trocar.
+- `lib/itens.js` — monta a lista de camisetas da cobrança (uma ou o carrinho inteiro),
+  busca cada aluno, calcula os preços e registra a cobrança.
+
+### Carrinho: uma cobrança com várias camisetas
+
+Os dois endpoints de cobrança aceitam `alunoIds: ["id1", "id2", …]` (e continuam aceitando
+o antigo `alunoId`, de uma camiseta só). Sai **uma** cobrança, com um item por camiseta —
+o pagador vê a lista na tela do Mercado Pago —, e o webhook marca **todas** como pagas.
+
+Como o `external_reference` do Mercado Pago é curto demais para levar uma lista de ids, a
+lista fica num documento da coleção **`cobrancas`** do Firestore e a referência vira
+`lote:<id-da-cobrança>`. O webhook lê esse documento para saber quem marcar. Referências no
+formato antigo (`<timeId>__<alunoId>`) continuam funcionando, então as cobranças criadas
+antes desta versão são confirmadas normalmente.
+
+O limite é de **60 camisetas por cobrança** (`MAX_ITENS` em `lib/itens.js`), só para uma
+requisição estranha não virar centenas de leituras no Firestore.
 
 > ⚠️ **Use as credenciais de PRODUÇÃO** (`MP_ACCESS_TOKEN`) para receber pagamentos de verdade.
 > Com o **Access Token de teste**, o QR/cobrança só pode ser pago por um **usuário de teste** do
