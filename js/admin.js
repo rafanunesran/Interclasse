@@ -11,15 +11,15 @@
 
 const PAGINA_LOGIN = "admin.html";
 
-const estadoTurmas = {}; // turmaId -> { turma, alunos, expandido }
+const estadoTimes = {}; // timeId -> { time, alunos, expandido }
 
 const elPainel = document.getElementById("painelAdmin");
 const elEmailLogado = document.getElementById("emailLogado");
-const elFormCriarTurma = document.getElementById("formCriarTurma");
-const elListaTurmasAdmin = document.getElementById("listaTurmasAdmin");
+const elFormCriarTime = document.getElementById("formCriarTime");
+const elListaTimesAdmin = document.getElementById("listaTimesAdmin");
 const elBtnExportarTudo = document.getElementById("btnExportarTudo");
 const elBtnExportarConferencia = document.getElementById("btnExportarConferencia");
-const elMsgCriarTurma = document.getElementById("msgCriarTurma");
+const elMsgCriarTime = document.getElementById("msgCriarTime");
 const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 
 let painelIniciado = false;
@@ -36,7 +36,7 @@ auth.onAuthStateChanged((user) => {
       // Adiado com setTimeout para garantir que as declarações let/const do
       // restante do arquivo já existam quando rodarem (evita "TDZ").
       setTimeout(() => {
-        escutarTurmas();
+        escutarTimes();
         carregarPainelConfig();
       }, 0);
     }
@@ -65,79 +65,79 @@ document.querySelectorAll(".aba").forEach((btn) => {
   });
 });
 
-// ---------------- Criar turma ----------------
+// ---------------- Criar time ----------------
 
-elFormCriarTurma.addEventListener("submit", async (ev) => {
+elFormCriarTime.addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  esconderMensagem(elMsgCriarTurma);
+  esconderMensagem(elMsgCriarTime);
 
-  const nome = document.getElementById("nomeNovaTurma").value.trim();
-  const senha = document.getElementById("senhaNovaTurma").value.trim();
+  const nome = document.getElementById("nomeNovoTime").value.trim();
+  const senha = document.getElementById("senhaNovoTime").value.trim();
 
   if (!nome || !senha) return;
 
   let id = slugify(nome);
-  if (!id) id = "turma";
+  if (!id) id = "time";
 
   try {
     let idFinal = id;
     let sufixo = 2;
-    while ((await db.collection("turmas").doc(idFinal).get()).exists) {
+    while ((await db.collection(COL_TIMES).doc(idFinal).get()).exists) {
       idFinal = `${id}-${sufixo}`;
       sufixo++;
     }
 
-    await db.collection("turmas").doc(idFinal).set({
+    await db.collection(COL_TIMES).doc(idFinal).set({
       nome,
       senha,
       fechado: false,
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    elFormCriarTurma.reset();
-    mostrarMensagem(elMsgCriarTurma, `Turma "${nome}" criada. Link: turma.html?id=${idFinal}`, "aviso");
+    elFormCriarTime.reset();
+    mostrarMensagem(elMsgCriarTime, `Time "${nome}" criado. Link: time.html?id=${idFinal}`, "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(elMsgCriarTurma, "Erro ao criar turma.", "erro");
+    mostrarMensagem(elMsgCriarTime, "Erro ao criar time.", "erro");
   }
 });
 
-// ---------------- Listagem de turmas ----------------
+// ---------------- Listagem de times ----------------
 
-function escutarTurmas() {
-  db.collection("turmas")
+function escutarTimes() {
+  db.collection(COL_TIMES)
     .orderBy("nome")
     .onSnapshot(
       (snap) => {
         const idsAtuais = new Set();
         snap.forEach((doc) => {
           idsAtuais.add(doc.id);
-          if (!estadoTurmas[doc.id]) {
-            estadoTurmas[doc.id] = { turma: doc.data(), alunos: [], expandido: false };
-            escutarAlunosDaTurma(doc.id);
+          if (!estadoTimes[doc.id]) {
+            estadoTimes[doc.id] = { time: doc.data(), alunos: [], expandido: false };
+            escutarAlunosDaTime(doc.id);
           } else {
-            estadoTurmas[doc.id].turma = doc.data();
+            estadoTimes[doc.id].time = doc.data();
           }
         });
-        Object.keys(estadoTurmas).forEach((id) => {
-          if (!idsAtuais.has(id)) delete estadoTurmas[id];
+        Object.keys(estadoTimes).forEach((id) => {
+          if (!idsAtuais.has(id)) delete estadoTimes[id];
         });
         aplicarFechamentoAutomatico();
-        renderizarTurmasAdmin();
+        renderizarTimesAdmin();
       },
-      (erro) => console.error("Erro ao carregar turmas:", erro)
+      (erro) => console.error("Erro ao carregar times:", erro)
     );
 }
 
-// Fecha automaticamente as turmas cuja data limite já passou (aberto -> fechado).
+// Fecha automaticamente os times cuja data limite já passou (aberto -> fechado).
 // Única mudança de status automática; as demais são manuais (seletor de status).
 function aplicarFechamentoAutomatico() {
-  Object.keys(estadoTurmas).forEach((turmaId) => {
-    const turma = estadoTurmas[turmaId].turma;
-    if (statusAutoPorData(turma) === "fechado") {
-      estadoTurmas[turmaId].turma.statusPedido = "fechado";
-      estadoTurmas[turmaId].turma.fechado = true;
-      db.collection("turmas").doc(turmaId).update({
+  Object.keys(estadoTimes).forEach((timeId) => {
+    const time = estadoTimes[timeId].time;
+    if (statusAutoPorData(time) === "fechado") {
+      estadoTimes[timeId].time.statusPedido = "fechado";
+      estadoTimes[timeId].time.fechado = true;
+      db.collection(COL_TIMES).doc(timeId).update({
         statusPedido: "fechado",
         fechado: true,
         fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
@@ -146,46 +146,46 @@ function aplicarFechamentoAutomatico() {
   });
 }
 
-function escutarAlunosDaTurma(turmaId) {
-  db.collection("turmas")
-    .doc(turmaId)
+function escutarAlunosDaTime(timeId) {
+  db.collection(COL_TIMES)
+    .doc(timeId)
     .collection("alunos")
     .where("excluido", "==", false)
     .onSnapshot((snap) => {
-      if (!estadoTurmas[turmaId]) return;
-      estadoTurmas[turmaId].alunos = snap.docs
+      if (!estadoTimes[timeId]) return;
+      estadoTimes[timeId].alunos = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-      renderizarTurmasAdmin();
+      renderizarTimesAdmin();
     });
 }
 
-function renderizarTurmasAdmin() {
-  elListaTurmasAdmin.innerHTML = "";
+function renderizarTimesAdmin() {
+  elListaTimesAdmin.innerHTML = "";
 
-  const ids = Object.keys(estadoTurmas).sort((a, b) =>
-    estadoTurmas[a].turma.nome.localeCompare(estadoTurmas[b].turma.nome, "pt-BR")
+  const ids = Object.keys(estadoTimes).sort((a, b) =>
+    estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR")
   );
 
   if (ids.length === 0) {
-    elListaTurmasAdmin.innerHTML = "<p>Nenhuma turma cadastrada ainda.</p>";
+    elListaTimesAdmin.innerHTML = "<p>Nenhum time cadastrado ainda.</p>";
     return;
   }
 
-  ids.forEach((turmaId) => {
-    const { turma, alunos, expandido } = estadoTurmas[turmaId];
+  ids.forEach((timeId) => {
+    const { time, alunos, expandido } = estadoTimes[timeId];
 
     const card = document.createElement("div");
     card.className = "card";
 
-    // ----- Modo edição (nome e senha da turma) -----
-    if (estadoTurmas[turmaId].editando) {
-      card.appendChild(criarFormEdicaoTurma(turmaId, turma));
-      elListaTurmasAdmin.appendChild(card);
+    // ----- Modo edição (nome e senha do time) -----
+    if (estadoTimes[timeId].editando) {
+      card.appendChild(criarFormEdicaoTime(timeId, time));
+      elListaTimesAdmin.appendChild(card);
       return;
     }
 
-    const statusId = statusPedidoDe(turma);
+    const statusId = statusPedidoDe(time);
     const classeBadge = classeBadgeStatus(statusId);
     const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
 
@@ -197,14 +197,14 @@ function renderizarTurmasAdmin() {
     const nPagos = alunos.filter((a) => a.pago).length;
 
     // Da Impressão em diante, o que conta é o que entra na produção.
-    const emProducao = pedidoEmProducao(turma);
+    const emProducao = pedidoEmProducao(time);
     const linhaProducao = emProducao
       ? `<p class="linha-producao"><strong>${nPagos} em produção</strong> &middot; ${alunos.length - nPagos} fora da produção (não paga(s))</p>`
       : "";
 
     card.innerHTML = `
-      <h2>${escapeHtmlAdmin(turma.nome)} ${status}</h2>
-      <p>Senha da turma: <code>${escapeHtmlAdmin(turma.senha)}</code> &middot; Link: <code>turma.html?id=${turmaId}</code></p>
+      <h2>${escapeHtmlAdmin(time.nome)} ${status}</h2>
+      <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
       ${linhaProducao}
       ${avisoAjustes}
@@ -229,7 +229,7 @@ function renderizarTurmasAdmin() {
       selStatus.appendChild(o);
     });
     selStatus.value = statusId;
-    selStatus.onchange = () => atualizarStatusPedido(turmaId, selStatus.value);
+    selStatus.onchange = () => atualizarStatusPedido(timeId, selStatus.value);
     linhaStatus.appendChild(lblStatus);
     linhaStatus.appendChild(selStatus);
     card.appendChild(linhaStatus);
@@ -242,15 +242,15 @@ function renderizarTurmasAdmin() {
     const inputData = document.createElement("input");
     inputData.type = "date";
     inputData.className = "input-data-limite";
-    inputData.value = turma.dataLimite || "";
+    inputData.value = time.dataLimite || "";
     inputData.onchange = () => {
-      db.collection("turmas").doc(turmaId).update({
+      db.collection(COL_TIMES).doc(timeId).update({
         dataLimite: inputData.value || firebase.firestore.FieldValue.delete()
       });
     };
     linhaData.appendChild(lblData);
     linhaData.appendChild(inputData);
-    if (!turma.dataLimite) {
+    if (!time.dataLimite) {
       const semData = document.createElement("small");
       semData.className = "pix-ajuda";
       semData.textContent = "(sem data — fica aberto até você fechar)";
@@ -259,7 +259,7 @@ function renderizarTurmasAdmin() {
     card.appendChild(linhaData);
 
     // Imagens da camiseta — simulação e arte (Google Drive via Apps Script).
-    card.appendChild(criarBlocoImagemTurma(turmaId, turma));
+    card.appendChild(criarBlocoImagemTime(timeId, time));
 
     const botoes = document.createElement("div");
 
@@ -267,8 +267,8 @@ function renderizarTurmasAdmin() {
     btnExpandir.className = "secundario";
     btnExpandir.textContent = expandido ? "Ocultar lista" : "Ver lista";
     btnExpandir.onclick = () => {
-      estadoTurmas[turmaId].expandido = !estadoTurmas[turmaId].expandido;
-      renderizarTurmasAdmin();
+      estadoTimes[timeId].expandido = !estadoTimes[timeId].expandido;
+      renderizarTimesAdmin();
     };
     botoes.appendChild(btnExpandir);
 
@@ -276,29 +276,29 @@ function renderizarTurmasAdmin() {
     btnExportar.className = "secundario";
     btnExportar.textContent = "CSV de produção";
     btnExportar.title = "Só as camisetas pagas, no padrão do programa de impressão";
-    btnExportar.onclick = () => exportarProducaoTurma(turma, alunos);
+    btnExportar.onclick = () => exportarProducaoTime(time, alunos);
     botoes.appendChild(btnExportar);
 
     const btnConferencia = document.createElement("button");
     btnConferencia.className = "secundario";
     btnConferencia.textContent = "CSV de conferência";
-    btnConferencia.title = "Lista completa da turma, com pagamento";
-    btnConferencia.onclick = () => exportarTurma(turma, alunos);
+    btnConferencia.title = "Lista completa do time, com pagamento";
+    btnConferencia.onclick = () => exportarTime(time, alunos);
     botoes.appendChild(btnConferencia);
 
     const btnEditar = document.createElement("button");
     btnEditar.className = "secundario";
-    btnEditar.textContent = "Editar turma";
+    btnEditar.textContent = "Editar time";
     btnEditar.onclick = () => {
-      estadoTurmas[turmaId].editando = true;
-      renderizarTurmasAdmin();
+      estadoTimes[timeId].editando = true;
+      renderizarTimesAdmin();
     };
     botoes.appendChild(btnEditar);
 
     const btnExcluir = document.createElement("button");
     btnExcluir.className = "perigo";
-    btnExcluir.textContent = "Excluir turma";
-    btnExcluir.onclick = () => excluirTurma(turmaId, turma);
+    btnExcluir.textContent = "Excluir time";
+    btnExcluir.onclick = () => excluirTime(timeId, time);
     botoes.appendChild(btnExcluir);
 
     card.appendChild(botoes);
@@ -317,7 +317,7 @@ function renderizarTurmasAdmin() {
         const tr = document.createElement("tr");
         if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
         // Nas etapas de produção, quem não pagou fica visivelmente de fora.
-        if (pedidoEmProducao(turma) && !alunoSeraProduzido(aluno)) {
+        if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno)) {
           tr.classList.add("linha-fora-producao");
         }
 
@@ -341,7 +341,7 @@ function renderizarTurmasAdmin() {
 
         // Coluna de pagamento: badge + seletor de status.
         const tdPag = tr.querySelector(".cel-pagamento");
-        tdPag.innerHTML = badgePagamentoHtml(aluno) + badgeProducaoHtml(turma, aluno);
+        tdPag.innerHTML = badgePagamentoHtml(aluno) + badgeProducaoHtml(time, aluno);
         const selPag = document.createElement("select");
         selPag.className = "select-pagamento";
         selPag.innerHTML =
@@ -350,7 +350,7 @@ function renderizarTurmasAdmin() {
           '<option value="dinheiro">Pago (dinheiro)</option>' +
           '<option value="interno">Interno (só custo)</option>';
         selPag.value = aluno.pago ? (aluno.pagamentoForma || "pix") : "pendente";
-        selPag.onchange = () => atualizarPagamento(turmaId, aluno.id, selPag.value);
+        selPag.onchange = () => atualizarPagamento(timeId, aluno.id, selPag.value);
         tdPag.appendChild(selPag);
         if (aluno.pagamentoDeclarado && !aluno.pago) {
           const nota = document.createElement("small");
@@ -364,7 +364,7 @@ function renderizarTurmasAdmin() {
         const btnEditar = document.createElement("button");
         btnEditar.className = "secundario";
         btnEditar.textContent = "Editar";
-        btnEditar.onclick = () => editarAlunoAdmin(tr, turmaId, aluno);
+        btnEditar.onclick = () => editarAlunoAdmin(tr, timeId, aluno);
         tdAcoes.appendChild(btnEditar);
 
         if (aluno.ajusteSolicitado) {
@@ -374,7 +374,7 @@ function renderizarTurmasAdmin() {
             btnAplicar.className = "sucesso";
             btnAplicar.textContent = "Aplicar ajuste";
             btnAplicar.title = "Aplicar a correção sugerida e resolver";
-            btnAplicar.onclick = () => aplicarAjuste(turmaId, aluno);
+            btnAplicar.onclick = () => aplicarAjuste(timeId, aluno);
             tdAcoes.appendChild(btnAplicar);
           }
 
@@ -383,7 +383,7 @@ function renderizarTurmasAdmin() {
           btnResolver.textContent = aluno.ajusteProposto ? "Dispensar" : "Resolver";
           btnResolver.title = "Marcar como resolvido sem aplicar a sugestão";
           btnResolver.onclick = () => {
-            db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+            db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
               ajusteSolicitado: false,
               ajusteProposto: firebase.firestore.FieldValue.delete(),
               ajusteContato: firebase.firestore.FieldValue.delete(),
@@ -402,7 +402,7 @@ function renderizarTurmasAdmin() {
           btnWa.title = "Enviar aviso de ajuste aprovado e pagamento liberado";
           btnWa.onclick = () => {
             const texto =
-              `Olá! ✅ O ajuste da camiseta de ${aluno.nome} (turma ${turma.nome}) foi aprovado e aplicado. ` +
+              `Olá! ✅ O ajuste da camiseta de ${aluno.nome} (time ${time.nome}) foi aprovado e aplicado. ` +
               `O pedido já está disponível para pagamento. 👕`;
             const url = linkWhatsapp(aluno.ajusteContato, texto);
             if (!url) {
@@ -411,7 +411,7 @@ function renderizarTurmasAdmin() {
             }
             window.open(url, "_blank");
             // Marca como avisado e remove o contato para o botão sumir.
-            db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+            db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
               ajusteContato: firebase.firestore.FieldValue.delete(),
               ajusteAvisadoEm: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -424,7 +424,7 @@ function renderizarTurmasAdmin() {
         btnExcluir.textContent = "Excluir";
         btnExcluir.onclick = () => {
           if (confirm(`Remover "${aluno.nome}"?`)) {
-            db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({ excluido: true });
+            db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({ excluido: true });
           }
         };
         tdAcoes.appendChild(btnExcluir);
@@ -434,7 +434,7 @@ function renderizarTurmasAdmin() {
       card.appendChild(tabela);
     }
 
-    elListaTurmasAdmin.appendChild(card);
+    elListaTimesAdmin.appendChild(card);
   });
 
   renderizarResumoPagamentos();
@@ -442,23 +442,23 @@ function renderizarTurmasAdmin() {
   renderizarFinanceiro();
 }
 
-// Atualiza o status do pedido de uma turma (usado no seletor da aba Inicial
+// Atualiza o status do pedido de um time (usado no seletor da aba Inicial
 // e ao arrastar cards no Kanban). Mantém `fechado` em sincronia com o status.
-function atualizarStatusPedido(turmaId, novo) {
+function atualizarStatusPedido(timeId, novo) {
   const dados = { statusPedido: novo, fechado: novo !== "aberto" };
   if (novo !== "aberto") dados.fechadoEm = firebase.firestore.FieldValue.serverTimestamp();
   // Atualiza o estado local na hora para o Kanban reagir sem esperar o snapshot.
-  if (estadoTurmas[turmaId]) {
-    estadoTurmas[turmaId].turma.statusPedido = novo;
-    estadoTurmas[turmaId].turma.fechado = novo !== "aberto";
+  if (estadoTimes[timeId]) {
+    estadoTimes[timeId].time.statusPedido = novo;
+    estadoTimes[timeId].time.fechado = novo !== "aberto";
   }
-  db.collection("turmas").doc(turmaId).update(dados)
+  db.collection(COL_TIMES).doc(timeId).update(dados)
     .catch((e) => console.error("Falha ao mudar status do pedido:", e));
 }
 
 // Aplica a correção sugerida no pedido de ajuste (grava os campos propostos)
 // e resolve o ajuste, registrando no histórico. É o "OK" do administrador.
-function aplicarAjuste(turmaId, aluno) {
+function aplicarAjuste(timeId, aluno) {
   const p = aluno.ajusteProposto || {};
   const resumo = resumoMudancasAjuste(aluno, p);
   const dados = {
@@ -476,7 +476,7 @@ function aplicarAjuste(turmaId, aluno) {
   CAMPOS_AJUSTE.forEach((c) => {
     if (p[c.key] !== undefined) dados[c.key] = p[c.key];
   });
-  db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update(dados)
+  db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update(dados)
     .catch((e) => {
       console.error(e);
       alert("Não foi possível aplicar o ajuste. Tente novamente.");
@@ -485,7 +485,7 @@ function aplicarAjuste(turmaId, aluno) {
 
 // ---------------- Kanban de pedidos ----------------
 
-// Turma sendo arrastada no momento (evita re-render que quebraria o arraste).
+// Time sendo arrastada no momento (evita re-render que quebraria o arraste).
 let kanbanArrastandoId = null;
 
 function renderizarKanban() {
@@ -496,19 +496,19 @@ function renderizarKanban() {
 
   board.innerHTML = "";
 
-  const ids = Object.keys(estadoTurmas);
+  const ids = Object.keys(estadoTimes);
   if (ids.length === 0) {
-    board.innerHTML = "<p>Nenhum pedido (turma) cadastrado ainda.</p>";
+    board.innerHTML = "<p>Nenhum pedido (time) cadastrado ainda.</p>";
     return;
   }
 
-  // Agrupa as turmas por status.
+  // Agrupa os times por status.
   const porStatus = {};
   STATUS_PEDIDO.forEach((s) => (porStatus[s.id] = []));
-  ids.forEach((turmaId) => {
-    const st = statusPedidoDe(estadoTurmas[turmaId].turma);
+  ids.forEach((timeId) => {
+    const st = statusPedidoDe(estadoTimes[timeId].time);
     // Status desconhecido cai na primeira etapa para não sumir do quadro.
-    (porStatus[st] || porStatus[STATUS_PEDIDO[0].id]).push(turmaId);
+    (porStatus[st] || porStatus[STATUS_PEDIDO[0].id]).push(timeId);
   });
 
   STATUS_PEDIDO.forEach((etapa) => {
@@ -516,13 +516,13 @@ function renderizarKanban() {
     coluna.className = "kanban-coluna";
     coluna.dataset.status = etapa.id;
 
-    const turmasDaColuna = porStatus[etapa.id] || [];
+    const timesDaColuna = porStatus[etapa.id] || [];
 
     const titulo = document.createElement("div");
     titulo.className = "kanban-coluna-titulo";
     titulo.innerHTML =
       `<span>${escapeHtmlAdmin(etapa.label)}</span>` +
-      `<span class="kanban-contador">${turmasDaColuna.length}</span>`;
+      `<span class="kanban-contador">${timesDaColuna.length}</span>`;
     coluna.appendChild(titulo);
 
     const listaCards = document.createElement("div");
@@ -539,22 +539,22 @@ function renderizarKanban() {
     listaCards.addEventListener("drop", (ev) => {
       ev.preventDefault();
       coluna.classList.remove("kanban-dragover");
-      const turmaId = ev.dataTransfer.getData("text/plain") || kanbanArrastandoId;
-      if (turmaId && estadoTurmas[turmaId] &&
-          statusPedidoDe(estadoTurmas[turmaId].turma) !== etapa.id) {
-        atualizarStatusPedido(turmaId, etapa.id);
+      const timeId = ev.dataTransfer.getData("text/plain") || kanbanArrastandoId;
+      if (timeId && estadoTimes[timeId] &&
+          statusPedidoDe(estadoTimes[timeId].time) !== etapa.id) {
+        atualizarStatusPedido(timeId, etapa.id);
       }
       kanbanArrastandoId = null;
       renderizarKanban();
     });
 
-    turmasDaColuna
+    timesDaColuna
       .sort((a, b) =>
-        estadoTurmas[a].turma.nome.localeCompare(estadoTurmas[b].turma.nome, "pt-BR")
+        estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR")
       )
-      .forEach((turmaId) => listaCards.appendChild(criarCardKanban(turmaId, etapa.id)));
+      .forEach((timeId) => listaCards.appendChild(criarCardKanban(timeId, etapa.id)));
 
-    if (turmasDaColuna.length === 0) {
+    if (timesDaColuna.length === 0) {
       const vazio = document.createElement("p");
       vazio.className = "kanban-vazio";
       vazio.textContent = "—";
@@ -566,18 +566,18 @@ function renderizarKanban() {
   });
 }
 
-function criarCardKanban(turmaId, statusId) {
-  const { turma, alunos } = estadoTurmas[turmaId];
+function criarCardKanban(timeId, statusId) {
+  const { time, alunos } = estadoTimes[timeId];
 
   const card = document.createElement("div");
   card.className = "kanban-card";
   card.draggable = true;
-  card.dataset.turmaId = turmaId;
+  card.dataset.timeId = timeId;
 
   card.addEventListener("dragstart", (ev) => {
-    kanbanArrastandoId = turmaId;
+    kanbanArrastandoId = timeId;
     ev.dataTransfer.effectAllowed = "move";
-    ev.dataTransfer.setData("text/plain", turmaId);
+    ev.dataTransfer.setData("text/plain", timeId);
     card.classList.add("kanban-card-arrastando");
   });
   card.addEventListener("dragend", () => {
@@ -591,7 +591,7 @@ function criarCardKanban(turmaId, statusId) {
 
   const nome = document.createElement("div");
   nome.className = "kanban-card-nome";
-  nome.textContent = turma.nome;
+  nome.textContent = time.nome;
   card.appendChild(nome);
 
   const info = document.createElement("div");
@@ -619,7 +619,7 @@ function criarCardKanban(turmaId, statusId) {
   });
   sel.value = statusId;
   sel.onchange = () => {
-    atualizarStatusPedido(turmaId, sel.value);
+    atualizarStatusPedido(timeId, sel.value);
     renderizarKanban();
   };
   // Evita iniciar o arraste do card ao interagir com o seletor.
@@ -630,8 +630,8 @@ function criarCardKanban(turmaId, statusId) {
 }
 
 // Atualiza o status de pagamento de um aluno (usado no seletor por linha).
-function atualizarPagamento(turmaId, alunoId, valor) {
-  const ref = db.collection("turmas").doc(turmaId).collection("alunos").doc(alunoId);
+function atualizarPagamento(timeId, alunoId, valor) {
+  const ref = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
   if (valor === "pendente") {
     ref.update({ pago: false, pagamentoForma: "", pagamentoDeclarado: false });
   } else {
@@ -650,7 +650,7 @@ function renderizarResumoPagamentos() {
   if (!el) return;
 
   let total = 0, pagos = 0, aguardando = 0;
-  Object.values(estadoTurmas).forEach(({ alunos }) => {
+  Object.values(estadoTimes).forEach(({ alunos }) => {
     alunos.forEach((a) => {
       total++;
       if (a.pago) pagos++;
@@ -700,7 +700,7 @@ let finVisao = "geral";      // visão ativa
 let finPeriodo = "30";       // "hoje" | "7" | "30" | "tudo" | "custom"
 let finDe = "";              // data inicial (YYYY-MM-DD) quando periodo = custom
 let finAte = "";             // data final (YYYY-MM-DD) quando periodo = custom
-let finTurmaFiltro = "";     // "" = todas as turmas
+let finTimeFiltro = "";     // "" = todos os times
 let finDiasAbertos = {};     // chave do dia -> true (linhas expandidas no extrato)
 
 // ---------------- Auxiliares de data ----------------
@@ -757,7 +757,7 @@ function finDiasDesde(data) {
 
 // ---------------- Coleta dos dados ----------------
 
-// Percorre todas as turmas/alunos e calcula os números do financeiro.
+// Percorre todos os times/alunos e calcula os números do financeiro.
 // venda = preço do tamanho (aba Pagamentos); custo = Impressão + Costureira
 // do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" = declarado mas
 // não confirmado; "pendente" = nem declarado.
@@ -769,12 +769,12 @@ function calcularFinanceiro() {
     qtd: 0, qtdPagas: 0, qtdAguardando: 0, qtdPendentes: 0,
     qtdInternas: 0, custoInterno: 0,
     porForma: { pix: 0, dinheiro: 0 },
-    porTurma: [],
+    porTime: [],
     porGrupo: {}
   };
 
-  Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
-    const t = { nome: turma.nome, previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
+  Object.values(estadoTimes).forEach(({ time, alunos }) => {
+    const t = { nome: time.nome, previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
@@ -828,7 +828,7 @@ function calcularFinanceiro() {
     t.lucro = t.previsto - t.custos;
     t.vendaveis = t.qtd - t.internas;
     t.margem = t.previsto > 0 ? (t.lucro / t.previsto) * 100 : 0;
-    fin.porTurma.push(t);
+    fin.porTime.push(t);
   });
 
   fin.qtdVendaveis = fin.qtd - fin.qtdInternas;
@@ -840,8 +840,8 @@ function calcularFinanceiro() {
   fin.ticketMedio = fin.qtdVendaveis > 0 ? fin.previsto / fin.qtdVendaveis : 0;
   fin.custoMedio = fin.qtd > 0 ? fin.custos / fin.qtd : 0;
 
-  // Ordena as turmas por valor a receber (maior primeiro) — foco na cobrança.
-  fin.porTurma.sort((a, b) => b.aReceber - a.aReceber);
+  // Ordena os times por valor a receber (maior primeiro) — foco na cobrança.
+  fin.porTime.sort((a, b) => b.aReceber - a.aReceber);
   return fin;
 }
 
@@ -850,12 +850,12 @@ function calcularFinanceiro() {
 function finLancamentos() {
   const precos = precosPorGrupoAtual || {};
   const lista = [];
-  Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
+  Object.entries(estadoTimes).forEach(([timeId, { time, alunos }]) => {
     alunos.forEach((a) => {
       if (!a.pago || ehInterno(a)) return; // interna não gera receita
       lista.push({
-        turmaId,
-        turma: turma.nome,
+        timeId,
+        time: time.nome,
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
@@ -876,9 +876,9 @@ function finLancamentos() {
 function finPendencias() {
   const precos = precosPorGrupoAtual || {};
   const lista = [];
-  Object.entries(estadoTurmas).forEach(([turmaId, { turma, alunos }]) => {
-    const fechadoEm = finParaData(turma.fechadoEm);
-    const limite = turma.dataLimite ? finParaData(turma.dataLimite) : null;
+  Object.entries(estadoTimes).forEach(([timeId, { time, alunos }]) => {
+    const fechadoEm = finParaData(time.fechadoEm);
+    const limite = time.dataLimite ? finParaData(time.dataLimite) : null;
     alunos.forEach((a) => {
       if (a.pago) return;
       const declarado = !!a.pagamentoDeclarado;
@@ -888,8 +888,8 @@ function finPendencias() {
         ? finParaData(a.pagamentoDeclaradoEm)
         : (fechadoEm || finParaData(a.criadoEm));
       lista.push({
-        turmaId,
-        turma: turma.nome,
+        timeId,
+        time: time.nome,
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
@@ -901,7 +901,7 @@ function finPendencias() {
         dias: finDiasDesde(desde),
         limite,
         atrasado: !!(limite && limite.getTime() < Date.now()),
-        status: statusPedidoDe(turma)
+        status: statusPedidoDe(time)
       });
     });
   });
@@ -924,14 +924,14 @@ function finLimitesPeriodo() {
   return { de, ate: fimDoDia, label: p.label.toLowerCase() };
 }
 
-// Aplica o filtro de período + turma. Lançamentos sem data ficam de fora do
+// Aplica o filtro de período + time. Lançamentos sem data ficam de fora do
 // recorte por data (voltam separados, para não sumirem do extrato).
 function finFiltrar(lista) {
   const { de, ate } = finLimitesPeriodo();
   const dentro = [];
   const semData = [];
   lista.forEach((l) => {
-    if (finTurmaFiltro && l.turmaId !== finTurmaFiltro) return;
+    if (finTimeFiltro && l.timeId !== finTimeFiltro) return;
     if (!l.data) { semData.push(l); return; }
     if (de && l.data < de) return;
     if (ate && l.data > ate) return;
@@ -1021,24 +1021,24 @@ function renderizarVisaoFinanceira(f) {
   return finViewGeral(alvo, f);
 }
 
-// Barra de filtros (período rápido, datas personalizadas e turma).
+// Barra de filtros (período rápido, datas personalizadas e time).
 function finBarraFiltrosHtml(comPeriodo = true) {
   const botoes = FIN_PERIODOS.map((p) =>
     `<button type="button" class="fin-chip${finPeriodo === p.id ? " ativa" : ""}" data-fin-periodo="${p.id}">${p.label}</button>`
   ).join("");
 
-  const turmas = Object.entries(estadoTurmas)
-    .map(([id, { turma }]) => ({ id, nome: turma.nome }))
+  const times = Object.entries(estadoTimes)
+    .map(([id, { time }]) => ({ id, nome: time.nome }))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
-    .map((t) => `<option value="${t.id}"${finTurmaFiltro === t.id ? " selected" : ""}>${escapeHtmlAdmin(t.nome)}</option>`)
+    .map((t) => `<option value="${t.id}"${finTimeFiltro === t.id ? " selected" : ""}>${escapeHtmlAdmin(t.nome)}</option>`)
     .join("");
 
   if (!comPeriodo) {
     return `
       <div class="fin-filtros">
         <div class="fin-filtros-linha">
-          <label for="finTurma">Turma</label>
-          <select id="finTurma"><option value="">Todas as turmas</option>${turmas}</select>
+          <label for="finTime">Time</label>
+          <select id="finTime"><option value="">Todos os times</option>${times}</select>
         </div>
       </div>
     `;
@@ -1057,8 +1057,8 @@ function finBarraFiltrosHtml(comPeriodo = true) {
         <input type="date" id="finAte" value="${finAte}" />
       </div>
       <div class="fin-filtros-linha">
-        <label for="finTurma">Turma</label>
-        <select id="finTurma"><option value="">Todas as turmas</option>${turmas}</select>
+        <label for="finTime">Time</label>
+        <select id="finTime"><option value="">Todos os times</option>${times}</select>
       </div>
     </div>
   `;
@@ -1076,8 +1076,8 @@ function finLigarFiltros(alvo, f) {
   const ate = alvo.querySelector("#finAte");
   if (de) de.onchange = () => { finDe = de.value; renderizarVisaoFinanceira(f); };
   if (ate) ate.onchange = () => { finAte = ate.value; renderizarVisaoFinanceira(f); };
-  const sel = alvo.querySelector("#finTurma");
-  if (sel) sel.onchange = () => { finTurmaFiltro = sel.value; renderizarVisaoFinanceira(f); };
+  const sel = alvo.querySelector("#finTime");
+  if (sel) sel.onchange = () => { finTimeFiltro = sel.value; renderizarVisaoFinanceira(f); };
 }
 
 // ---------------- Visão 1: geral ----------------
@@ -1096,7 +1096,7 @@ function finViewGeral(alvo, f) {
   const inicio7 = new Date(inicioHoje.getTime() - 6 * 86400000);
   const semana = finSomaEntre(lanc, inicio7, agora);
 
-  const linhasTurma = f.porTurma.map((t, idx) => {
+  const linhasTime = f.porTime.map((t, idx) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     return `<tr>
       <td>${escapeHtmlAdmin(t.nome)}</td>
@@ -1105,7 +1105,7 @@ function finViewGeral(alvo, f) {
       <td class="fin-verde">${formatarReais(t.recebido)}</td>
       <td class="fin-vermelho">${formatarReais(t.aReceber)}</td>
       <td>${pct}%</td>
-      <td class="fin-custo-cel" data-turma-idx="${idx}" role="button" tabindex="0" title="Ver detalhe do custo">${formatarReais(t.custos)} ›</td>
+      <td class="fin-custo-cel" data-time-idx="${idx}" role="button" tabindex="0" title="Ver detalhe do custo">${formatarReais(t.custos)} ›</td>
       <td>${formatarReais(t.lucro)}</td>
     </tr>`;
   }).join("");
@@ -1179,19 +1179,19 @@ function finViewGeral(alvo, f) {
       <span class="badge pago">Dinheiro: ${formatarReais(f.porForma.dinheiro)}</span>
     </div>
 
-    <!-- Por turma -->
-    <h3 class="fin-titulo">Por turma (ordenado por valor a receber)</h3>
+    <!-- Por time -->
+    <h3 class="fin-titulo">Por time (ordenado por valor a receber)</h3>
     <div class="fin-tabela-wrap">
       <table class="fin-tabela">
         <thead><tr>
-          <th>Turma</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Custo prev.</th><th>Lucro prev.</th>
+          <th>Time</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Custo prev.</th><th>Lucro prev.</th>
         </tr></thead>
-        <tbody>${linhasTurma}</tbody>
+        <tbody>${linhasTime}</tbody>
       </table>
     </div>
   `;
 
-  // Liga os cliques que abrem o pop-up de detalhe de custo (total e por turma).
+  // Liga os cliques que abrem o pop-up de detalhe de custo (total e por time).
   const cardTotal = alvo.querySelector('[data-fin-modal="total"]');
   if (cardTotal) {
     const abrir = () => abrirModalCusto("Custo previsto — total", {
@@ -1201,7 +1201,7 @@ function finViewGeral(alvo, f) {
     cardTotal.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
   }
   alvo.querySelectorAll(".fin-custo-cel").forEach((cel) => {
-    const t = f.porTurma[Number(cel.dataset.turmaIdx)];
+    const t = f.porTime[Number(cel.dataset.timeIdx)];
     if (!t) return;
     const abrir = () => abrirModalCusto("Custo previsto — " + t.nome, {
       impressao: t.custoImpressao, costureira: t.custoCostureira, total: t.custos, qtd: t.qtd
@@ -1231,7 +1231,7 @@ function finViewExtrato(alvo, f) {
       <tr class="fin-linha-item">
         <td>${finHora(l.data)}</td>
         <td>${escapeHtmlAdmin(l.aluno)}</td>
-        <td>${escapeHtmlAdmin(l.turma)}</td>
+        <td>${escapeHtmlAdmin(l.time)}</td>
         <td>${escapeHtmlAdmin(l.tamanho)}</td>
         <td>${l.forma === "dinheiro" ? "Dinheiro" : (l.online ? "PIX (online)" : "PIX")}</td>
         <td class="fin-verde">${formatarReais(l.valor)}</td>
@@ -1249,7 +1249,7 @@ function finViewExtrato(alvo, f) {
         </tr>
         ${aberto ? `<tr class="fin-linha-detalhe"><td colspan="6">
           <table class="fin-tabela fin-tabela-interna">
-            <thead><tr><th>Hora</th><th>Aluno</th><th>Turma</th><th>Tam.</th><th>Forma</th><th>Valor</th></tr></thead>
+            <thead><tr><th>Hora</th><th>Aluno</th><th>Time</th><th>Tam.</th><th>Forma</th><th>Valor</th></tr></thead>
             <tbody>${detalhe}</tbody>
           </table>
         </td></tr>` : ""}
@@ -1450,7 +1450,7 @@ function finViewEvolucao(alvo, f) {
 // ---------------- Visão 4: a receber (cobrança e conciliação) ----------------
 
 function finViewCobranca(alvo, f) {
-  const pend = finPendencias().filter((p) => !finTurmaFiltro || p.turmaId === finTurmaFiltro);
+  const pend = finPendencias().filter((p) => !finTimeFiltro || p.timeId === finTimeFiltro);
   const aguardando = pend.filter((p) => p.tipo === "aguardando").sort((a, b) => (b.dias || 0) - (a.dias || 0));
   const pendentes = pend.filter((p) => p.tipo === "pendente");
   const bloqueados = pendentes.filter((p) => p.bloqueado);
@@ -1473,23 +1473,23 @@ function finViewCobranca(alvo, f) {
   const linhasAguardando = aguardando.map((p) => `
     <tr>
       <td>${escapeHtmlAdmin(p.aluno)}</td>
-      <td>${escapeHtmlAdmin(p.turma)}</td>
+      <td>${escapeHtmlAdmin(p.time)}</td>
       <td>${formatarReais(p.valor)}</td>
       <td>${p.dias === null ? "-" : p.dias + " dia(s)"}</td>
-      <td><button type="button" class="sucesso fin-btn-confirmar" data-turma="${p.turmaId}" data-aluno="${p.alunoId}">Confirmar PIX</button></td>
+      <td><button type="button" class="sucesso fin-btn-confirmar" data-time="${p.timeId}" data-aluno="${p.alunoId}">Confirmar PIX</button></td>
     </tr>`).join("");
 
-  // Turmas ordenadas pelo que falta receber, com o tempo médio em aberto.
-  const porTurma = {};
+  // Times ordenadas pelo que falta receber, com o tempo médio em aberto.
+  const porTime = {};
   pend.forEach((p) => {
-    if (!porTurma[p.turmaId]) porTurma[p.turmaId] = { nome: p.turma, qtd: 0, valor: 0, dias: [], status: p.status, atrasado: p.atrasado };
-    const t = porTurma[p.turmaId];
+    if (!porTime[p.timeId]) porTime[p.timeId] = { nome: p.time, qtd: 0, valor: 0, dias: [], status: p.status, atrasado: p.atrasado };
+    const t = porTime[p.timeId];
     t.qtd++;
     t.valor += p.valor;
     if (p.dias !== null) t.dias.push(p.dias);
   });
-  const listaTurmas = Object.values(porTurma).sort((a, b) => b.valor - a.valor);
-  const linhasTurma = listaTurmas.map((t) => {
+  const listaTimes = Object.values(porTime).sort((a, b) => b.valor - a.valor);
+  const linhasTime = listaTimes.map((t) => {
     const medio = t.dias.length > 0 ? Math.round(t.dias.reduce((s, d) => s + d, 0) / t.dias.length) : null;
     return `<tr>
       <td>${escapeHtmlAdmin(t.nome)}${t.atrasado ? ' <span class="badge fechado">prazo vencido</span>' : ""}</td>
@@ -1505,7 +1505,7 @@ function finViewCobranca(alvo, f) {
   const linhasMaiores = maiores.map((p) => `
     <tr>
       <td>${escapeHtmlAdmin(p.aluno)}${p.bloqueado ? ' <span class="badge aguardando">ajuste pendente</span>' : ""}</td>
-      <td>${escapeHtmlAdmin(p.turma)}</td>
+      <td>${escapeHtmlAdmin(p.time)}</td>
       <td>${escapeHtmlAdmin(p.tamanho)}</td>
       <td class="fin-vermelho">${formatarReais(p.valor)}</td>
       <td>${p.dias === null ? "-" : p.dias + " dia(s)"}</td>
@@ -1538,7 +1538,7 @@ function finViewCobranca(alvo, f) {
       ? "<p>Nada para conferir agora.</p>"
       : `<div class="fin-tabela-wrap">
           <table class="fin-tabela">
-            <thead><tr><th>Aluno</th><th>Turma</th><th>Valor</th><th>Esperando há</th><th></th></tr></thead>
+            <thead><tr><th>Aluno</th><th>Time</th><th>Valor</th><th>Esperando há</th><th></th></tr></thead>
             <tbody>${linhasAguardando}</tbody>
           </table>
         </div>`}
@@ -1554,13 +1554,13 @@ function finViewCobranca(alvo, f) {
       </table>
     </div>
 
-    <h3 class="fin-titulo">Por turma (maior valor em aberto primeiro)</h3>
-    ${listaTurmas.length === 0
+    <h3 class="fin-titulo">Por time (maior valor em aberto primeiro)</h3>
+    ${listaTimes.length === 0
       ? "<p>Nenhuma pendência. Tudo pago! 🎉</p>"
       : `<div class="fin-tabela-wrap">
           <table class="fin-tabela">
-            <thead><tr><th>Turma</th><th>Em aberto</th><th>Valor</th><th>Tempo médio</th><th>Status do pedido</th></tr></thead>
-            <tbody>${linhasTurma}</tbody>
+            <thead><tr><th>Time</th><th>Em aberto</th><th>Valor</th><th>Tempo médio</th><th>Status do pedido</th></tr></thead>
+            <tbody>${linhasTime}</tbody>
           </table>
         </div>`}
 
@@ -1568,7 +1568,7 @@ function finViewCobranca(alvo, f) {
     <h3 class="fin-titulo">Maiores pendências individuais</h3>
     <div class="fin-tabela-wrap">
       <table class="fin-tabela">
-        <thead><tr><th>Aluno</th><th>Turma</th><th>Tam.</th><th>Valor</th><th>Em aberto há</th></tr></thead>
+        <thead><tr><th>Aluno</th><th>Time</th><th>Tam.</th><th>Valor</th><th>Em aberto há</th></tr></thead>
         <tbody>${linhasMaiores}</tbody>
       </table>
     </div>`}
@@ -1578,7 +1578,7 @@ function finViewCobranca(alvo, f) {
   alvo.querySelectorAll(".fin-btn-confirmar").forEach((btn) => {
     btn.onclick = () => {
       if (!confirm("Confirmar o recebimento por PIX desta camiseta?")) return;
-      atualizarPagamento(btn.dataset.turma, btn.dataset.aluno, "pix");
+      atualizarPagamento(btn.dataset.time, btn.dataset.aluno, "pix");
     };
   });
 }
@@ -1601,8 +1601,8 @@ function finViewResultado(alvo, f) {
     </tr>`;
   }).join("");
 
-  // Ranking de rentabilidade por turma (quem dá mais lucro previsto).
-  const ranking = [...f.porTurma].sort((a, b) => b.lucro - a.lucro).map((t) => `
+  // Ranking de rentabilidade por time (quem dá mais lucro previsto).
+  const ranking = [...f.porTime].sort((a, b) => b.lucro - a.lucro).map((t) => `
     <tr>
       <td>${escapeHtmlAdmin(t.nome)}</td>
       <td>${t.qtd}${t.internas > 0 ? ` <span class="fin-sub">(${t.internas} int.)</span>` : ""}</td>
@@ -1659,10 +1659,10 @@ function finViewResultado(alvo, f) {
       </table>
     </div>
 
-    <h3 class="fin-titulo">Rentabilidade por turma</h3>
+    <h3 class="fin-titulo">Rentabilidade por time</h3>
     <div class="fin-tabela-wrap">
       <table class="fin-tabela">
-        <thead><tr><th>Turma</th><th>Qtd</th><th>Receita prev.</th><th>Custo</th><th>Lucro prev.</th><th>Margem</th></tr></thead>
+        <thead><tr><th>Time</th><th>Qtd</th><th>Receita prev.</th><th>Custo</th><th>Lucro prev.</th><th>Margem</th></tr></thead>
         <tbody>${ranking}</tbody>
       </table>
     </div>
@@ -1714,13 +1714,13 @@ function exportarFinanceiro() {
   if (finVisao === "evolucao") return exportarEvolucao();
   if (finVisao === "cobranca") return exportarCobranca();
   if (finVisao === "resultado") return exportarResultado(f);
-  return exportarResumoPorTurma(f);
+  return exportarResumoPorTime(f);
 }
 
-// Visão geral / resumo por turma (formato original do relatório).
-function exportarResumoPorTurma(f) {
-  const linhas = [["Turma", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
-  f.porTurma.forEach((t) => {
+// Visão geral / resumo por time (formato original do relatório).
+function exportarResumoPorTime(f) {
+  const linhas = [["Time", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
+  f.porTime.forEach((t) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     linhas.push([
       t.nome, t.qtd,
@@ -1745,12 +1745,12 @@ function exportarExtrato() {
     alert("Não há recebimentos no período selecionado.");
     return;
   }
-  const linhas = [["Data", "Hora", "Aluno", "Turma", "Tamanho", "Forma", "Origem", "Valor"]];
+  const linhas = [["Data", "Hora", "Aluno", "Time", "Tamanho", "Forma", "Origem", "Valor"]];
   todos.forEach((l) => {
     linhas.push([
       l.data ? l.data.toLocaleDateString("pt-BR") : "sem data",
       l.data ? finHora(l.data) : "",
-      l.aluno, l.turma, l.tamanho,
+      l.aluno, l.time, l.tamanho,
       l.forma === "dinheiro" ? "Dinheiro" : "PIX",
       l.online ? "Mercado Pago" : "Manual",
       l.valor.toFixed(2)
@@ -1782,16 +1782,16 @@ function exportarEvolucao() {
 // Tudo o que está em aberto, do mais antigo para o mais novo.
 function exportarCobranca() {
   const pend = finPendencias()
-    .filter((p) => !finTurmaFiltro || p.turmaId === finTurmaFiltro)
+    .filter((p) => !finTimeFiltro || p.timeId === finTimeFiltro)
     .sort((a, b) => (b.dias || 0) - (a.dias || 0));
   if (pend.length === 0) {
     alert("Não há pendências para exportar.");
     return;
   }
-  const linhas = [["Aluno", "Turma", "Tamanho", "Situacao", "Valor", "Em aberto (dias)", "Desde", "Bloqueado por ajuste"]];
+  const linhas = [["Aluno", "Time", "Tamanho", "Situacao", "Valor", "Em aberto (dias)", "Desde", "Bloqueado por ajuste"]];
   pend.forEach((p) => {
     linhas.push([
-      p.aluno, p.turma, p.tamanho,
+      p.aluno, p.time, p.tamanho,
       p.tipo === "aguardando" ? "Aguardando confirmacao" : "Pendente",
       p.valor.toFixed(2),
       p.dias === null ? "" : p.dias,
@@ -1804,7 +1804,7 @@ function exportarCobranca() {
   baixarCSV("a-receber-interclasse.csv", linhas);
 }
 
-// DRE + rentabilidade por turma e por grupo.
+// DRE + rentabilidade por time e por grupo.
 function exportarResultado(f) {
   const linhas = [["Demonstrativo", "Valor"]];
   [
@@ -1820,8 +1820,8 @@ function exportarResultado(f) {
   ].forEach(([r, v]) => linhas.push([r, v.toFixed(2)]));
 
   linhas.push([]);
-  linhas.push(["Turma", "Qtd", "Receita prevista", "Custo", "Lucro previsto", "Margem %"]);
-  [...f.porTurma].sort((a, b) => b.lucro - a.lucro).forEach((t) => {
+  linhas.push(["Time", "Qtd", "Receita prevista", "Custo", "Lucro previsto", "Margem %"]);
+  [...f.porTime].sort((a, b) => b.lucro - a.lucro).forEach((t) => {
     linhas.push([t.nome, t.qtd, t.previsto.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2), t.margem.toFixed(0)]);
   });
 
@@ -1850,25 +1850,25 @@ if (elModalCusto) {
   });
 }
 
-// Monta o formulário inline de edição do nome e da senha da turma.
-function criarFormEdicaoTurma(turmaId, turma) {
+// Monta o formulário inline de edição do nome e da senha do time.
+function criarFormEdicaoTime(timeId, time) {
   const wrap = document.createElement("div");
 
   const h2 = document.createElement("h2");
-  h2.textContent = "Editar turma";
+  h2.textContent = "Editar time";
   wrap.appendChild(h2);
 
   const lblNome = document.createElement("label");
-  lblNome.textContent = "Nome da turma";
+  lblNome.textContent = "Nome do time";
   const inNome = document.createElement("input");
   inNome.type = "text";
-  inNome.value = turma.nome;
+  inNome.value = time.nome;
 
   const lblSenha = document.createElement("label");
-  lblSenha.textContent = "Senha da turma";
+  lblSenha.textContent = "Senha do time";
   const inSenha = document.createElement("input");
   inSenha.type = "text";
-  inSenha.value = turma.senha;
+  inSenha.value = time.senha;
 
   wrap.appendChild(lblNome);
   wrap.appendChild(inNome);
@@ -1884,18 +1884,18 @@ function criarFormEdicaoTurma(turmaId, turma) {
     const novoNome = inNome.value.trim();
     const novaSenha = inSenha.value.trim();
     if (!novoNome || !novaSenha) {
-      alert("Preencha o nome e a senha da turma.");
+      alert("Preencha o nome e a senha do time.");
       return;
     }
     btnSalvar.disabled = true;
     try {
-      await db.collection("turmas").doc(turmaId).update({ nome: novoNome, senha: novaSenha });
-      if (estadoTurmas[turmaId]) estadoTurmas[turmaId].editando = false;
+      await db.collection(COL_TIMES).doc(timeId).update({ nome: novoNome, senha: novaSenha });
+      if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
       // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.
-      renderizarTurmasAdmin();
+      renderizarTimesAdmin();
     } catch (erro) {
       console.error(erro);
-      alert("Erro ao salvar a turma. Tente novamente.");
+      alert("Erro ao salvar o time. Tente novamente.");
       btnSalvar.disabled = false;
     }
   };
@@ -1904,8 +1904,8 @@ function criarFormEdicaoTurma(turmaId, turma) {
   btnCancelar.className = "secundario";
   btnCancelar.textContent = "Cancelar";
   btnCancelar.onclick = () => {
-    if (estadoTurmas[turmaId]) estadoTurmas[turmaId].editando = false;
-    renderizarTurmasAdmin();
+    if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
+    renderizarTimesAdmin();
   };
 
   acoes.appendChild(btnSalvar);
@@ -1915,29 +1915,29 @@ function criarFormEdicaoTurma(turmaId, turma) {
   return wrap;
 }
 
-// Exclui a turma de verdade: apaga os alunos (subcoleção) e depois a turma.
-async function excluirTurma(turmaId, turma) {
-  const qtd = (estadoTurmas[turmaId] && estadoTurmas[turmaId].alunos.length) || 0;
+// Exclui o time de verdade: apaga os alunos (subcoleção) e depois o time.
+async function excluirTime(timeId, time) {
+  const qtd = (estadoTimes[timeId] && estadoTimes[timeId].alunos.length) || 0;
   const aviso =
-    `Excluir a turma "${turma.nome}"?\n\n` +
-    `Isso apaga a turma e as ${qtd} camiseta(s) cadastrada(s) nela. ` +
+    `Excluir o time "${time.nome}"?\n\n` +
+    `Isso apaga o time e as ${qtd} camiseta(s) cadastrada(s) nele. ` +
     `Esta ação NÃO pode ser desfeita.`;
   if (!confirm(aviso)) return;
 
   try {
     // Apaga a subcoleção de alunos em lote (o Firestore não faz isso sozinho).
-    const alunosSnap = await db.collection("turmas").doc(turmaId).collection("alunos").get();
+    const alunosSnap = await db.collection(COL_TIMES).doc(timeId).collection("alunos").get();
     if (!alunosSnap.empty) {
       const lote = db.batch();
       alunosSnap.forEach((d) => lote.delete(d.ref));
       await lote.commit();
     }
-    await db.collection("turmas").doc(turmaId).delete();
-    // O onSnapshot das turmas remove o card automaticamente.
+    await db.collection(COL_TIMES).doc(timeId).delete();
+    // O onSnapshot dos times remove o card automaticamente.
   } catch (erro) {
     console.error(erro);
     alert(
-      "Erro ao excluir a turma. Verifique se as regras do Firestore permitem " +
+      "Erro ao excluir o time. Verifique se as regras do Firestore permitem " +
       "'delete' para o admin (firestore.rules) e se elas foram publicadas no console."
     );
   }
@@ -1945,7 +1945,7 @@ async function excluirTurma(turmaId, turma) {
 
 // Edição inline de um aluno no Super Admin (permite corrigir a linha mesmo
 // com o pedido fechado). Ao salvar, resolve o pedido de ajuste, se houver.
-function editarAlunoAdmin(tr, turmaId, aluno) {
+function editarAlunoAdmin(tr, timeId, aluno) {
   tr.innerHTML = "";
 
   const tdNome = document.createElement("td");
@@ -2000,7 +2000,7 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
         dados.ajusteResolvidoEm = firebase.firestore.FieldValue.serverTimestamp();
         dados.ajusteHistorico = firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now() });
       }
-      await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update(dados);
+      await db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update(dados);
       // O onSnapshot dos alunos re-renderiza a lista automaticamente.
     } catch (erro) {
       console.error(erro);
@@ -2012,7 +2012,7 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
   const btnCancelar = document.createElement("button");
   btnCancelar.className = "secundario";
   btnCancelar.textContent = "Cancelar";
-  btnCancelar.onclick = () => renderizarTurmasAdmin();
+  btnCancelar.onclick = () => renderizarTimesAdmin();
 
   tdAcoes.appendChild(btnSalvar);
   tdAcoes.appendChild(btnCancelar);
@@ -2027,9 +2027,9 @@ function editarAlunoAdmin(tr, turmaId, aluno) {
   tr.appendChild(tdAcoes);
 }
 
-// Imagens de cada turma: a simulação na camiseta e a arte pura (sem simulação).
-// `campo` é o nome do campo na turma; as duas seguem o mesmo fluxo de upload.
-const IMAGENS_TURMA = [
+// Imagens de cada time: a simulação na camiseta e a arte pura (sem simulação).
+// `campo` é o nome do campo no time; as duas seguem o mesmo fluxo de upload.
+const IMAGENS_TIME = [
   {
     campo: "imagemUrl",
     tipo: "camiseta",
@@ -2038,7 +2038,7 @@ const IMAGENS_TURMA = [
     labelEnviar: "Enviar simulação da camiseta",
     labelTrocar: "Trocar simulação",
     labelRemover: "Remover simulação",
-    confirmRemover: "Remover a simulação da camiseta desta turma?"
+    confirmRemover: "Remover a simulação da camiseta deste time?"
   },
   {
     campo: "arteUrl",
@@ -2048,12 +2048,12 @@ const IMAGENS_TURMA = [
     labelEnviar: "Enviar arte (sem simulação)",
     labelTrocar: "Trocar arte",
     labelRemover: "Remover arte",
-    confirmRemover: "Remover a arte (sem simulação) desta turma?"
+    confirmRemover: "Remover a arte (sem simulação) deste time?"
   }
 ];
 
 // Bloco de imagens da camiseta no card do Super Admin (enviar/trocar/remover).
-function criarBlocoImagemTurma(turmaId, turma) {
+function criarBlocoImagemTime(timeId, time) {
   const bloco = document.createElement("div");
   bloco.className = "bloco-imagens-admin";
 
@@ -2064,27 +2064,27 @@ function criarBlocoImagemTurma(turmaId, turma) {
   lblMarca.className = "checkbox-inline check-marca";
   const chkMarca = document.createElement("input");
   chkMarca.type = "checkbox";
-  chkMarca.checked = turma.marcaDagua === true;
+  chkMarca.checked = time.marcaDagua === true;
   chkMarca.onchange = () => {
-    // Atualiza o estado local na hora e persiste o flag na turma.
-    if (estadoTurmas[turmaId]) estadoTurmas[turmaId].turma.marcaDagua = chkMarca.checked;
-    db.collection("turmas").doc(turmaId).update({ marcaDagua: chkMarca.checked })
-      .then(() => renderizarTurmasAdmin())
+    // Atualiza o estado local na hora e persiste o flag no time.
+    if (estadoTimes[timeId]) estadoTimes[timeId].time.marcaDagua = chkMarca.checked;
+    db.collection(COL_TIMES).doc(timeId).update({ marcaDagua: chkMarca.checked })
+      .then(() => renderizarTimesAdmin())
       .catch((e) => console.error("Falha ao salvar a marca d'água:", e));
   };
   lblMarca.appendChild(chkMarca);
   lblMarca.appendChild(document.createTextNode(" Marca d'água de referência (sobreposta nas duas imagens)"));
   bloco.appendChild(lblMarca);
 
-  IMAGENS_TURMA.forEach((cfg) => {
-    bloco.appendChild(criarLinhaImagemTurma(turmaId, turma, cfg));
+  IMAGENS_TIME.forEach((cfg) => {
+    bloco.appendChild(criarLinhaImagemTime(timeId, time, cfg));
   });
 
   return bloco;
 }
 
 // Uma linha do bloco acima: miniatura + botões de enviar/trocar e remover.
-function criarLinhaImagemTurma(turmaId, turma, cfg) {
+function criarLinhaImagemTime(timeId, time, cfg) {
   const linha = document.createElement("div");
   linha.className = "bloco-imagem-admin";
 
@@ -2093,15 +2093,15 @@ function criarLinhaImagemTurma(turmaId, turma, cfg) {
   rotulo.textContent = cfg.titulo;
   linha.appendChild(rotulo);
 
-  const urlAtual = turma[cfg.campo];
+  const urlAtual = time[cfg.campo];
 
   if (urlAtual) {
     const thumb = document.createElement("img");
     thumb.className = "thumb-camiseta";
     thumb.src = urlAtual;
     thumb.alt = cfg.alt;
-    // Sobrepõe a marca d'água (sem alterar o arquivo) quando ativada na turma.
-    linha.appendChild(envolverImagemComMarca(thumb, turma.marcaDagua === true));
+    // Sobrepõe a marca d'água (sem alterar o arquivo) quando ativada no time.
+    linha.appendChild(envolverImagemComMarca(thumb, time.marcaDagua === true));
   }
 
   const inputImg = document.createElement("input");
@@ -2127,8 +2127,8 @@ function criarLinhaImagemTurma(turmaId, turma, cfg) {
     const antes = btnImg.textContent;
     btnImg.textContent = "Enviando…";
     try {
-      const url = await enviarImagemDrive(driveScriptUrl, turmaId, file, cfg.tipo);
-      await db.collection("turmas").doc(turmaId).update({ [cfg.campo]: url });
+      const url = await enviarImagemDrive(driveScriptUrl, timeId, file, cfg.tipo);
+      await db.collection(COL_TIMES).doc(timeId).update({ [cfg.campo]: url });
     } catch (e) {
       console.error(e);
       alert("Erro ao enviar a imagem: " + e.message);
@@ -2147,7 +2147,7 @@ function criarLinhaImagemTurma(turmaId, turma, cfg) {
     btnRemover.textContent = cfg.labelRemover;
     btnRemover.onclick = () => {
       if (confirm(cfg.confirmRemover)) {
-        db.collection("turmas").doc(turmaId)
+        db.collection(COL_TIMES).doc(timeId)
           .update({ [cfg.campo]: firebase.firestore.FieldValue.delete() });
       }
     };
@@ -2168,37 +2168,37 @@ function escapeHtmlAdmin(texto) {
 
 // CSV que vai para o programa de impressão: só o que será produzido (pago),
 // sem cabeçalho e separado por vírgula — nome na camiseta, número e tamanho.
-function exportarProducaoTurma(turma, alunos) {
+function exportarProducaoTime(time, alunos) {
   const { produzir, pendentes } = separarProducao(alunos);
   if (produzir.length === 0) {
-    alert("Nenhuma camiseta paga nesta turma — não há o que produzir ainda.");
+    alert("Nenhuma camiseta paga neste time — não há o que produzir ainda.");
     return;
   }
   if (pendentes.length > 0 && !confirm(
     pendentes.length + " camiseta(s) não paga(s) ficam de fora da produção.\n\n" +
     "Exportar as " + produzir.length + " camiseta(s) pagas?"
   )) return;
-  baixarCSVProducao(`producao-${slugify(turma.nome)}.csv`, produzir);
+  baixarCSVProducao(`producao-${slugify(time.nome)}.csv`, produzir);
 }
 
-// CSV de conferência: a lista completa da turma, com situação de pagamento.
-function exportarTurma(turma, alunos) {
+// CSV de conferência: a lista completa do time, com situação de pagamento.
+function exportarTime(time, alunos) {
   if (alunos.length === 0) {
-    alert("Essa turma não tem alunos cadastrados.");
+    alert("Esse time não tem alunos cadastrados.");
     return;
   }
-  const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+  const linhas = [["Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
   alunos.forEach((a) =>
-    linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
+    linhas.push([time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
   );
-  baixarCSV(`pedido-${slugify(turma.nome)}.csv`, linhas);
+  baixarCSV(`pedido-${slugify(time.nome)}.csv`, linhas);
 }
 
-// CSV geral de produção: junta todas as turmas, só o que será produzido.
+// CSV geral de produção: junta todos os times, só o que será produzido.
 elBtnExportarTudo.addEventListener("click", () => {
   const produzir = [];
   let pendentes = 0;
-  Object.values(estadoTurmas).forEach(({ alunos }) => {
+  Object.values(estadoTimes).forEach(({ alunos }) => {
     const separado = separarProducao(alunos);
     produzir.push(...separado.produzir);
     pendentes += separado.pendentes.length;
@@ -2214,19 +2214,19 @@ elBtnExportarTudo.addEventListener("click", () => {
   baixarCSVProducao("producao-interclasse-geral.csv", produzir);
 });
 
-// CSV geral de conferência: tudo, com turma e situação de pagamento.
+// CSV geral de conferência: tudo, com time e situação de pagamento.
 if (elBtnExportarConferencia) {
   elBtnExportarConferencia.addEventListener("click", () => {
-    const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+    const linhas = [["Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
     let total = 0;
-    Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
+    Object.values(estadoTimes).forEach(({ time, alunos }) => {
       alunos.forEach((a) => {
-        linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+        linhas.push([time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
         total++;
       });
     });
     if (total === 0) {
-      alert("Não há alunos cadastrados em nenhuma turma.");
+      alert("Não há alunos cadastrados em nenhum time.");
       return;
     }
     baixarCSV("pedido-interclasse-geral.csv", linhas);
@@ -2715,7 +2715,7 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
     GRUPOS_TAMANHO = clonarGrupos(grupos);
     TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
     renderizarEditorTamanhos();
-    mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro das turmas.", "aviso");
+    mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro dos times.", "aviso");
   } catch (erro) {
     console.error(erro);
     mostrarMensagem(

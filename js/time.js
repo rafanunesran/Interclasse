@@ -1,18 +1,18 @@
 // ============================================================
-// PÁGINA DA TURMA: cadastro, conferência e fechamento do pedido
+// PÁGINA DA TIME: cadastro, conferência e fechamento do pedido
 // ============================================================
 
 const params = new URLSearchParams(window.location.search);
-const turmaId = params.get("id");
+const timeId = params.get("id");
 
-let turmaAtual = null;
+let timeAtual = null;
 let desbloqueado = false;
 let alunosAtuais = []; // cache da última leitura, para exportar/resumir
 let cadastrosGlobaisAbertos = true; // controlado nas configurações gerais (admin)
 let configGeral = {}; // config/geral (inclui dados de PIX e preços)
 
 // Elementos
-const elNomeTurma = document.getElementById("nomeTurma");
+const elNomeTime = document.getElementById("nomeTime");
 const elBadgeStatus = document.getElementById("badgeStatus");
 const elMsgSenha = document.getElementById("msgSenha");
 const elCardSenha = document.getElementById("formSenha");
@@ -38,8 +38,8 @@ const elDataLimite = document.getElementById("dataLimite");
 const elBtnSalvarDataLimite = document.getElementById("btnSalvarDataLimite");
 const elMsgDataLimite = document.getElementById("msgDataLimite");
 
-if (!turmaId) {
-  elNomeTurma.textContent = "Turma não especificada.";
+if (!timeId) {
+  elNomeTime.textContent = "Time não especificado.";
 } else {
   iniciar();
 }
@@ -62,28 +62,28 @@ async function iniciar() {
 
   preencherSelectTamanhos(document.getElementById("tamanho"));
 
-  const doc = await db.collection("turmas").doc(turmaId).get();
+  const doc = await db.collection(COL_TIMES).doc(timeId).get();
   if (!doc.exists) {
-    elNomeTurma.textContent = "Turma não encontrada.";
+    elNomeTime.textContent = "Time não encontrado.";
     return;
   }
-  turmaAtual = doc.data();
-  elNomeTurma.textContent = turmaAtual.nome;
+  timeAtual = doc.data();
+  elNomeTime.textContent = timeAtual.nome;
   await aplicarFechamentoAutomatico();
   atualizarBadge();
 
   // Se já desbloqueou nesta aba antes, não pede senha de novo.
-  if (sessionStorage.getItem("desbloqueado-" + turmaId) === "1") {
+  if (sessionStorage.getItem("desbloqueado-" + timeId) === "1") {
     desbloqueado = true;
   }
   atualizarVisibilidade();
 
   escutarAlunos();
 
-  // Mantém o status da turma atualizado em tempo real.
-  db.collection("turmas").doc(turmaId).onSnapshot(async (snap) => {
+  // Mantém o status do time atualizado em tempo real.
+  db.collection(COL_TIMES).doc(timeId).onSnapshot(async (snap) => {
     if (snap.exists) {
-      turmaAtual = snap.data();
+      timeAtual = snap.data();
       await aplicarFechamentoAutomatico();
       atualizarBadge();
       atualizarVisibilidade();
@@ -94,16 +94,16 @@ async function iniciar() {
 // Fecha o pedido automaticamente quando a data limite passa (aberto -> fechado).
 // Esta é a única mudança de status feita fora do Super Admin.
 async function aplicarFechamentoAutomatico() {
-  const novo = statusAutoPorData(turmaAtual);
+  const novo = statusAutoPorData(timeAtual);
   if (!novo) return;
   try {
-    await db.collection("turmas").doc(turmaId).update({
+    await db.collection(COL_TIMES).doc(timeId).update({
       statusPedido: novo,
       fechado: true,
       fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
-    turmaAtual.statusPedido = novo;
-    turmaAtual.fechado = true;
+    timeAtual.statusPedido = novo;
+    timeAtual.fechado = true;
   } catch (e) {
     console.warn("Não foi possível aplicar o fechamento automático por data.", e);
   }
@@ -113,13 +113,13 @@ async function aplicarFechamentoAutomatico() {
 // na camiseta, a arte pura e, em seguida, as medidas de cada grupo de tamanhos.
 function imagensDaGaleria() {
   const itens = [];
-  // Marca d'água sobreposta nas imagens da camiseta, conforme o flag da turma.
-  const comMarca = turmaAtual && turmaAtual.marcaDagua === true;
-  if (turmaAtual && turmaAtual.imagemUrl) {
-    itens.push({ url: turmaAtual.imagemUrl, legenda: "Simulação na camiseta", comMarca });
+  // Marca d'água sobreposta nas imagens da camiseta, conforme o flag do time.
+  const comMarca = timeAtual && timeAtual.marcaDagua === true;
+  if (timeAtual && timeAtual.imagemUrl) {
+    itens.push({ url: timeAtual.imagemUrl, legenda: "Simulação na camiseta", comMarca });
   }
-  if (turmaAtual && turmaAtual.arteUrl) {
-    itens.push({ url: turmaAtual.arteUrl, legenda: "Arte (sem simulação)", comMarca });
+  if (timeAtual && timeAtual.arteUrl) {
+    itens.push({ url: timeAtual.arteUrl, legenda: "Arte (sem simulação)", comMarca });
   }
   // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
   GRUPOS_TAMANHO.filter((g) => g.imagemUrl).forEach((g) => {
@@ -140,7 +140,7 @@ function renderizarGaleria() {
   if (!elGaleria || !elGaleriaTrilho) return;
 
   const itens = imagensDaGaleria();
-  const comMarcaDagua = turmaAtual && turmaAtual.marcaDagua === true;
+  const comMarcaDagua = timeAtual && timeAtual.marcaDagua === true;
   const assinatura = JSON.stringify([itens.map((i) => i.url), comMarcaDagua]);
   if (assinatura === assinaturaGaleria) return; // nada mudou: preserva a rolagem
   assinaturaGaleria = assinatura;
@@ -164,7 +164,7 @@ function renderizarGaleria() {
     tornarImagemAmpliavel(img, item.legenda, item.comMarca, itens, indice);
     wrap.appendChild(img);
 
-    // Marca d'água sobreposta (não altera o arquivo), conforme o flag da turma.
+    // Marca d'água sobreposta (não altera o arquivo), conforme o flag do time.
     if (item.comMarca) {
       const marca = document.createElement("span");
       marca.className = "marca-overlay";
@@ -207,7 +207,7 @@ if (elGaleriaTrilho) elGaleriaTrilho.addEventListener("scroll", atualizarSetasGa
 window.addEventListener("resize", atualizarSetasGaleria);
 
 function atualizarBadge() {
-  const statusId = statusPedidoDe(turmaAtual);
+  const statusId = statusPedidoDe(timeAtual);
   elBadgeStatus.textContent = labelStatus(statusId);
   elBadgeStatus.className = "badge " + classeBadgeStatus(statusId);
 
@@ -218,9 +218,9 @@ function atualizarBadge() {
 
   // Info da data limite.
   if (elInfoDataLimite) {
-    if (turmaAtual.dataLimite) {
-      const d = new Date(turmaAtual.dataLimite + "T00:00:00");
-      const txt = isNaN(d.getTime()) ? turmaAtual.dataLimite : d.toLocaleDateString("pt-BR");
+    if (timeAtual.dataLimite) {
+      const d = new Date(timeAtual.dataLimite + "T00:00:00");
+      const txt = isNaN(d.getTime()) ? timeAtual.dataLimite : d.toLocaleDateString("pt-BR");
       elInfoDataLimite.textContent = "Data limite para pagamento: " + txt;
       elInfoDataLimite.classList.remove("oculto");
     } else {
@@ -230,9 +230,9 @@ function atualizarBadge() {
 }
 
 function atualizarVisibilidade() {
-  const aberto = pedidoAberto(turmaAtual);
-  const suspenso = pedidoSuspenso(turmaAtual);
-  const aceitaCadastro = pedidoAceitaCadastro(turmaAtual); // aberto/fechado/pagamento
+  const aberto = pedidoAberto(timeAtual);
+  const suspenso = pedidoSuspenso(timeAtual);
+  const aceitaCadastro = pedidoAceitaCadastro(timeAtual); // aberto/fechado/pagamento
   const podeEditar = desbloqueado && aceitaCadastro && cadastrosGlobaisAbertos;
 
   elCardSenha.classList.toggle("oculto", desbloqueado);
@@ -241,17 +241,17 @@ function atualizarVisibilidade() {
   if (elBlocoDataLimite) {
     elBlocoDataLimite.classList.toggle("oculto", !(desbloqueado && aberto));
     if (elDataLimite && document.activeElement !== elDataLimite) {
-      elDataLimite.value = turmaAtual.dataLimite || "";
+      elDataLimite.value = timeAtual.dataLimite || "";
     }
   }
   // Da Impressão em diante: o que não foi pago fica pendente e não é produzido.
   if (elMensagemProducao) {
     const { produzir, pendentes } = separarProducao(alunosAtuais);
-    const mostrar = pedidoEmProducao(turmaAtual) && alunosAtuais.length > 0;
+    const mostrar = pedidoEmProducao(timeAtual) && alunosAtuais.length > 0;
     elMensagemProducao.classList.toggle("oculto", !mostrar);
     if (mostrar) {
       elMensagemProducao.textContent = pendentes.length === 0
-        ? `🖨️ Produção em andamento: as ${produzir.length} camiseta(s) da turma foram pagas e entraram na produção.`
+        ? `🖨️ Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas e entraram na produção.`
         : `🖨️ Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
           `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`;
     }
@@ -262,7 +262,7 @@ function atualizarVisibilidade() {
   // "Não é mais possível editar" só quando a lista realmente travou (pagamento encerrado+).
   elMensagemFechado.classList.toggle("oculto", aceitaCadastro || suspenso);
   if (elMensagemGlobalFechado) {
-    // Aviso global só quando a turma aceitaria cadastro, mas o admin fechou tudo.
+    // Aviso global só quando o time aceitaria cadastro, mas o admin fechou tudo.
     elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || !aceitaCadastro);
   }
 
@@ -273,12 +273,12 @@ function atualizarVisibilidade() {
 
 elFormSenha.addEventListener("submit", (ev) => {
   ev.preventDefault();
-  const valor = document.getElementById("senhaTurma").value.trim();
+  const valor = document.getElementById("senhaTime").value.trim();
   esconderMensagem(elMsgSenha);
 
-  if (valor === turmaAtual.senha) {
+  if (valor === timeAtual.senha) {
     desbloqueado = true;
-    sessionStorage.setItem("desbloqueado-" + turmaId, "1");
+    sessionStorage.setItem("desbloqueado-" + timeId, "1");
     atualizarVisibilidade();
     // Leva o representante direto para a tela de cadastro.
     if (!elBlocoCadastro.classList.contains("oculto")) {
@@ -294,8 +294,8 @@ elFormSenha.addEventListener("submit", (ev) => {
 // ---------------- Listagem em tempo real ----------------
 
 function escutarAlunos() {
-  db.collection("turmas")
-    .doc(turmaId)
+  db.collection(COL_TIMES)
+    .doc(timeId)
     .collection("alunos")
     .where("excluido", "==", false)
     .onSnapshot(
@@ -311,7 +311,7 @@ function escutarAlunos() {
 }
 
 function renderizarTabela() {
-  const podeEditar = desbloqueado && pedidoAceitaCadastro(turmaAtual) && cadastrosGlobaisAbertos;
+  const podeEditar = desbloqueado && pedidoAceitaCadastro(timeAtual) && cadastrosGlobaisAbertos;
 
   // Conta ocorrências de cada número (ignorando vazios) para destacar duplicados
   const contagemNumero = {};
@@ -323,7 +323,7 @@ function renderizarTabela() {
   if (duplicados.length > 0) {
     mostrarMensagem(
       elAvisoDuplicado,
-      "Atenção: números de camiseta duplicados nesta turma: " + duplicados.join(", "),
+      "Atenção: números de camiseta duplicados neste time: " + duplicados.join(", "),
       "aviso"
     );
   } else {
@@ -337,7 +337,7 @@ function renderizarTabela() {
       tr.classList.add("duplicado");
     }
     // Nas etapas de produção, quem não pagou fica visivelmente de fora.
-    if (pedidoEmProducao(turmaAtual) && !alunoSeraProduzido(aluno)) {
+    if (pedidoEmProducao(timeAtual) && !alunoSeraProduzido(aluno)) {
       tr.classList.add("linha-fora-producao");
     }
 
@@ -350,13 +350,13 @@ function renderizarTabela() {
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
-      <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(turmaAtual, aluno)}</td>
+      <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
       <td class="acoes-linha"></td>
     `;
 
     const tdAcoes = tr.querySelector(".acoes-linha");
 
-    if (!pedidoSuspenso(turmaAtual)) {
+    if (!pedidoSuspenso(timeAtual)) {
       // Editar/excluir: liberado enquanto a lista aceita cadastro
       // (aberto, fechado e pagamento em andamento).
       if (podeEditar) {
@@ -380,7 +380,7 @@ function renderizarTabela() {
       // se houver PIX/Mercado Pago e o aluno não estiver pago. Fica BLOQUEADO
       // enquanto houver um ajuste pendente nesta unidade.
       const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
-      const podePagar = pedidoAceitaPagamento(turmaAtual) && !aluno.pago && (configGeral.pixChave || temMp);
+      const podePagar = pedidoAceitaPagamento(timeAtual) && !aluno.pago && (configGeral.pixChave || temMp);
       if (podePagar && !ajustePendente) {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
@@ -392,7 +392,7 @@ function renderizarTabela() {
       // Solicitar ajuste: em qualquer fase que não seja "aberto" (onde dá para
       // editar direto), enquanto o pagamento não foi feito nem declarado —
       // pagar confirma os dados e encerra a possibilidade de ajuste.
-      if (!pedidoAberto(turmaAtual) && !aluno.pago && !aluno.pagamentoDeclarado) {
+      if (!pedidoAberto(timeAtual) && !aluno.pago && !aluno.pagamentoDeclarado) {
         const btnAjuste = document.createElement("button");
         btnAjuste.className = "secundario";
         if (ajustePendente) {
@@ -428,7 +428,7 @@ function renderizarResumo() {
   });
 
   elResumo.innerHTML = `<span><strong>Total: ${alunosAtuais.length}</strong></span>`;
-  if (pedidoEmProducao(turmaAtual)) {
+  if (pedidoEmProducao(timeAtual)) {
     const { produzir, pendentes } = separarProducao(alunosAtuais);
     const emProducao = document.createElement("span");
     emProducao.innerHTML = `<strong>Em produção: ${produzir.length}</strong>`;
@@ -461,8 +461,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
 
   // Segurança: só cadastra enquanto a lista aceita nomes (aberto/fechado/
   // pagamento em andamento) e os cadastros globais estão liberados.
-  if (!pedidoAceitaCadastro(turmaAtual) || !cadastrosGlobaisAbertos) {
-    alert("Os cadastros estão fechados para esta turma no momento.");
+  if (!pedidoAceitaCadastro(timeAtual) || !cadastrosGlobaisAbertos) {
+    alert("Os cadastros estão fechados para este time no momento.");
     return;
   }
 
@@ -480,7 +480,7 @@ elFormAluno.addEventListener("submit", async (ev) => {
   botao.disabled = true;
 
   try {
-    await db.collection("turmas").doc(turmaId).collection("alunos").add({
+    await db.collection(COL_TIMES).doc(timeId).collection("alunos").add({
       nome,
       tamanho,
       numero,
@@ -541,7 +541,7 @@ function editarLinha(tr, aluno) {
       return;
     }
     try {
-      await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+      await db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
         nome: novoNome,
         tamanho: selectTamanho.value,
         numero: inputNumero.value.trim(),
@@ -574,7 +574,7 @@ function editarLinha(tr, aluno) {
 async function excluirAluno(aluno) {
   if (!confirm(`Remover "${aluno.nome}" da lista?`)) return;
   try {
-    await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+    await db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
       excluido: true
     });
   } catch (erro) {
@@ -662,7 +662,7 @@ if (elFormAjuste) {
     const botao = elFormAjuste.querySelector("button[type=submit]");
     botao.disabled = true;
     try {
-      await db.collection("turmas").doc(turmaId).collection("alunos").doc(aluno.id).update({
+      await db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
         ajusteSolicitado: true,
         ajusteProposto: proposto,
         ajusteMotivo: obs,
@@ -719,8 +719,8 @@ function definirStatusPix(texto, tipo) {
 
 function abrirPagamentoPix(aluno) {
   // Segurança: pedido suspenso não recebe pagamento.
-  if (pedidoSuspenso(turmaAtual)) {
-    alert("Os pagamentos estão temporariamente suspensos para esta turma.");
+  if (pedidoSuspenso(timeAtual)) {
+    alert("Os pagamentos estão temporariamente suspensos para este time.");
     return;
   }
   // Segurança: unidade com ajuste pendente fica bloqueada para pagamento.
@@ -801,7 +801,10 @@ async function irParaCheckoutMp(aluno) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        turmaId: turmaId,
+        timeId: timeId,
+        // Nome antigo do campo: mantido para o backend publicado antes da
+        // renomeação continuar aceitando a cobrança até ser atualizado.
+        turmaId: timeId,
         alunoId: aluno.id,
         retornoUrl: window.location.href
       })
@@ -855,13 +858,13 @@ if (elPixCopiar) {
 if (elPixJaPaguei) {
   elPixJaPaguei.addEventListener("click", async () => {
     if (!pixAlunoAtual) return;
-    if (pedidoSuspenso(turmaAtual)) {
-      alert("Os pagamentos estão temporariamente suspensos para esta turma.");
+    if (pedidoSuspenso(timeAtual)) {
+      alert("Os pagamentos estão temporariamente suspensos para este time.");
       return;
     }
     elPixJaPaguei.disabled = true;
     try {
-      await db.collection("turmas").doc(turmaId).collection("alunos").doc(pixAlunoAtual.id).update({
+      await db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(pixAlunoAtual.id).update({
         pagamentoDeclarado: true,
         pagamentoForma: "pix",
         pagamentoDeclaradoEm: firebase.firestore.FieldValue.serverTimestamp()
@@ -884,7 +887,7 @@ if (elBtnSalvarDataLimite) {
     esconderMensagem(elMsgDataLimite);
     const valor = elDataLimite.value; // "YYYY-MM-DD" ou ""
     try {
-      await db.collection("turmas").doc(turmaId).update({
+      await db.collection(COL_TIMES).doc(timeId).update({
         dataLimite: valor || firebase.firestore.FieldValue.delete()
       });
       mostrarMensagem(
@@ -910,5 +913,5 @@ elBtnExportar.addEventListener("click", () => {
   alunosAtuais.forEach((a) => {
     linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
   });
-  baixarCSV(`pedido-${slugify(turmaAtual.nome)}.csv`, linhas);
+  baixarCSV(`pedido-${slugify(timeAtual.nome)}.csv`, linhas);
 });

@@ -17,4 +17,9 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-module.exports = { admin, db };
+// Nome da coleção dos times. O produto chama de "time" o que antes se
+// chamava "turma"; a coleção continua "turmas" para não quebrar os dados
+// já cadastrados no Firestore.
+const COL_TIMES = "turmas";
+
+module.exports = { admin, db, COL_TIMES };

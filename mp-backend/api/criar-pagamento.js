@@ -2,7 +2,7 @@
 // Chamado pelo site quando o usuário clica em "Pagar (PIX)". Cria uma cobrança
 // PIX no Mercado Pago (Payments API) e devolve o QR Code + o "copia e cola".
 // O valor é calculado AQUI (a partir do Firestore), não confiando no cliente.
-const { db } = require("../lib/firebase");
+const { db, COL_TIMES } = require("../lib/firebase");
 const { GRUPOS_PADRAO, precoDoTamanho } = require("../lib/preco");
 const { setCors } = require("../lib/http");
 
@@ -12,12 +12,16 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ erro: "Método não permitido" });
 
   try {
-    const { turmaId, alunoId } = req.body || {};
-    if (!turmaId || !alunoId) {
-      return res.status(400).json({ erro: "Informe turmaId e alunoId." });
+    // "turmaId" é o nome antigo do campo; aceito para o site publicado antes
+    // da renomeação continuar funcionando até atualizar.
+    const corpo = req.body || {};
+    const timeId = corpo.timeId || corpo.turmaId;
+    const alunoId = corpo.alunoId;
+    if (!timeId || !alunoId) {
+      return res.status(400).json({ erro: "Informe timeId e alunoId." });
     }
 
-    const alunoRef = db.collection("turmas").doc(turmaId).collection("alunos").doc(alunoId);
+    const alunoRef = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
     const [alunoSnap, geralSnap, tamSnap] = await Promise.all([
       alunoRef.get(),
       db.collection("config").doc("geral").get(),
@@ -40,7 +44,7 @@ module.exports = async (req, res) => {
     }
 
     const baseUrl = `https://${req.headers.host}`;
-    const idempotencia = (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) || `${turmaId}-${alunoId}-${Date.now()}`;
+    const idempotencia = (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) || `${timeId}-${alunoId}-${Date.now()}`;
     const primeiroNome = String(aluno.nome || "Aluno").trim().split(/\s+/)[0];
 
     const resp = await fetch("https://api.mercadopago.com/v1/payments", {
@@ -58,7 +62,7 @@ module.exports = async (req, res) => {
           email: process.env.MP_EMAIL_PAGADOR || "pagador@interclasse.app",
           first_name: primeiroNome
         },
-        external_reference: `${turmaId}__${alunoId}`,
+        external_reference: `${timeId}__${alunoId}`,
         notification_url: `${baseUrl}/api/webhook-mp`
       })
     });

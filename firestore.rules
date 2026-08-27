@@ -8,12 +8,12 @@ rules_version = '2';
 // Modelo adotado:
 // - Leitura: pública (qualquer pessoa com o link pode ver a lista,
 //   para permitir a conferência do pedido).
-// - Alunos e o "fechar pedido" das turmas: exigem estar autenticado
-//   (login anônimo automático do site). A senha da turma é conferida no
+// - Alunos e o "fechar pedido" dos times: exigem estar autenticado
+//   (login anônimo automático do site). A senha do time é conferida no
 //   site (JavaScript) — é uma barreira de conveniência, não um sigilo.
-// - Ações administrativas (criar turmas, editar tamanhos e configurações):
-//   exigem estar logado com a conta administradora (e-mail/senha do
-//   Firebase Authentication). Ver a função ehAdmin() abaixo.
+// - Ações administrativas (criar clientes e times, editar tamanhos e
+//   configurações): exigem estar logado com a conta administradora
+//   (e-mail/senha do Firebase Authentication). Ver ehAdmin() abaixo.
 // - Exclusão de aluno é sempre "suave" (campo excluido = true),
 //   nunca um delete de verdade — por isso "delete" é bloqueado.
 // ============================================================
@@ -37,9 +37,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /turmas/{turmaId} {
+    // Clientes: cada cliente agrupa os seus próprios times/pedidos.
+    // Leitura pública (a tela inicial lista os clientes); só o admin grava.
+    match /clientes/{clienteId} {
       allow read: if true;
-      // Criar/excluir turma é ação administrativa; atualizar (ex.: fechar/
+      allow create, update, delete: if ehAdmin();
+    }
+
+    // Times (a coleção continua com o nome antigo, "turmas", para não
+    // quebrar os dados já cadastrados — ver COL_TIMES em js/utils.js).
+    match /turmas/{timeId} {
+      allow read: if true;
+      // Criar/excluir time é ação administrativa; atualizar (ex.: fechar/
       // reabrir o pedido) pode ser feito pelo representante autenticado.
       allow create: if ehAdmin();
       allow update: if request.auth != null;
@@ -49,7 +58,7 @@ service cloud.firestore {
         allow read: if true;
         allow create, update: if request.auth != null;
         // Exclusão de aluno pelo representante continua "suave" (excluido=true).
-        // O delete de verdade só acontece quando o admin exclui a turma inteira.
+        // O delete de verdade só acontece quando o admin exclui o time inteiro.
         allow delete: if ehAdmin();
       }
     }

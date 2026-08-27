@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260827a" />
+<link rel="stylesheet" href="css/style.css?v=20260828a" />
 </head>
 <body>
 
@@ -31,31 +31,31 @@
       <button type="button" class="aba" data-aba="config">Configurações</button>
     </nav>
 
-    <!-- ABA: INICIAL (criar turmas + lista de turmas) -->
+    <!-- ABA: INICIAL (criar times + lista de times) -->
     <section id="aba-inicial" class="secao-aba">
       <div class="card">
-        <h2>Criar nova turma</h2>
-        <form id="formCriarTurma">
-          <label for="nomeNovaTurma">Nome da turma</label>
-          <input type="text" id="nomeNovaTurma" placeholder="Ex: 3º Ano A - Manhã" required />
+        <h2>Criar novo time</h2>
+        <form id="formCriarTime">
+          <label for="nomeNovoTime">Nome do time</label>
+          <input type="text" id="nomeNovoTime" placeholder="Ex: 3º Ano A - Manhã" required />
 
-          <label for="senhaNovaTurma">Senha da turma (compartilhe com o representante)</label>
-          <input type="text" id="senhaNovaTurma" required />
+          <label for="senhaNovoTime">Senha do time (compartilhe com o representante)</label>
+          <input type="text" id="senhaNovoTime" required />
 
-          <button type="submit" class="primario">Criar turma</button>
+          <button type="submit" class="primario">Criar time</button>
         </form>
-        <p id="msgCriarTurma" class="oculto"></p>
+        <p id="msgCriarTime" class="oculto"></p>
       </div>
 
-      <h2>Turmas</h2>
-      <div id="listaTurmasAdmin"></div>
+      <h2>Times</h2>
+      <div id="listaTimesAdmin"></div>
     </section>
 
     <!-- ABA: KANBAN (pedidos por etapa; arraste os cards para mudar o status) -->
     <section id="aba-kanban" class="secao-aba oculto">
       <div class="card">
         <h2>Kanban de pedidos</h2>
-        <p>Cada card é o pedido de uma turma. Arraste um card para outra coluna para mudar o status — ou use o seletor dentro do card (melhor no celular). A mudança vale na hora para todo o sistema.</p>
+        <p>Cada card é o pedido de um time. Arraste um card para outra coluna para mudar o status — ou use o seletor dentro do card (melhor no celular). A mudança vale na hora para todo o sistema.</p>
         <div id="kanbanBoard" class="kanban-board"></div>
       </div>
     </section>
@@ -76,7 +76,7 @@
     <section id="aba-tamanhos" class="secao-aba oculto">
       <div class="card">
         <h2>Tamanhos de camiseta</h2>
-        <p>Organize os tamanhos em grupos (ex.: Infantil, Normal, Plus Size). Eles aparecem no cadastro de cada turma. Em cada grupo você também informa os custos de <strong>Impressão</strong> e <strong>Costureira</strong>; o <strong>Lucro</strong> é calculado como o preço de venda (aba Pagamentos) menos esses custos.</p>
+        <p>Organize os tamanhos em grupos (ex.: Infantil, Normal, Plus Size). Eles aparecem no cadastro de cada time. Em cada grupo você também informa os custos de <strong>Impressão</strong> e <strong>Costureira</strong>; o <strong>Lucro</strong> é calculado como o preço de venda (aba Pagamentos) menos esses custos.</p>
         <div id="editorTamanhos"></div>
         <button type="button" id="btnAddGrupo" class="secundario">+ Adicionar grupo</button>
         <div>
@@ -91,7 +91,7 @@
     <section id="aba-pagamentos" class="secao-aba oculto">
       <div class="card">
         <h2>Pagamento (PIX)</h2>
-        <p>Configure sua chave PIX e o preço por grupo de tamanho. O botão "Pagar (PIX)" aparece nas linhas das turmas com o pedido fechado.</p>
+        <p>Configure sua chave PIX e o preço por grupo de tamanho. O botão "Pagar (PIX)" aparece nas linhas dos times com o pedido fechado.</p>
         <form id="formPix">
           <label for="pixChave">Chave PIX</label>
           <input type="text" id="pixChave" placeholder="e-mail, telefone, CPF/CNPJ ou chave aleatória" />
@@ -122,7 +122,7 @@
 
       <div class="card">
         <h2>Status de pagamento</h2>
-        <p>O status de cada aluno (Pendente / Aguardando / Pago) fica na lista de cada turma, na aba <strong>Inicial</strong> (botão "Ver lista"). Lá você marca manualmente pagamentos em dinheiro e confirma os PIX.</p>
+        <p>O status de cada aluno (Pendente / Aguardando / Pago) fica na lista de cada time, na aba <strong>Inicial</strong> (botão "Ver lista"). Lá você marca manualmente pagamentos em dinheiro e confirma os PIX.</p>
         <div id="resumoPagamentos"></div>
       </div>
     </section>
@@ -141,12 +141,12 @@
 
           <label class="checkbox-inline">
             <input type="checkbox" id="cadastrosAbertos" />
-            Cadastros abertos (ao desmarcar, nenhuma turma consegue editar a lista)
+            Cadastros abertos (ao desmarcar, nenhum time consegue editar a lista)
           </label>
 
           <label for="driveScriptUrl">URL do Apps Script (imagens da camiseta)</label>
           <input type="url" id="driveScriptUrl" placeholder="https://script.google.com/macros/s/.../exec" />
-          <p class="pix-ajuda">Cole aqui a URL do app da Web do Google Apps Script (ver apps-script/README.md). Necessária para enviar as imagens (simulação e arte) de cada turma.</p>
+          <p class="pix-ajuda">Cole aqui a URL do app da Web do Google Apps Script (ver apps-script/README.md). Necessária para enviar as imagens (simulação e arte) de cada time.</p>
 
           <button type="submit" class="primario">Salvar configurações</button>
         </form>
@@ -156,7 +156,7 @@
       <div class="card">
         <h2>Exportar tudo</h2>
         <p><strong>CSV de produção</strong>: só as camisetas <strong>pagas</strong> (as não pagas ficam pendentes e não são produzidas), no padrão do programa de impressão — sem cabeçalho, separado por vírgula, com <strong>nome na camiseta</strong> na coluna A, <strong>número</strong> na B e <strong>tamanho</strong> na C.</p>
-        <p><strong>CSV de conferência</strong>: a lista completa de todas as turmas, com a situação de pagamento de cada um.</p>
+        <p><strong>CSV de conferência</strong>: a lista completa de todos os times, com a situação de pagamento de cada um.</p>
         <button id="btnExportarTudo" class="primario">Exportar CSV de produção</button>
         <button id="btnExportarConferencia" class="secundario">Exportar CSV de conferência</button>
       </div>
@@ -181,8 +181,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260821a"></script>
+<script src="js/utils.js?v=20260828a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260821a"></script>
+<script src="js/admin.js?v=20260828a"></script>
 </body>
 </html>

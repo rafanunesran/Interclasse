@@ -2,6 +2,14 @@
 // FUNÇÕES E DADOS COMPARTILHADOS
 // ============================================================
 
+// Nome da coleção dos times no Firestore. O produto chama de "time" o que
+// antes se chamava "turma"; a coleção continua com o nome antigo ("turmas")
+// para não quebrar os dados já cadastrados — só o nome interno ficou para trás.
+const COL_TIMES = "turmas";
+
+// Coleção dos clientes: cada cliente tem os seus próprios times/pedidos.
+const COL_CLIENTES = "clientes";
+
 // Tamanhos padrão (usados quando ainda não há nada salvo no Firestore
 // ou para restaurar o padrão no painel administrativo). NÃO alterar em runtime.
 const TAMANHOS_PADRAO = [
@@ -84,7 +92,7 @@ function preencherSelectTamanhos(selectEl) {
 }
 
 // Escapa texto para inserir com segurança em HTML (evita quebrar o layout
-// ou injetar marcação a partir de nomes de turma digitados no admin).
+// ou injetar marcação a partir de nomes de time digitados no admin).
 function escaparHtml(texto) {
   const div = document.createElement("div");
   div.textContent = texto ?? "";
@@ -287,8 +295,8 @@ function baixarCSVProducao(nomeArquivo, alunos) {
 }
 
 // Marca, nas etapas de produção, quem ficou de fora dela por não ter pago.
-function badgeProducaoHtml(turma, aluno) {
-  if (!pedidoEmProducao(turma) || alunoSeraProduzido(aluno)) return "";
+function badgeProducaoHtml(time, aluno) {
+  if (!pedidoEmProducao(time) || alunoSeraProduzido(aluno)) return "";
   return '<span class="badge pendente" title="Não foi pago até a impressão, então não entra nesta produção">Fora da produção</span>';
 }
 
@@ -377,7 +385,7 @@ function historicoAjusteHtml(aluno) {
 }
 
 // ============================================================
-// STATUS DO PEDIDO (etapas da turma)
+// STATUS DO PEDIDO (etapas do time)
 // ============================================================
 const STATUS_PEDIDO = [
   { id: "aberto", label: "Aberto" },
@@ -393,10 +401,10 @@ const STATUS_PEDIDO = [
   { id: "suspenso", label: "Suspenso" }
 ];
 
-// Status atual da turma (com compatibilidade para turmas antigas que só têm `fechado`).
-function statusPedidoDe(turma) {
-  if (turma && turma.statusPedido) return turma.statusPedido;
-  return turma && turma.fechado ? "fechado" : "aberto";
+// Status atual do time (com compatibilidade para times antigos que só têm `fechado`).
+function statusPedidoDe(time) {
+  if (time && time.statusPedido) return time.statusPedido;
+  return time && time.fechado ? "fechado" : "aberto";
 }
 
 function indiceStatus(id) {
@@ -408,35 +416,35 @@ function labelStatus(id) {
   return s ? s.label : id;
 }
 
-// A turma está aberta para o representante editar quando o status é "aberto".
-function pedidoAberto(turma) {
-  return statusPedidoDe(turma) === "aberto";
+// O time está aberta para o representante editar quando o status é "aberto".
+function pedidoAberto(time) {
+  return statusPedidoDe(time) === "aberto";
 }
 
 // Pedido suspenso: tudo bloqueado para os usuários (sem cadastro e sem pagamento).
-function pedidoSuspenso(turma) {
-  return statusPedidoDe(turma) === "suspenso";
+function pedidoSuspenso(time) {
+  return statusPedidoDe(time) === "suspenso";
 }
 
 // Etapas em que o representante ainda pode ADICIONAR/EDITAR nomes na lista.
 // A lista só trava de verdade quando o pagamento encerra (pagamento_encerrado
 // em diante). "Suspenso" fica de fora (bloqueia tudo).
-function pedidoAceitaCadastro(turma) {
-  const s = statusPedidoDe(turma);
+function pedidoAceitaCadastro(time) {
+  const s = statusPedidoDe(time);
   return s === "aberto" || s === "fechado" || s === "pagamento_andamento";
 }
 
 // Etapas em que o representante pode PAGAR (fechado e pagamento em andamento).
-function pedidoAceitaPagamento(turma) {
-  const s = statusPedidoDe(turma);
+function pedidoAceitaPagamento(time) {
+  const s = statusPedidoDe(time);
   return s === "fechado" || s === "pagamento_andamento";
 }
 
 // Da Impressão em diante o pedido já está sendo produzido: é o momento em que
 // a lista se separa entre o que vai para a impressão (pago) e o que fica
 // pendente (não pago). "Suspenso" fica de fora, apesar de vir depois na lista.
-function pedidoEmProducao(turma) {
-  const s = statusPedidoDe(turma);
+function pedidoEmProducao(time) {
+  const s = statusPedidoDe(time);
   return s !== "suspenso" && indiceStatus(s) >= indiceStatus("impressao");
 }
 
@@ -448,11 +456,11 @@ function classeBadgeStatus(statusId) {
   return "fechado";
 }
 
-// Se a turma tem data limite (string "YYYY-MM-DD") vencida e ainda está "aberto",
+// Se o time tem data limite (string "YYYY-MM-DD") vencida e ainda está "aberto",
 // retorna "fechado" (fechamento automático). Caso contrário, null (sem mudança).
-function statusAutoPorData(turma) {
-  if (statusPedidoDe(turma) !== "aberto" || !turma.dataLimite) return null;
-  const limite = new Date(turma.dataLimite + "T23:59:59");
+function statusAutoPorData(time) {
+  if (statusPedidoDe(time) !== "aberto" || !time.dataLimite) return null;
+  const limite = new Date(time.dataLimite + "T23:59:59");
   if (isNaN(limite.getTime())) return null;
   return Date.now() > limite.getTime() ? "fechado" : null;
 }
@@ -539,14 +547,14 @@ const PREFIXOS_IMAGEM = { arte: "arte", tamanho: "tamanho", camiseta: "camiseta"
 // Envia um base64 já processado ao Apps Script (Google Drive) e retorna a URL pública.
 // `tipo` entra no nome do arquivo no Drive ("camiseta" = simulação, "arte" = arte
 // pura, "tamanho" = tabela de medidas de um grupo de tamanhos).
-async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo) {
+async function enviarImagemBase64Drive(scriptUrl, timeId, dataBase64, tipo) {
   const prefixo = PREFIXOS_IMAGEM[tipo] || PREFIXOS_IMAGEM.camiseta;
   const resp = await fetch(scriptUrl, {
     method: "POST",
     // text/plain (padrão do fetch com string) evita o preflight de CORS do Apps Script.
     body: JSON.stringify({
-      turmaId: turmaId,
-      nome: prefixo + "-" + turmaId + ".jpg",
+      timeId: timeId,
+      nome: prefixo + "-" + timeId + ".jpg",
       mimeType: "image/jpeg",
       dataBase64: dataBase64
     })
@@ -559,10 +567,10 @@ async function enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo) {
 // Envia a imagem ao Apps Script (Google Drive) e retorna a URL pública para exibir.
 // A arte pura e a tabela de medidas vão maiores (1600 px) porque têm detalhes e
 // números que precisam continuar legíveis quando a imagem é ampliada.
-async function enviarImagemDrive(scriptUrl, turmaId, file, tipo) {
+async function enviarImagemDrive(scriptUrl, timeId, file, tipo) {
   const maiorResolucao = tipo === "arte" || tipo === "tamanho";
   const dataBase64 = await redimensionarImagemBase64(file, maiorResolucao ? 1600 : 1200);
-  return enviarImagemBase64Drive(scriptUrl, turmaId, dataBase64, tipo);
+  return enviarImagemBase64Drive(scriptUrl, timeId, dataBase64, tipo);
 }
 
 // ---------------- Ampliar imagem (lightbox) ----------------

@@ -2,7 +2,7 @@
 // Checkout Pro: cria uma "preferência" no Mercado Pago e devolve a URL da
 // página hospedada do MP (init_point). O site redireciona o pagador para lá.
 // O valor é calculado AQUI (a partir do Firestore), nunca vem do cliente.
-const { db } = require("../lib/firebase");
+const { db, COL_TIMES } = require("../lib/firebase");
 const { GRUPOS_PADRAO, precoDoTamanho } = require("../lib/preco");
 const { setCors } = require("../lib/http");
 
@@ -12,15 +12,19 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ erro: "Método não permitido" });
 
   try {
-    const { turmaId, alunoId, retornoUrl } = req.body || {};
-    if (!turmaId || !alunoId) {
-      return res.status(400).json({ erro: "Informe turmaId e alunoId." });
+    // "turmaId" é o nome antigo do campo; aceito para o site publicado antes
+    // da renomeação continuar funcionando até atualizar.
+    const entrada = req.body || {};
+    const timeId = entrada.timeId || entrada.turmaId;
+    const { alunoId, retornoUrl } = entrada;
+    if (!timeId || !alunoId) {
+      return res.status(400).json({ erro: "Informe timeId e alunoId." });
     }
     if (!process.env.MP_ACCESS_TOKEN) {
       return res.status(500).json({ erro: "Backend sem MP_ACCESS_TOKEN configurado." });
     }
 
-    const alunoRef = db.collection("turmas").doc(turmaId).collection("alunos").doc(alunoId);
+    const alunoRef = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
     const [alunoSnap, geralSnap, tamSnap] = await Promise.all([
       alunoRef.get(),
       db.collection("config").doc("geral").get(),
@@ -52,7 +56,7 @@ module.exports = async (req, res) => {
           currency_id: "BRL"
         }
       ],
-      external_reference: `${turmaId}__${alunoId}`,
+      external_reference: `${timeId}__${alunoId}`,
       // Deixa essencialmente o PIX (exclui cartão/boleto).
       payment_methods: {
         excluded_payment_types: [

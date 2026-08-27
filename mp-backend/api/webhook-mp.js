@@ -3,7 +3,7 @@
 // Valida a assinatura, consulta o pagamento e, se aprovado, marca o aluno
 // como pago no Firestore (via Admin SDK — não depende das regras).
 const crypto = require("crypto");
-const { db, admin } = require("../lib/firebase");
+const { db, admin, COL_TIMES } = require("../lib/firebase");
 
 module.exports = async (req, res) => {
   try {
@@ -73,10 +73,10 @@ module.exports = async (req, res) => {
     }
 
     if (externalReference) {
-      const [turmaId, alunoId] = String(externalReference).split("__");
-      if (turmaId && alunoId) {
+      const [timeId, alunoId] = String(externalReference).split("__");
+      if (timeId && alunoId) {
         await db
-          .collection("turmas").doc(turmaId)
+          .collection(COL_TIMES).doc(timeId)
           .collection("alunos").doc(alunoId)
           .update({
             pago: true,
@@ -85,7 +85,7 @@ module.exports = async (req, res) => {
             pagamentoMpId: pagamentoId ? String(pagamentoId) : admin.firestore.FieldValue.delete(),
             pagamentoEm: admin.firestore.FieldValue.serverTimestamp()
           });
-        console.log(`Pagamento aprovado: turma ${turmaId}, aluno ${alunoId}.`);
+        console.log(`Pagamento aprovado: time ${timeId}, aluno ${alunoId}.`);
       }
     }
 

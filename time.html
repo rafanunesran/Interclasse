@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Time — Camisetas Interclasse</title>
+<link rel="stylesheet" href="css/style.css?v=20260828a" />
+</head>
+<body>
+
+<header class="topo">
+  <h1>👕 Camisetas Interclasse</h1>
+  <nav>
+    <a href="index.html">Início</a>
+  </nav>
+</header>
+
+<main>
+  <div class="card">
+    <h2 id="nomeTime">Carregando...</h2>
+    <span id="badgeStatus" class="badge"></span>
+    <p id="infoDataLimite" class="pix-ajuda oculto"></p>
+    <!-- Galeria: simulação, arte e as medidas de cada grupo, deslizando para o lado. -->
+    <div id="galeriaImagens" class="carrossel oculto">
+      <button type="button" id="galeriaAntes" class="carrossel-seta carrossel-antes" aria-label="Imagem anterior">‹</button>
+      <div id="galeriaTrilho" class="carrossel-trilho"></div>
+      <button type="button" id="galeriaDepois" class="carrossel-seta carrossel-depois" aria-label="Próxima imagem">›</button>
+    </div>
+    <div id="barraStatus"></div>
+    <p id="mensagemSuspenso" class="aviso oculto">
+      ⏸ Este pedido está <strong>suspenso</strong> pela organização do interclasse. No momento não é possível cadastrar nomes nem realizar pagamentos. Tente novamente mais tarde.
+    </p>
+    <p id="mensagemFechado" class="aviso oculto">
+      Este pedido já foi fechado. Não é mais possível editar a lista. Se precisar corrigir algo, fale com a coordenação do interclasse.
+    </p>
+    <p id="mensagemProducao" class="aviso oculto"></p>
+    <p id="mensagemGlobalFechado" class="aviso oculto">
+      Os cadastros estão temporariamente fechados pela organização do interclasse. Tente novamente mais tarde.
+    </p>
+  </div>
+
+  <div class="card" id="formSenha">
+    <h2>Acesso do time</h2>
+    <p>Digite a senha do seu time (com a coordenação/organização) para cadastrar ou editar a lista.</p>
+    <form id="formSenhaForm">
+      <label for="senhaTime">Senha do time</label>
+      <input type="password" id="senhaTime" required autocomplete="off" />
+      <button type="submit" class="primario">Entrar</button>
+    </form>
+    <p id="msgSenha" class="oculto"></p>
+  </div>
+
+  <div class="card oculto" id="blocoDataLimite">
+    <h2>Data limite para pagamento</h2>
+    <p>Defina até quando o time pode pagar. Ao passar a data, o pedido fecha automaticamente. Se deixar em branco, fica aberto até a organização fechar.</p>
+    <label for="dataLimite">Data limite</label>
+    <input type="date" id="dataLimite" />
+    <button type="button" id="btnSalvarDataLimite" class="primario">Salvar data limite</button>
+    <p id="msgDataLimite" class="oculto"></p>
+  </div>
+
+  <div class="card oculto" id="blocoCadastro">
+    <h2>Cadastrar aluno</h2>
+    <form id="formAluno">
+      <label for="nomeAluno">Nome do estudante</label>
+      <input type="text" id="nomeAluno" required />
+
+      <label for="tamanho">Tamanho da camiseta</label>
+      <select id="tamanho" required></select>
+
+      <label for="numeroCamiseta">Número da camiseta</label>
+      <input type="text" id="numeroCamiseta" inputmode="numeric" />
+
+      <label for="nomeCostas">Nome na camiseta (costas)</label>
+      <input type="text" id="nomeCostas" required />
+
+      <button type="submit" class="primario">Adicionar à lista</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Conferência do pedido</h2>
+    <p id="avisoDuplicado" class="oculto"></p>
+    <div id="resumoTamanhos" class="resumo-tamanhos"></div>
+
+    <table id="tabelaAlunos">
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Tamanho</th>
+          <th>Número</th>
+          <th>Nome na camiseta</th>
+          <th>Pagamento</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <button id="btnExportar" class="secundario">Exportar CSV deste time</button>
+  </div>
+</main>
+
+<!-- Modal: solicitar ajuste (corrige os campos e envia a correção pronta) -->
+<div id="modalAjuste" class="modal-pix oculto">
+  <div class="modal-pix-conteudo modal-ajuste-conteudo">
+    <button id="fecharModalAjuste" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Solicitar ajuste</h3>
+    <p class="pix-ajuda">Corrija abaixo apenas o que estiver errado e envie. A organização confere e aplica com um clique.</p>
+    <form id="formAjuste">
+      <label for="ajusteNome">Nome do estudante</label>
+      <input type="text" id="ajusteNome" />
+
+      <label for="ajusteTamanho">Tamanho da camiseta</label>
+      <select id="ajusteTamanho"></select>
+
+      <label for="ajusteNumero">Número da camiseta</label>
+      <input type="text" id="ajusteNumero" inputmode="numeric" />
+
+      <label for="ajusteNomeCamiseta">Nome na camiseta (costas)</label>
+      <input type="text" id="ajusteNomeCamiseta" />
+
+      <label for="ajusteObs">Observação (opcional)</label>
+      <input type="text" id="ajusteObs" placeholder="Algo a explicar para a organização?" />
+
+      <label for="ajusteContato">Contato para aviso (WhatsApp, opcional)</label>
+      <input type="tel" id="ajusteContato" inputmode="tel" placeholder="Ex: (11) 91234-5678" />
+
+      <button type="submit" class="primario">Enviar ajuste</button>
+    </form>
+    <p id="msgAjuste" class="oculto"></p>
+  </div>
+</div>
+
+<div id="modalPix" class="modal-pix oculto">
+  <div class="modal-pix-conteudo">
+    <button id="fecharModalPix" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Pagamento via PIX</h3>
+    <p id="pixAluno"></p>
+    <p id="pixStatus" class="oculto"></p>
+    <div id="pixConteudo">
+      <p id="pixValor" class="pix-valor"></p>
+      <img id="pixQr" class="pix-qr" alt="QR Code para pagamento PIX" />
+      <label for="pixCodigo">PIX copia e cola</label>
+      <textarea id="pixCodigo" readonly rows="3"></textarea>
+      <button id="pixCopiar" class="primario" type="button">Copiar código</button>
+      <p id="pixCopiado" class="aviso oculto">Código copiado! Cole no app do seu banco.</p>
+      <p class="pix-ajuda">Abra o app do banco → PIX → "Pagar com QR Code" (escaneie) ou "PIX copia e cola" (cole o código).</p>
+      <hr class="pix-divisor" />
+      <button id="pixJaPaguei" class="sucesso" type="button">Já fiz o pagamento</button>
+      <p id="pixDeclarado" class="aviso oculto">Pagamento informado! A organização vai confirmar.</p>
+    </div>
+  </div>
+</div>
+
+<p class="rodape">Sistema de controle de pedidos de camiseta — Interclasse</p>
+<p class="rodape-admin"><a href="admin.html" class="link-admin">Área administrativa</a></p>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/firebase-init.js"></script>
+<script src="js/utils.js?v=20260828a"></script>
+<script src="js/time.js?v=20260828a"></script>
+</body>
+</html>

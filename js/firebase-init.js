@@ -20,7 +20,7 @@ if (typeof firebase.analytics === "function") {
   }
 }
 
-// Login anônimo para as PÁGINAS PÚBLICAS (início e turma): necessário para
+// Login anônimo para as PÁGINAS PÚBLICAS (início e time): necessário para
 // gravar dados (ver firestore.rules). É automático e silencioso, não pede
 // nada ao usuário. Retorna uma Promise que resolve quando há sessão.
 //

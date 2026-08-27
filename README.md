@@ -1,17 +1,17 @@
 # Camisetas Interclasse
 
-Site para representantes de turma cadastrarem a lista de camisetas do interclasse (nome do estudante, tamanho, número e nome na camiseta), conferirem e fecharem o pedido. O administrador acompanha todas as turmas e exporta um CSV geral para usar no CorelDraw.
+Site para representantes de time cadastrarem a lista de camisetas do interclasse (nome do estudante, tamanho, número e nome na camiseta), conferirem e fecharem o pedido. O administrador acompanha todos os times e exporta um CSV geral para usar no CorelDraw.
 
 Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando o **Firebase (Firestore)** como banco de dados na nuvem, gratuito.
 
 ## Como funciona
 
-- **`index.html`** — lista as turmas cadastradas.
-- **`turma.html?id=NOME-DA-TURMA`** — página do representante: digita a senha da turma, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
+- **`index.html`** — lista os times cadastrados.
+- **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
-- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada turma, edita qualquer turma e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
-O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar turmas e alterar tamanhos/configurações. Já a **senha de cada turma** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
+O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
 ## Passo a passo da configuração
 
@@ -20,7 +20,7 @@ O **painel administrativo** é protegido por login de verdade (Firebase Authenti
 1. Acesse [console.firebase.google.com](https://console.firebase.google.com) e crie um projeto novo (pode desativar o Google Analytics, não é necessário).
 2. No menu lateral, vá em **Compilação > Firestore Database** → **Criar banco de dados** → escolha **modo de produção** → selecione uma localização (ex: `southamerica-east1`).
 3. Ainda no menu lateral, vá em **Compilação > Authentication** → aba **Sign-in method** e ative **dois** provedores:
-   - **Anônimo** — usado automaticamente pelas páginas do aluno (início e turma) para gravar os pedidos.
+   - **Anônimo** — usado automaticamente pelas páginas do aluno (início e time) para gravar os pedidos.
    - **E-mail/senha** — usado no login do painel administrativo.
 
 ### 2. Conectar o site ao seu projeto Firebase
@@ -51,32 +51,32 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 
 ### 5. Publicar no GitHub Pages
 
-1. Crie um repositório novo no GitHub e suba todos os arquivos deste projeto (`index.html`, `turma.html`, `admin.html`, `superadmin.html`, as pastas `css/` e `js/`).
+1. Crie um repositório novo no GitHub e suba todos os arquivos deste projeto (`index.html`, `time.html`, `admin.html`, `superadmin.html`, as pastas `css/` e `js/`).
 2. No repositório, vá em **Settings > Pages**.
 3. Em **Source**, selecione **Deploy from a branch**, branch `main`, pasta `/ (root)`. Salve.
 4. Aguarde alguns minutos — o GitHub vai mostrar o link do site publicado (algo como `https://seuusuario.github.io/nome-do-repositorio/`).
 
-### 6. Criar as turmas e começar a usar
+### 6. Criar os times e começar a usar
 
 1. Acesse `SEU-SITE/admin.html` (ou clique em "Área administrativa" no rodapé) e entre com o **e-mail e a senha** do administrador (a conta que você criou no passo 4). O site leva você automaticamente para o **Super Admin** (`superadmin.html`).
-2. Em **Criar nova turma**, cadastre cada turma com um nome (ex: "3º Ano A - Manhã") e uma senha própria para ela.
-3. Compartilhe com cada representante o link da turma (`SEU-SITE/turma.html?id=ID-DA-TURMA`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`), que lista todas as turmas.
-4. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, a turma fica **Aberta** até o Super Admin fechar/avançar o status.
-5. No painel admin, acompanhe o status de todas as turmas. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todas as turmas no padrão do programa de impressão.
+2. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã") e uma senha própria para ele.
+3. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`), que lista todos os times.
+4. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
+5. No painel admin, acompanhe o status de todos os times. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
 
 ## Aba Financeiro (Super Admin)
 
 A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam os preços por grupo (aba **Pagamentos**) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
-- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por turma.
-- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, turma, tamanho e forma).
+- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time.
+- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho e forma).
 - **Evolução** — hoje, ontem, últimos 7 dias (com a variação em relação aos 7 anteriores), gráfico de entradas por dia, fechamento por semana e a projeção de quando o valor em aberto termina de entrar, no ritmo atual.
-- **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por turma e as maiores pendências individuais.
-- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira e as camisetas internas), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por turma e por grupo de tamanho.
+- **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por time e as maiores pendências individuais.
+- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira e as camisetas internas), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
 
-O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por turma; a visão **A receber** tem só o filtro por turma, porque mostra sempre a situação de hoje.
+O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por time; a visão **A receber** tem só o filtro por time, porque mostra sempre a situação de hoje.
 
-O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por turma (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
+O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
 
 > O extrato por dia usa a data em que o pagamento foi confirmado. Pagamentos confirmados antes de o sistema passar a gravar essa data aparecem num aviso à parte, fora do agrupamento por dia (mas continuam somando no total recebido).
 
@@ -93,7 +93,7 @@ São dois formatos, com finalidades diferentes.
 - Coluna **A: nome na camiseta** (o que vai estampado nas costas; se estiver vazio, usa o
   nome do estudante), **B: número**, **C: tamanho**.
 - Separador **vírgula**, UTF-8 **sem BOM** — o BOM grudaria no primeiro nome do arquivo.
-- Arquivos: `producao-<turma>.csv` (por turma) e `producao-interclasse-geral.csv` (todas).
+- Arquivos: `producao-<time>.csv` (por time) e `producao-interclasse-geral.csv` (todos).
 
 ```csv
 ANINHA,10,M
@@ -107,11 +107,11 @@ BRUNO,7,G
 
 Continua igual ao de antes, para conferir o pedido e os pagamentos.
 
-- Colunas: `Turma` (só no CSV geral), `Nome do Estudante`, `Tamanho`, `Numero`,
+- Colunas: `Time` (só no CSV geral), `Nome do Estudante`, `Tamanho`, `Numero`,
   `Nome na Camiseta`, `Pago`, `Forma Pagto`.
 - Separador `;` e codificação UTF-8 com BOM — abre corretamente no Excel, sem problemas de
   acentuação.
-- É o que o representante baixa na página da turma, e o que o Super Admin baixa nos botões
+- É o que o representante baixa na página do time, e o que o Super Admin baixa nos botões
   **CSV de conferência**.
 
 ## Produção: pago x pendente
@@ -121,8 +121,8 @@ Logística, Entregue), a lista se separa em duas:
 
 - **Em produção**: quem já pagou (a camiseta *interna* conta como paga).
 - **Fora da produção**: quem não pagou fica **pendente** e não é produzido nesta leva. A
-  linha aparece marcada e esmaecida na lista, tanto na página da turma quanto no Super
-  Admin, e a página da turma explica a situação num aviso.
+  linha aparece marcada e esmaecida na lista, tanto na página do time quanto no Super
+  Admin, e a página do time explica a situação num aviso.
 
 A separação é sempre calculada na hora, a partir do pagamento: se um pendente pagar depois
 (o Super Admin confirma o pagamento na lista), ele entra na produção e passa a sair no CSV
@@ -136,7 +136,7 @@ Tamanhos padrão (usados enquanto nada foi salvo no painel):
 - Normal: P, M, G, GG
 - Plus Size: G1, G2, G3, G4
 
-Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel administrativo (`admin.html`): dá para criar/remover grupos, adicionar/remover tamanhos e restaurar o padrão. O que for salvo fica em `config/tamanhos` no Firestore e passa a valer no cadastro de todas as turmas. O array `TAMANHOS_PADRAO` em `js/utils.js` continua servindo como fallback caso nada tenha sido salvo ainda.
+Para alterar essa lista, use a seção **Tamanhos de camiseta** no painel administrativo (`admin.html`): dá para criar/remover grupos, adicionar/remover tamanhos e restaurar o padrão. O que for salvo fica em `config/tamanhos` no Firestore e passa a valer no cadastro de todos os times. O array `TAMANHOS_PADRAO` em `js/utils.js` continua servindo como fallback caso nada tenha sido salvo ainda.
 
 ### Imagem de referência de medidas (por grupo)
 
@@ -157,7 +157,7 @@ Cada grupo (Infantil, Normal, Plus Size…) pode ter uma **imagem de referência
 
 ## Pagamento por PIX
 
-Nas turmas com o **pedido fechado**, cada linha (ainda não paga) ganha um botão **"Pagar"** que abre o pagamento PIX com o valor da camiseta.
+Nos times com o **pedido fechado**, cada linha (ainda não paga) ganha um botão **"Pagar"** que abre o pagamento PIX com o valor da camiseta.
 
 Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 
@@ -169,7 +169,7 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 
 Cada aluno tem um status: **Pendente**, **Aguardando confirmação** ou **Pago (PIX/dinheiro)**.
 
-- **Pagamento em dinheiro:** você marca manualmente no Super Admin, na lista da turma (aba **Inicial** → "Ver lista"), pelo seletor de pagamento de cada linha.
+- **Pagamento em dinheiro:** você marca manualmente no Super Admin, na lista do time (aba **Inicial** → "Ver lista"), pelo seletor de pagamento de cada linha.
 - **Pagamento por PIX:** como o PIX estático não avisa o site automaticamente, o pagante clica em **"Já fiz o pagamento"** no modal do PIX (fica *Aguardando confirmação*); você confere na sua conta e confirma marcando **Pago (PIX)** no seletor.
 - O CSV exportado inclui as colunas `Pago` e `Forma Pagto`.
 
@@ -187,7 +187,7 @@ pagamento no Firestore.
   auto-declaração + confirmação manual.
 - **Ligado**, o Mercado Pago cobra ~0,99% por PIX recebido e o dinheiro passa pela conta MP.
 
-O Super Admin é organizado em abas: **Inicial** (criar turmas e lista de turmas), **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
+O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
 
 Detalhes técnicos:
 
@@ -197,14 +197,14 @@ Detalhes técnicos:
 
 ## Imagens da camiseta (Google Drive)
 
-Cada turma pode ter **duas imagens** de referência, que aparecem na página da turma (e a
+Cada time pode ter **duas imagens** de referência, que aparecem na página do time (e a
 primeira delas também no card da tela inicial):
 
 - **Simulação na camiseta** (campo `imagemUrl`) — a foto/mockup do que será produzido.
 - **Arte (sem simulação)** (campo `arteUrl`) — a arte pura, do jeito que foi desenhada, sem
   a camiseta em volta.
 
-As duas são independentes: dá para ter só uma, as duas ou nenhuma. Se a turma tiver apenas a
+As duas são independentes: dá para ter só uma, as duas ou nenhuma. Se o time tiver apenas a
 arte, ela é usada como capa no card da tela inicial. Como o Firebase Storage exige plano pago,
 as imagens ficam no **seu Google Drive** via um **Google Apps Script** gratuito.
 
@@ -214,11 +214,11 @@ arrasta para o lado no celular, setas no computador.
 
 - Publique o Apps Script e cole a URL em **Super Admin → Configurações**. Passo a passo em
   [`apps-script/README.md`](apps-script/README.md).
-- Depois, em cada turma (Super Admin → Inicial), use **"Enviar simulação da camiseta"** e/ou
+- Depois, em cada time (Super Admin → Inicial), use **"Enviar simulação da camiseta"** e/ou
   **"Enviar arte (sem simulação)"**.
 - No Firestore fica guardada só a **URL** de cada imagem; os arquivos ficam no seu Drive
-  (`camiseta-<turma>.jpg` e `arte-<turma>.jpg`).
-- A **marca d'água de referência** é um único interruptor por turma e vale para as duas
+  (`camiseta-<time>.jpg` e `arte-<time>.jpg`).
+- A **marca d'água de referência** é um único interruptor por time e vale para as duas
   imagens. Ela é apenas uma camada sobreposta na exibição — os arquivos enviados não são
   alterados.
 - Na página do pedido, **clicar em qualquer imagem abre ela ampliada** (fecha no ×, clicando
@@ -228,7 +228,7 @@ arrasta para o lado no celular, setas no computador.
 
 ## Limitações conhecidas
 
-- A proteção por senha de turma/admin é feita no site (não no banco de dados), então é uma barreira de conveniência, não uma segurança forte. Não cadastre informações sensíveis além do necessário para o pedido.
-- Exclusão de aluno **pelo representante** (na página da turma) é sempre "suave" (o registro fica marcado como removido, mas não desaparece do banco) — isso é proposital, para evitar perda de dados por engano.
-- No Super Admin dá para **editar** (nome e senha) e **excluir** uma turma. A exclusão da turma é definitiva: apaga a turma e todas as camisetas cadastradas nela (essa exclusão de verdade só é permitida para a conta administradora).
+- A proteção por senha de time/admin é feita no site (não no banco de dados), então é uma barreira de conveniência, não uma segurança forte. Não cadastre informações sensíveis além do necessário para o pedido.
+- Exclusão de aluno **pelo representante** (na página do time) é sempre "suave" (o registro fica marcado como removido, mas não desaparece do banco) — isso é proposital, para evitar perda de dados por engano.
+- No Super Admin dá para **editar** (nome e senha) e **excluir** um time. A exclusão do time é definitiva: apaga o time e todas as camisetas cadastradas nele (essa exclusão de verdade só é permitida para a conta administradora).
 - O plano gratuito do Firebase (Spark) é mais do que suficiente para o volume de um interclasse escolar.

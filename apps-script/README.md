@@ -1,7 +1,7 @@
 # Imagem da camiseta via Google Drive + Apps Script
 
 Alternativa **gratuita** ao Firebase Storage (que exige plano pago) para guardar a imagem da
-camiseta de cada turma. O Apps Script recebe a imagem do site, salva no seu Google Drive
+camiseta de cada time. O Apps Script recebe a imagem do site, salva no seu Google Drive
 (arquivo público) e devolve a URL que o site usa para exibir.
 
 ## Publicar o Apps Script
@@ -24,10 +24,10 @@ e salve.
 
 ## Como usar
 
-No **Super Admin → aba Inicial**, em cada turma há o botão **"Enviar imagem da camiseta"**.
+No **Super Admin → aba Inicial**, em cada time há o botão **"Enviar imagem da camiseta"**.
 Ao escolher uma foto, ela é enviada ao seu Drive e passa a aparecer:
-- no **card da turma** (tela inicial),
-- na **página da turma** (referência para os alunos),
+- no **card do time** (tela inicial),
+- na **página do time** (referência para os alunos),
 - no próprio card do Super Admin.
 
 O site reduz a imagem para no máximo ~1200px antes de enviar (fica leve). As imagens ficam numa
