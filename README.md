@@ -9,7 +9,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`index.html`** — lista as turmas cadastradas.
 - **`turma.html?id=NOME-DA-TURMA`** — página do representante: digita a senha da turma, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
-- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada turma, edita qualquer turma e exporta o CSV geral. Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cria turmas (com senha própria para cada uma), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada turma, edita qualquer turma e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todas as turmas de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar turmas e alterar tamanhos/configurações. Já a **senha de cada turma** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -62,7 +62,7 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 2. Em **Criar nova turma**, cadastre cada turma com um nome (ex: "3º Ano A - Manhã") e uma senha própria para ela.
 3. Compartilhe com cada representante o link da turma (`SEU-SITE/turma.html?id=ID-DA-TURMA`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`), que lista todas as turmas.
 4. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, a turma fica **Aberta** até o Super Admin fechar/avançar o status.
-5. No painel admin, acompanhe o status de todas as turmas. Quando todas estiverem fechadas (ou quando quiser), clique em **Exportar CSV geral** para baixar um único arquivo com todos os pedidos.
+5. No painel admin, acompanhe o status de todas as turmas. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todas as turmas no padrão do programa de impressão.
 
 ## Aba Financeiro (Super Admin)
 
@@ -80,10 +80,53 @@ O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por
 
 > O extrato por dia usa a data em que o pagamento foi confirmado. Pagamentos confirmados antes de o sistema passar a gravar essa data aparecem num aviso à parte, fora do agrupamento por dia (mas continuam somando no total recebido).
 
-## Sobre o CSV exportado
+## Sobre os CSVs exportados
 
-- Colunas: `Turma` (só no CSV geral), `Nome do Estudante`, `Tamanho`, `Numero`, `Nome na Camiseta`.
-- Separador `;` e codificação UTF-8 com BOM — abre corretamente no Excel e pode ser importado no CorelDraw para mala direta / automações, sem problemas de acentuação.
+São dois formatos, com finalidades diferentes.
+
+### CSV de produção (o que vai para a impressão)
+
+É o arquivo que o programa de impressão importa. **Só entram as camisetas pagas** — ver
+[Produção: pago x pendente](#produção-pago-x-pendente) logo abaixo.
+
+- **Sem linha de cabeçalho**: a primeira linha já é a primeira camiseta.
+- Coluna **A: nome na camiseta** (o que vai estampado nas costas; se estiver vazio, usa o
+  nome do estudante), **B: número**, **C: tamanho**.
+- Separador **vírgula**, UTF-8 **sem BOM** — o BOM grudaria no primeiro nome do arquivo.
+- Arquivos: `producao-<turma>.csv` (por turma) e `producao-interclasse-geral.csv` (todas).
+
+```csv
+ANINHA,10,M
+"Carla, a Craque",3,P
+BRUNO,7,G
+```
+
+> Valores com vírgula ou aspas saem entre aspas, como manda o padrão CSV.
+
+### CSV de conferência (a lista completa)
+
+Continua igual ao de antes, para conferir o pedido e os pagamentos.
+
+- Colunas: `Turma` (só no CSV geral), `Nome do Estudante`, `Tamanho`, `Numero`,
+  `Nome na Camiseta`, `Pago`, `Forma Pagto`.
+- Separador `;` e codificação UTF-8 com BOM — abre corretamente no Excel, sem problemas de
+  acentuação.
+- É o que o representante baixa na página da turma, e o que o Super Admin baixa nos botões
+  **CSV de conferência**.
+
+## Produção: pago x pendente
+
+Quando o Super Admin move o pedido para **Impressão** (e nas etapas seguintes — Costura,
+Logística, Entregue), a lista se separa em duas:
+
+- **Em produção**: quem já pagou (a camiseta *interna* conta como paga).
+- **Fora da produção**: quem não pagou fica **pendente** e não é produzido nesta leva. A
+  linha aparece marcada e esmaecida na lista, tanto na página da turma quanto no Super
+  Admin, e a página da turma explica a situação num aviso.
+
+A separação é sempre calculada na hora, a partir do pagamento: se um pendente pagar depois
+(o Super Admin confirma o pagamento na lista), ele entra na produção e passa a sair no CSV
+na próxima exportação.
 
 ## Tamanhos disponíveis
 

@@ -392,6 +392,22 @@ tr.duplicado td { background: #fef3c7; }
 /* No card da home a imagem ocupa a largura toda do card. */
 .wrap-imagem-card { display: block; width: 100%; }
 
+/* Produção: linha que ficou de fora (não paga até a impressão). */
+.linha-fora-producao > td {
+  opacity: 0.6;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    rgba(107, 114, 128, 0.08) 6px,
+    rgba(107, 114, 128, 0.08) 12px
+  );
+}
+.linha-producao {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+
 /* Imagem clicável (abre ampliada no lightbox). */
 .imagem-ampliavel { cursor: zoom-in; }
 .imagem-ampliavel:focus-visible {

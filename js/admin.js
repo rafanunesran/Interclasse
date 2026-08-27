@@ -18,6 +18,7 @@ const elEmailLogado = document.getElementById("emailLogado");
 const elFormCriarTurma = document.getElementById("formCriarTurma");
 const elListaTurmasAdmin = document.getElementById("listaTurmasAdmin");
 const elBtnExportarTudo = document.getElementById("btnExportarTudo");
+const elBtnExportarConferencia = document.getElementById("btnExportarConferencia");
 const elMsgCriarTurma = document.getElementById("msgCriarTurma");
 const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 
@@ -195,10 +196,17 @@ function renderizarTurmasAdmin() {
 
     const nPagos = alunos.filter((a) => a.pago).length;
 
+    // Da Impressão em diante, o que conta é o que entra na produção.
+    const emProducao = pedidoEmProducao(turma);
+    const linhaProducao = emProducao
+      ? `<p class="linha-producao"><strong>${nPagos} em produção</strong> &middot; ${alunos.length - nPagos} fora da produção (não paga(s))</p>`
+      : "";
+
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(turma.nome)} ${status}</h2>
       <p>Senha da turma: <code>${escapeHtmlAdmin(turma.senha)}</code> &middot; Link: <code>turma.html?id=${turmaId}</code></p>
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
+      ${linhaProducao}
       ${avisoAjustes}
     `;
 
@@ -266,9 +274,17 @@ function renderizarTurmasAdmin() {
 
     const btnExportar = document.createElement("button");
     btnExportar.className = "secundario";
-    btnExportar.textContent = "Exportar CSV";
-    btnExportar.onclick = () => exportarTurma(turma, alunos);
+    btnExportar.textContent = "CSV de produção";
+    btnExportar.title = "Só as camisetas pagas, no padrão do programa de impressão";
+    btnExportar.onclick = () => exportarProducaoTurma(turma, alunos);
     botoes.appendChild(btnExportar);
+
+    const btnConferencia = document.createElement("button");
+    btnConferencia.className = "secundario";
+    btnConferencia.textContent = "CSV de conferência";
+    btnConferencia.title = "Lista completa da turma, com pagamento";
+    btnConferencia.onclick = () => exportarTurma(turma, alunos);
+    botoes.appendChild(btnConferencia);
 
     const btnEditar = document.createElement("button");
     btnEditar.className = "secundario";
@@ -300,6 +316,10 @@ function renderizarTurmasAdmin() {
       alunos.forEach((aluno) => {
         const tr = document.createElement("tr");
         if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
+        // Nas etapas de produção, quem não pagou fica visivelmente de fora.
+        if (pedidoEmProducao(turma) && !alunoSeraProduzido(aluno)) {
+          tr.classList.add("linha-fora-producao");
+        }
 
         const marca = aluno.ajusteSolicitado
           ? '<span class="marca-ajuste" title="Ajuste solicitado">!</span> '
@@ -321,7 +341,7 @@ function renderizarTurmasAdmin() {
 
         // Coluna de pagamento: badge + seletor de status.
         const tdPag = tr.querySelector(".cel-pagamento");
-        tdPag.innerHTML = badgePagamentoHtml(aluno);
+        tdPag.innerHTML = badgePagamentoHtml(aluno) + badgeProducaoHtml(turma, aluno);
         const selPag = document.createElement("select");
         selPag.className = "select-pagamento";
         selPag.innerHTML =
@@ -2146,6 +2166,22 @@ function escapeHtmlAdmin(texto) {
 
 // ---------------- Exportação ----------------
 
+// CSV que vai para o programa de impressão: só o que será produzido (pago),
+// sem cabeçalho e separado por vírgula — nome na camiseta, número e tamanho.
+function exportarProducaoTurma(turma, alunos) {
+  const { produzir, pendentes } = separarProducao(alunos);
+  if (produzir.length === 0) {
+    alert("Nenhuma camiseta paga nesta turma — não há o que produzir ainda.");
+    return;
+  }
+  if (pendentes.length > 0 && !confirm(
+    pendentes.length + " camiseta(s) não paga(s) ficam de fora da produção.\n\n" +
+    "Exportar as " + produzir.length + " camiseta(s) pagas?"
+  )) return;
+  baixarCSVProducao(`producao-${slugify(turma.nome)}.csv`, produzir);
+}
+
+// CSV de conferência: a lista completa da turma, com situação de pagamento.
 function exportarTurma(turma, alunos) {
   if (alunos.length === 0) {
     alert("Essa turma não tem alunos cadastrados.");
@@ -2158,21 +2194,44 @@ function exportarTurma(turma, alunos) {
   baixarCSV(`pedido-${slugify(turma.nome)}.csv`, linhas);
 }
 
+// CSV geral de produção: junta todas as turmas, só o que será produzido.
 elBtnExportarTudo.addEventListener("click", () => {
-  const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
-  let total = 0;
-  Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
-    alunos.forEach((a) => {
-      linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
-      total++;
-    });
+  const produzir = [];
+  let pendentes = 0;
+  Object.values(estadoTurmas).forEach(({ alunos }) => {
+    const separado = separarProducao(alunos);
+    produzir.push(...separado.produzir);
+    pendentes += separado.pendentes.length;
   });
-  if (total === 0) {
-    alert("Não há alunos cadastrados em nenhuma turma.");
+  if (produzir.length === 0) {
+    alert("Nenhuma camiseta paga ainda — não há o que produzir.");
     return;
   }
-  baixarCSV("pedido-interclasse-geral.csv", linhas);
+  if (pendentes > 0 && !confirm(
+    pendentes + " camiseta(s) não paga(s) ficam de fora da produção.\n\n" +
+    "Exportar as " + produzir.length + " camiseta(s) pagas?"
+  )) return;
+  baixarCSVProducao("producao-interclasse-geral.csv", produzir);
 });
+
+// CSV geral de conferência: tudo, com turma e situação de pagamento.
+if (elBtnExportarConferencia) {
+  elBtnExportarConferencia.addEventListener("click", () => {
+    const linhas = [["Turma", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+    let total = 0;
+    Object.values(estadoTurmas).forEach(({ turma, alunos }) => {
+      alunos.forEach((a) => {
+        linhas.push([turma.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+        total++;
+      });
+    });
+    if (total === 0) {
+      alert("Não há alunos cadastrados em nenhuma turma.");
+      return;
+    }
+    baixarCSV("pedido-interclasse-geral.csv", linhas);
+  });
+}
 
 // ============================================================
 // CONFIGURAÇÕES GERAIS E TAMANHOS

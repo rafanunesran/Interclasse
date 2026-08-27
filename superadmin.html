@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260826c" />
+<link rel="stylesheet" href="css/style.css?v=20260827a" />
 </head>
 <body>
 
@@ -155,8 +155,10 @@
 
       <div class="card">
         <h2>Exportar tudo</h2>
-        <p>Gera um único CSV com os pedidos de todas as turmas, pronto para importar no CorelDraw.</p>
-        <button id="btnExportarTudo" class="primario">Exportar CSV geral</button>
+        <p><strong>CSV de produção</strong>: só as camisetas <strong>pagas</strong> (as não pagas ficam pendentes e não são produzidas), no padrão do programa de impressão — sem cabeçalho, separado por vírgula, com <strong>nome na camiseta</strong> na coluna A, <strong>número</strong> na B e <strong>tamanho</strong> na C.</p>
+        <p><strong>CSV de conferência</strong>: a lista completa de todas as turmas, com a situação de pagamento de cada um.</p>
+        <button id="btnExportarTudo" class="primario">Exportar CSV de produção</button>
+        <button id="btnExportarConferencia" class="secundario">Exportar CSV de conferência</button>
       </div>
     </section>
   </div>

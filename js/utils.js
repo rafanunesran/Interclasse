@@ -112,17 +112,23 @@ function formatarData(timestamp) {
 // Gera e baixa um CSV. `linhas` é um array de arrays (primeira linha = cabeçalho).
 // Usa ";" como delimitador (padrão de configuração regional brasileira no Excel)
 // e adiciona BOM UTF-8 para acentos aparecerem corretamente no Excel/CorelDraw.
-function baixarCSV(nomeArquivo, linhas) {
+// `opcoes`: { separador (padrão ";"), bom (padrão true) }. O BOM faz o Excel
+// abrir os acentos certos, mas atrapalha quem lê o arquivo campo a campo — ele
+// gruda no primeiro valor da primeira linha —, por isso o CSV de produção não usa.
+function baixarCSV(nomeArquivo, linhas, opcoes) {
+  const { separador, bom } = opcoes || {};
+  const sep = separador || ";";
   const escapar = (valor) => {
     const texto = String(valor ?? "");
-    if (/[;"\n]/.test(texto)) {
+    // Aspas em volta quando o valor tem o separador, aspas ou quebra de linha.
+    if (texto.includes(sep) || /["\n]/.test(texto)) {
       return '"' + texto.replace(/"/g, '""') + '"';
     }
     return texto;
   };
 
-  const conteudo = linhas.map((linha) => linha.map(escapar).join(";")).join("\r\n");
-  const BOM = "﻿";
+  const conteudo = linhas.map((linha) => linha.map(escapar).join(sep)).join("\r\n");
+  const BOM = bom === false ? "" : "﻿";
   const blob = new Blob([BOM + conteudo], { type: "text/csv;charset=utf-8;" });
 
   const url = URL.createObjectURL(blob);
@@ -244,6 +250,46 @@ function badgePagamentoHtml(aluno) {
     return '<span class="badge aguardando">Aguardando confirmação</span>';
   }
   return '<span class="badge pendente">Pendente</span>';
+}
+
+// ---------------- Produção (o que vai ser impresso) ----------------
+
+// Só entra na produção quem já pagou (a camiseta interna conta como paga).
+// Quem não pagou fica pendente e não vai para a impressão.
+function alunoSeraProduzido(aluno) {
+  return !!(aluno && aluno.pago);
+}
+
+// Separa a lista em quem será produzido e quem ficou pendente.
+function separarProducao(alunos) {
+  const lista = alunos || [];
+  return {
+    produzir: lista.filter(alunoSeraProduzido),
+    pendentes: lista.filter((a) => !alunoSeraProduzido(a))
+  };
+}
+
+// Nome que vai estampado nas costas (cai para o nome do estudante se vazio).
+function nomeNaCamiseta(aluno) {
+  return String((aluno && (aluno.nomeCamiseta || aluno.nome)) || "").trim();
+}
+
+// CSV no padrão do programa de impressão: SEM cabeçalho e separado por vírgula,
+// com nome na camiseta (coluna A), número (B) e tamanho (C). Só entram as
+// camisetas que serão produzidas. Devolve quantas linhas foram geradas.
+function baixarCSVProducao(nomeArquivo, alunos) {
+  const linhas = (alunos || [])
+    .filter(alunoSeraProduzido)
+    .map((a) => [nomeNaCamiseta(a), a.numero || "", a.tamanho || ""]);
+  if (linhas.length === 0) return 0;
+  baixarCSV(nomeArquivo, linhas, { separador: ",", bom: false });
+  return linhas.length;
+}
+
+// Marca, nas etapas de produção, quem ficou de fora dela por não ter pago.
+function badgeProducaoHtml(turma, aluno) {
+  if (!pedidoEmProducao(turma) || alunoSeraProduzido(aluno)) return "";
+  return '<span class="badge pendente" title="Não foi pago até a impressão, então não entra nesta produção">Fora da produção</span>';
 }
 
 // Camiseta interna: paga como "interno" (produção própria, sem receita).
@@ -384,6 +430,14 @@ function pedidoAceitaCadastro(turma) {
 function pedidoAceitaPagamento(turma) {
   const s = statusPedidoDe(turma);
   return s === "fechado" || s === "pagamento_andamento";
+}
+
+// Da Impressão em diante o pedido já está sendo produzido: é o momento em que
+// a lista se separa entre o que vai para a impressão (pago) e o que fica
+// pendente (não pago). "Suspenso" fica de fora, apesar de vir depois na lista.
+function pedidoEmProducao(turma) {
+  const s = statusPedidoDe(turma);
+  return s !== "suspenso" && indiceStatus(s) >= indiceStatus("impressao");
 }
 
 // Classe CSS do badge conforme o status (usada em todas as telas).

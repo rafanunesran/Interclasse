@@ -26,6 +26,7 @@ const elBtnExportar = document.getElementById("btnExportar");
 const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
 const elMensagemSuspenso = document.getElementById("mensagemSuspenso");
+const elMensagemProducao = document.getElementById("mensagemProducao");
 const elBarraStatus = document.getElementById("barraStatus");
 const elGaleria = document.getElementById("galeriaImagens");
 const elGaleriaTrilho = document.getElementById("galeriaTrilho");
@@ -243,6 +244,19 @@ function atualizarVisibilidade() {
       elDataLimite.value = turmaAtual.dataLimite || "";
     }
   }
+  // Da Impressão em diante: o que não foi pago fica pendente e não é produzido.
+  if (elMensagemProducao) {
+    const { produzir, pendentes } = separarProducao(alunosAtuais);
+    const mostrar = pedidoEmProducao(turmaAtual) && alunosAtuais.length > 0;
+    elMensagemProducao.classList.toggle("oculto", !mostrar);
+    if (mostrar) {
+      elMensagemProducao.textContent = pendentes.length === 0
+        ? `🖨️ Produção em andamento: as ${produzir.length} camiseta(s) da turma foram pagas e entraram na produção.`
+        : `🖨️ Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
+          `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`;
+    }
+  }
+
   // Mensagem de suspenso tem prioridade sobre a de "lista travada".
   if (elMensagemSuspenso) elMensagemSuspenso.classList.toggle("oculto", !suspenso);
   // "Não é mais possível editar" só quando a lista realmente travou (pagamento encerrado+).
@@ -322,6 +336,10 @@ function renderizarTabela() {
     if (aluno.numero && duplicados.includes(String(aluno.numero))) {
       tr.classList.add("duplicado");
     }
+    // Nas etapas de produção, quem não pagou fica visivelmente de fora.
+    if (pedidoEmProducao(turmaAtual) && !alunoSeraProduzido(aluno)) {
+      tr.classList.add("linha-fora-producao");
+    }
 
     const marca = aluno.ajusteSolicitado
       ? '<span class="marca-ajuste" title="Ajuste solicitado à organização">!</span> '
@@ -332,7 +350,7 @@ function renderizarTabela() {
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
-      <td>${badgePagamentoHtml(aluno)}</td>
+      <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(turmaAtual, aluno)}</td>
       <td class="acoes-linha"></td>
     `;
 
@@ -410,6 +428,17 @@ function renderizarResumo() {
   });
 
   elResumo.innerHTML = `<span><strong>Total: ${alunosAtuais.length}</strong></span>`;
+  if (pedidoEmProducao(turmaAtual)) {
+    const { produzir, pendentes } = separarProducao(alunosAtuais);
+    const emProducao = document.createElement("span");
+    emProducao.innerHTML = `<strong>Em produção: ${produzir.length}</strong>`;
+    elResumo.appendChild(emProducao);
+    if (pendentes.length > 0) {
+      const fora = document.createElement("span");
+      fora.textContent = `Fora da produção: ${pendentes.length}`;
+      elResumo.appendChild(fora);
+    }
+  }
   TODOS_TAMANHOS.forEach((t) => {
     if (contagem[t] > 0) {
       const span = document.createElement("span");
