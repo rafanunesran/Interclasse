@@ -150,6 +150,53 @@ function baixarCSV(nomeArquivo, linhas, opcoes) {
 }
 
 // ============================================================
+// CLIENTES — cada cliente tem os seus próprios times (pedidos)
+// ============================================================
+
+// Valor usado nos filtros para "times que ainda não têm cliente". Não pode
+// colidir com um id de verdade: slugify() nunca gera "_".
+const SEM_CLIENTE = "__sem_cliente__";
+
+// Como os times sem cliente aparecem nas listas e nos relatórios.
+const SEM_CLIENTE_NOME = "Sem cliente";
+
+// Id do cliente de um time ("" quando o time ainda não foi atribuído).
+function clienteIdDoTime(time) {
+  const id = time && time.clienteId;
+  return typeof id === "string" ? id : "";
+}
+
+// Lê a coleção de clientes e devolve [{ id, nome, ... }] ordenado por nome.
+// Devolve [] se não houver nenhum (o site funciona sem clientes cadastrados).
+async function carregarClientes() {
+  try {
+    const snap = await db.collection(COL_CLIENTES).get();
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+  } catch (erro) {
+    console.warn("Não foi possível carregar os clientes.", erro);
+    return [];
+  }
+}
+
+// Nome do cliente de um time, a partir de uma lista/mapa de clientes.
+// Sem cliente (ou cliente já excluído) cai no rótulo padrão.
+function nomeDoCliente(clientes, clienteId) {
+  if (!clienteId) return SEM_CLIENTE_NOME;
+  const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
+  const c = lista.find((x) => x.id === clienteId);
+  return (c && c.nome) || SEM_CLIENTE_NOME;
+}
+
+// Um time pertence ao cliente escolhido no filtro? Filtro vazio = todos.
+function timeDoCliente(time, filtro) {
+  if (!filtro) return true;
+  const id = clienteIdDoTime(time);
+  return filtro === SEM_CLIENTE ? !id : id === filtro;
+}
+
+// ============================================================
 // PIX — gera o "copia e cola" (BR Code / padrão EMV do Banco Central)
 // ============================================================
 

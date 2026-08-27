@@ -2,14 +2,17 @@
 
 Site para representantes de time cadastrarem a lista de camisetas do interclasse (nome do estudante, tamanho, número e nome na camiseta), conferirem e fecharem o pedido. O administrador acompanha todos os times e exporta um CSV geral para usar no CorelDraw.
 
+Os pedidos são **separados por cliente**: cada cliente (uma escola, uma empresa, uma organização) tem os seus próprios times, e um seletor no topo do painel mostra um cliente de cada vez — lista, Kanban, financeiro e CSVs, tudo junto. Veja [Clientes](#clientes-separação-dos-pedidos).
+
 Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando o **Firebase (Firestore)** como banco de dados na nuvem, gratuito.
 
 ## Como funciona
 
-- **`index.html`** — lista os times cadastrados.
+- **`index.html`** — lista os clientes; ao escolher um (`index.html?cliente=ID-DO-CLIENTE`), mostra os times daquele cliente. Sem nenhum cliente cadastrado, lista direto todos os times.
 - **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
-- **`superadmin.html`** — **Super Admin**: cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
+- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -56,13 +59,42 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 3. Em **Source**, selecione **Deploy from a branch**, branch `main`, pasta `/ (root)`. Salve.
 4. Aguarde alguns minutos — o GitHub vai mostrar o link do site publicado (algo como `https://seuusuario.github.io/nome-do-repositorio/`).
 
-### 6. Criar os times e começar a usar
+### 6. Criar os clientes, os times e começar a usar
 
 1. Acesse `SEU-SITE/admin.html` (ou clique em "Área administrativa" no rodapé) e entre com o **e-mail e a senha** do administrador (a conta que você criou no passo 4). O site leva você automaticamente para o **Super Admin** (`superadmin.html`).
-2. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã") e uma senha própria para ele.
-3. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`), que lista todos os times.
-4. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
-5. No painel admin, acompanhe o status de todos os times. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+2. Na aba **Clientes**, cadastre quem está fazendo o pedido (ex: "Colégio Santa Rita"). Se você atende um cliente só, dá para pular — sem clientes cadastrados o site funciona como antes.
+3. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã"), uma senha própria para ele e o cliente a que ele pertence.
+4. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`) — que lista os clientes — ou direto pelo link do cliente (`SEU-SITE/index.html?cliente=ID-DO-CLIENTE`).
+5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
+6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez). Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+
+## Clientes (separação dos pedidos)
+
+Cada **time** pertence a um **cliente** — quem faz o pedido. É assim que os pedidos de
+clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
+
+- **Cadastrar:** Super Admin → aba **Clientes** → *Novo cliente* (nome e, se quiser, um
+  contato). Dá para editar e excluir depois. A exclusão só é permitida quando o cliente
+  não tem mais nenhum time — mova os times antes, pelo botão **Editar time**.
+- **Vincular um time:** o cliente é escolhido no formulário **Criar novo time** e pode ser
+  trocado a qualquer momento em **Editar time**. Time sem cliente continua funcionando e
+  aparece agrupado como **Sem cliente**.
+- **Ver um cliente de cada vez:** o seletor **Cliente**, no topo do painel, vale para o
+  Super Admin inteiro — lista de times, Kanban, Financeiro, resumo de pagamentos e as
+  exportações. Com um cliente escolhido, os CSVs saem só com os dados dele e o nome do
+  arquivo ganha o cliente no fim (ex.: `producao-interclasse-geral-colegio-alfa.csv`).
+- **Link do cliente:** `index.html?cliente=ID-DO-CLIENTE` abre a tela inicial já com os
+  times daquele cliente — é o link para compartilhar com ele. Sem o parâmetro, a tela
+  inicial mostra a lista de clientes para escolher.
+- **No Financeiro**, com mais de um cliente na conta, a *Visão geral* ganha o quadro
+  **Por cliente** (previsto, recebido, a receber, % e lucro) e a tabela por time ganha a
+  coluna do cliente. Os CSVs do Financeiro e o de conferência também trazem o cliente.
+
+> No Firestore os times continuam na coleção `turmas` (o nome antigo), para não quebrar os
+> dados já cadastrados; os clientes ficam em `clientes`. O nome da coleção fica isolado na
+> constante `COL_TIMES` (`js/utils.js` e `mp-backend/lib/firebase.js`). Depois de atualizar,
+> **republique o `firestore.rules`** no console do Firebase — a versão anterior não conhecia
+> a coleção `clientes`.
 
 ## Aba Financeiro (Super Admin)
 
@@ -107,7 +139,7 @@ BRUNO,7,G
 
 Continua igual ao de antes, para conferir o pedido e os pagamentos.
 
-- Colunas: `Time` (só no CSV geral), `Nome do Estudante`, `Tamanho`, `Numero`,
+- Colunas: `Cliente`, `Time`, `Nome do Estudante`, `Tamanho`, `Numero`,
   `Nome na Camiseta`, `Pago`, `Forma Pagto`.
 - Separador `;` e codificação UTF-8 com BOM — abre corretamente no Excel, sem problemas de
   acentuação.
@@ -187,7 +219,7 @@ pagamento no Firestore.
   auto-declaração + confirmação manual.
 - **Ligado**, o Mercado Pago cobra ~0,99% por PIX recebido e o dinheiro passa pela conta MP.
 
-O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
+O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Clientes**, **Kanban**, **Financeiro**, **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
 
 Detalhes técnicos:
 
@@ -229,6 +261,7 @@ arrasta para o lado no celular, setas no computador.
 ## Limitações conhecidas
 
 - A proteção por senha de time/admin é feita no site (não no banco de dados), então é uma barreira de conveniência, não uma segurança forte. Não cadastre informações sensíveis além do necessário para o pedido.
+- A separação por cliente é **organizacional**, não é controle de acesso: a leitura continua pública, então quem tiver o link consegue abrir a lista de clientes e ver os times de qualquer um deles. Ela serve para organizar o trabalho (e os relatórios) de cada cliente, não para esconder um cliente do outro.
 - Exclusão de aluno **pelo representante** (na página do time) é sempre "suave" (o registro fica marcado como removido, mas não desaparece do banco) — isso é proposital, para evitar perda de dados por engano.
 - No Super Admin dá para **editar** (nome e senha) e **excluir** um time. A exclusão do time é definitiva: apaga o time e todas as camisetas cadastradas nele (essa exclusão de verdade só é permitida para a conta administradora).
 - O plano gratuito do Firebase (Spark) é mais do que suficiente para o volume de um interclasse escolar.

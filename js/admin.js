@@ -12,6 +12,12 @@
 const PAGINA_LOGIN = "admin.html";
 
 const estadoTimes = {}; // timeId -> { time, alunos, expandido }
+const estadoClientes = {}; // clienteId -> dados do cliente
+
+// Cliente escolhido no seletor do topo. "" = todos; SEM_CLIENTE = só os times
+// que ainda não foram atribuídos a nenhum cliente. Vale para o painel inteiro
+// (lista, Kanban, Financeiro, resumo de pagamentos e exportações).
+let clienteFiltro = "";
 
 const elPainel = document.getElementById("painelAdmin");
 const elEmailLogado = document.getElementById("emailLogado");
@@ -21,6 +27,11 @@ const elBtnExportarTudo = document.getElementById("btnExportarTudo");
 const elBtnExportarConferencia = document.getElementById("btnExportarConferencia");
 const elMsgCriarTime = document.getElementById("msgCriarTime");
 const elBtnSairAdmin = document.getElementById("btnSairAdmin");
+const elFiltroCliente = document.getElementById("filtroCliente");
+const elFormCriarCliente = document.getElementById("formCriarCliente");
+const elListaClientesAdmin = document.getElementById("listaClientesAdmin");
+const elMsgCriarCliente = document.getElementById("msgCriarCliente");
+const elClienteNovoTime = document.getElementById("clienteNovoTime");
 
 let painelIniciado = false;
 
@@ -36,6 +47,7 @@ auth.onAuthStateChanged((user) => {
       // Adiado com setTimeout para garantir que as declarações let/const do
       // restante do arquivo já existam quando rodarem (evita "TDZ").
       setTimeout(() => {
+        escutarClientes();
         escutarTimes();
         carregarPainelConfig();
       }, 0);
@@ -65,6 +77,282 @@ document.querySelectorAll(".aba").forEach((btn) => {
   });
 });
 
+// ============================================================
+// CLIENTES
+// ============================================================
+// Cada time pertence a um cliente (uma escola, uma empresa...). O seletor do
+// topo filtra o painel inteiro por cliente, para os pedidos de um não se
+// misturarem com os do outro. Times sem cliente continuam funcionando.
+
+function escutarClientes() {
+  db.collection(COL_CLIENTES).onSnapshot(
+    (snap) => {
+      const idsAtuais = new Set();
+      snap.forEach((doc) => {
+        idsAtuais.add(doc.id);
+        // Preserva o "editando" para o formulário aberto não fechar sozinho
+        // quando chega uma atualização do Firestore.
+        const antes = estadoClientes[doc.id] || {};
+        estadoClientes[doc.id] = { id: doc.id, ...doc.data(), editando: antes.editando === true };
+      });
+      Object.keys(estadoClientes).forEach((id) => {
+        if (!idsAtuais.has(id)) delete estadoClientes[id];
+      });
+      // O cliente do filtro pode ter sido excluído: volta para "todos".
+      if (clienteFiltro && clienteFiltro !== SEM_CLIENTE && !estadoClientes[clienteFiltro]) {
+        clienteFiltro = "";
+      }
+      renderizarSeletoresDeCliente();
+      renderizarClientesAdmin();
+      renderizarTimesAdmin();
+    },
+    (erro) => console.error("Erro ao carregar clientes:", erro)
+  );
+}
+
+// Clientes ordenados por nome (a ordem usada em todos os seletores e listas).
+function clientesOrdenados() {
+  return Object.values(estadoClientes)
+    .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+}
+
+// Nome do cliente de um time (ou "Sem cliente").
+function nomeClienteDoTime(time) {
+  return nomeDoCliente(clientesOrdenados(), clienteIdDoTime(time));
+}
+
+// Times que passam pelo filtro de cliente, como [[timeId, estado], ...].
+// É por aqui que TODA a tela (lista, Kanban, Financeiro, CSVs) enxerga os
+// pedidos, então o filtro do topo vale para o painel inteiro de uma vez.
+function timesFiltrados() {
+  return Object.entries(estadoTimes).filter(([, e]) => timeDoCliente(e.time, clienteFiltro));
+}
+
+// Sufixo para os nomes de arquivo exportados quando há um cliente escolhido.
+function sufixoCliente() {
+  if (!clienteFiltro) return "";
+  const nome = clienteFiltro === SEM_CLIENTE
+    ? SEM_CLIENTE_NOME
+    : (estadoClientes[clienteFiltro] && estadoClientes[clienteFiltro].nome) || clienteFiltro;
+  return "-" + slugify(nome);
+}
+
+// Preenche o seletor do topo e o seletor de cliente do formulário de criação.
+function renderizarSeletoresDeCliente() {
+  const clientes = clientesOrdenados();
+
+  if (elFiltroCliente) {
+    const opcoes = clientes
+      .map((c) => `<option value="${c.id}">${escapeHtmlAdmin(c.nome || c.id)}</option>`)
+      .join("");
+    elFiltroCliente.innerHTML =
+      '<option value="">Todos os clientes</option>' +
+      opcoes +
+      `<option value="${SEM_CLIENTE}">${SEM_CLIENTE_NOME}</option>`;
+    elFiltroCliente.value = clienteFiltro;
+  }
+
+  if (elClienteNovoTime) {
+    const escolhido = elClienteNovoTime.value;
+    elClienteNovoTime.innerHTML =
+      '<option value="">Sem cliente</option>' +
+      clientes.map((c) => `<option value="${c.id}">${escapeHtmlAdmin(c.nome || c.id)}</option>`).join("");
+    // Mantém o que estava escolhido; se não houver, já sugere o do filtro.
+    const sugerido = escolhido || (clienteFiltro !== SEM_CLIENTE ? clienteFiltro : "");
+    if (sugerido && estadoClientes[sugerido]) elClienteNovoTime.value = sugerido;
+  }
+}
+
+if (elFiltroCliente) {
+  elFiltroCliente.addEventListener("change", () => {
+    clienteFiltro = elFiltroCliente.value;
+    finTimeFiltro = ""; // o time escolhido antes pode não ser deste cliente
+    renderizarSeletoresDeCliente();
+    renderizarTimesAdmin();
+  });
+}
+
+// ---------------- Criar cliente ----------------
+
+if (elFormCriarCliente) {
+  elFormCriarCliente.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    esconderMensagem(elMsgCriarCliente);
+
+    const nome = document.getElementById("nomeNovoCliente").value.trim();
+    const contato = document.getElementById("contatoNovoCliente").value.trim();
+    if (!nome) return;
+
+    try {
+      let id = slugify(nome) || "cliente";
+      let idFinal = id;
+      let sufixo = 2;
+      while ((await db.collection(COL_CLIENTES).doc(idFinal).get()).exists) {
+        idFinal = `${id}-${sufixo}`;
+        sufixo++;
+      }
+      await db.collection(COL_CLIENTES).doc(idFinal).set({
+        nome,
+        contato,
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      elFormCriarCliente.reset();
+      mostrarMensagem(elMsgCriarCliente, `Cliente "${nome}" criado.`, "aviso");
+    } catch (erro) {
+      console.error(erro);
+      mostrarMensagem(elMsgCriarCliente, "Erro ao criar o cliente.", "erro");
+    }
+  });
+}
+
+// ---------------- Lista de clientes ----------------
+
+function renderizarClientesAdmin() {
+  if (!elListaClientesAdmin) return;
+  elListaClientesAdmin.innerHTML = "";
+
+  const clientes = clientesOrdenados();
+  if (clientes.length === 0) {
+    elListaClientesAdmin.innerHTML =
+      "<p>Nenhum cliente cadastrado ainda. Sem clientes, todos os times aparecem juntos — como antes.</p>";
+    return;
+  }
+
+  clientes.forEach((cliente) => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    if (cliente.editando) {
+      card.appendChild(criarFormEdicaoCliente(cliente));
+      elListaClientesAdmin.appendChild(card);
+      return;
+    }
+
+    const times = Object.values(estadoTimes).filter((e) => clienteIdDoTime(e.time) === cliente.id);
+    const camisetas = times.reduce((soma, e) => soma + e.alunos.length, 0);
+
+    card.innerHTML = `
+      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}</h2>
+      ${cliente.contato ? `<p>Contato: ${escapeHtmlAdmin(cliente.contato)}</p>` : ""}
+      <p>${times.length} time(s) &middot; ${camisetas} camiseta(s) &middot; Link: <code>index.html?cliente=${cliente.id}</code></p>
+    `;
+
+    const botoes = document.createElement("div");
+
+    const btnVer = document.createElement("button");
+    btnVer.className = "primario";
+    btnVer.textContent = "Ver só este cliente";
+    btnVer.onclick = () => {
+      clienteFiltro = cliente.id;
+      finTimeFiltro = "";
+      renderizarSeletoresDeCliente();
+      renderizarTimesAdmin();
+      const abaInicial = document.querySelector('.aba[data-aba="inicial"]');
+      if (abaInicial) abaInicial.click();
+    };
+    botoes.appendChild(btnVer);
+
+    const btnEditar = document.createElement("button");
+    btnEditar.className = "secundario";
+    btnEditar.textContent = "Editar cliente";
+    btnEditar.onclick = () => {
+      estadoClientes[cliente.id].editando = true;
+      renderizarClientesAdmin();
+    };
+    botoes.appendChild(btnEditar);
+
+    const btnExcluir = document.createElement("button");
+    btnExcluir.className = "perigo";
+    btnExcluir.textContent = "Excluir cliente";
+    btnExcluir.onclick = () => excluirCliente(cliente, times.length);
+    botoes.appendChild(btnExcluir);
+
+    card.appendChild(botoes);
+    elListaClientesAdmin.appendChild(card);
+  });
+}
+
+// Formulário inline de edição do nome/contato do cliente.
+function criarFormEdicaoCliente(cliente) {
+  const wrap = document.createElement("div");
+
+  const h2 = document.createElement("h2");
+  h2.textContent = "Editar cliente";
+  wrap.appendChild(h2);
+
+  const lblNome = document.createElement("label");
+  lblNome.textContent = "Nome do cliente";
+  const inNome = document.createElement("input");
+  inNome.type = "text";
+  inNome.value = cliente.nome || "";
+
+  const lblContato = document.createElement("label");
+  lblContato.textContent = "Contato (opcional)";
+  const inContato = document.createElement("input");
+  inContato.type = "text";
+  inContato.value = cliente.contato || "";
+
+  wrap.appendChild(lblNome);
+  wrap.appendChild(inNome);
+  wrap.appendChild(lblContato);
+  wrap.appendChild(inContato);
+
+  const acoes = document.createElement("div");
+
+  const btnSalvar = document.createElement("button");
+  btnSalvar.className = "sucesso";
+  btnSalvar.textContent = "Salvar";
+  btnSalvar.onclick = async () => {
+    const nome = inNome.value.trim();
+    if (!nome) {
+      alert("Informe o nome do cliente.");
+      return;
+    }
+    btnSalvar.disabled = true;
+    try {
+      await db.collection(COL_CLIENTES).doc(cliente.id).update({ nome, contato: inContato.value.trim() });
+      if (estadoClientes[cliente.id]) estadoClientes[cliente.id].editando = false;
+      renderizarClientesAdmin();
+    } catch (erro) {
+      console.error(erro);
+      alert("Erro ao salvar o cliente. Tente novamente.");
+      btnSalvar.disabled = false;
+    }
+  };
+
+  const btnCancelar = document.createElement("button");
+  btnCancelar.className = "secundario";
+  btnCancelar.textContent = "Cancelar";
+  btnCancelar.onclick = () => {
+    if (estadoClientes[cliente.id]) estadoClientes[cliente.id].editando = false;
+    renderizarClientesAdmin();
+  };
+
+  acoes.appendChild(btnSalvar);
+  acoes.appendChild(btnCancelar);
+  wrap.appendChild(acoes);
+  return wrap;
+}
+
+// Excluir cliente: só quando não sobra nenhum time apontando para ele — assim
+// nenhum pedido fica órfão por engano. Mova os times antes, se for o caso.
+async function excluirCliente(cliente, qtdTimes) {
+  if (qtdTimes > 0) {
+    alert(
+      `"${cliente.nome}" ainda tem ${qtdTimes} time(s).\n\n` +
+      "Mude o cliente desses times (botão \"Editar time\", na aba Inicial) antes de excluir."
+    );
+    return;
+  }
+  if (!confirm(`Excluir o cliente "${cliente.nome}"?`)) return;
+  try {
+    await db.collection(COL_CLIENTES).doc(cliente.id).delete();
+  } catch (erro) {
+    console.error(erro);
+    alert("Erro ao excluir o cliente. Verifique as regras do Firestore (firestore.rules).");
+  }
+}
+
 // ---------------- Criar time ----------------
 
 elFormCriarTime.addEventListener("submit", async (ev) => {
@@ -90,12 +378,18 @@ elFormCriarTime.addEventListener("submit", async (ev) => {
     await db.collection(COL_TIMES).doc(idFinal).set({
       nome,
       senha,
+      // Cliente dono do pedido ("" = ainda sem cliente).
+      clienteId: elClienteNovoTime ? elClienteNovoTime.value : "",
       fechado: false,
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
 
+    const cliente = elClienteNovoTime && elClienteNovoTime.value
+      ? ` (cliente: ${nomeDoCliente(clientesOrdenados(), elClienteNovoTime.value)})`
+      : "";
     elFormCriarTime.reset();
-    mostrarMensagem(elMsgCriarTime, `Time "${nome}" criado. Link: time.html?id=${idFinal}`, "aviso");
+    renderizarSeletoresDeCliente();
+    mostrarMensagem(elMsgCriarTime, `Time "${nome}" criado${cliente}. Link: time.html?id=${idFinal}`, "aviso");
   } catch (erro) {
     console.error(erro);
     mostrarMensagem(elMsgCriarTime, "Erro ao criar time.", "erro");
@@ -163,12 +457,18 @@ function escutarAlunosDaTime(timeId) {
 function renderizarTimesAdmin() {
   elListaTimesAdmin.innerHTML = "";
 
-  const ids = Object.keys(estadoTimes).sort((a, b) =>
-    estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR")
-  );
+  const ids = timesFiltrados()
+    .map(([id]) => id)
+    .sort((a, b) => estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR"));
 
   if (ids.length === 0) {
-    elListaTimesAdmin.innerHTML = "<p>Nenhum time cadastrado ainda.</p>";
+    elListaTimesAdmin.innerHTML = clienteFiltro
+      ? "<p>Nenhum time para o cliente escolhido. Troque o cliente no seletor do topo ou crie um time para ele.</p>"
+      : "<p>Nenhum time cadastrado ainda.</p>";
+    renderizarResumoPagamentos();
+    renderizarKanban();
+    renderizarFinanceiro();
+    renderizarClientesAdmin();
     return;
   }
 
@@ -204,6 +504,7 @@ function renderizarTimesAdmin() {
 
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(time.nome)} ${status}</h2>
+      <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong></p>
       <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
       ${linhaProducao}
@@ -440,6 +741,8 @@ function renderizarTimesAdmin() {
   renderizarResumoPagamentos();
   renderizarKanban();
   renderizarFinanceiro();
+  // A aba Clientes conta os times de cada um, então acompanha a lista.
+  renderizarClientesAdmin();
 }
 
 // Atualiza o status do pedido de um time (usado no seletor da aba Inicial
@@ -496,9 +799,11 @@ function renderizarKanban() {
 
   board.innerHTML = "";
 
-  const ids = Object.keys(estadoTimes);
+  const ids = timesFiltrados().map(([id]) => id);
   if (ids.length === 0) {
-    board.innerHTML = "<p>Nenhum pedido (time) cadastrado ainda.</p>";
+    board.innerHTML = clienteFiltro
+      ? "<p>Nenhum pedido para o cliente escolhido.</p>"
+      : "<p>Nenhum pedido (time) cadastrado ainda.</p>";
     return;
   }
 
@@ -594,6 +899,14 @@ function criarCardKanban(timeId, statusId) {
   nome.textContent = time.nome;
   card.appendChild(nome);
 
+  // Sem filtro de cliente o quadro mistura todo mundo, então o card diz de quem é.
+  if (!clienteFiltro) {
+    const cli = document.createElement("div");
+    cli.className = "kanban-card-cliente";
+    cli.textContent = nomeClienteDoTime(time);
+    card.appendChild(cli);
+  }
+
   const info = document.createElement("div");
   info.className = "kanban-card-info";
   info.textContent =
@@ -650,7 +963,7 @@ function renderizarResumoPagamentos() {
   if (!el) return;
 
   let total = 0, pagos = 0, aguardando = 0;
-  Object.values(estadoTimes).forEach(({ alunos }) => {
+  timesFiltrados().forEach(([, { alunos }]) => {
     alunos.forEach((a) => {
       total++;
       if (a.pago) pagos++;
@@ -770,11 +1083,15 @@ function calcularFinanceiro() {
     qtdInternas: 0, custoInterno: 0,
     porForma: { pix: 0, dinheiro: 0 },
     porTime: [],
+    porCliente: [],
     porGrupo: {}
   };
 
-  Object.values(estadoTimes).forEach(({ time, alunos }) => {
-    const t = { nome: time.nome, previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
+  // Acumulado por cliente (nome -> totais), montado junto com o por time.
+  const clientes = {};
+
+  timesFiltrados().forEach(([, { time, alunos }]) => {
+    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
@@ -829,7 +1146,26 @@ function calcularFinanceiro() {
     t.vendaveis = t.qtd - t.internas;
     t.margem = t.previsto > 0 ? (t.lucro / t.previsto) * 100 : 0;
     fin.porTime.push(t);
+
+    if (!clientes[t.cliente]) {
+      clientes[t.cliente] = { nome: t.cliente, times: 0, qtd: 0, previsto: 0, recebido: 0, custos: 0 };
+    }
+    const c = clientes[t.cliente];
+    c.times++;
+    c.qtd += t.qtd;
+    c.previsto += t.previsto;
+    c.recebido += t.recebido;
+    c.custos += t.custos;
   });
+
+  fin.porCliente = Object.values(clientes)
+    .map((c) => ({
+      ...c,
+      aReceber: c.previsto - c.recebido,
+      lucro: c.previsto - c.custos,
+      pct: c.previsto > 0 ? (c.recebido / c.previsto) * 100 : 0
+    }))
+    .sort((a, b) => b.previsto - a.previsto);
 
   fin.qtdVendaveis = fin.qtd - fin.qtdInternas;
   fin.aReceber = fin.previsto - fin.recebido;
@@ -850,12 +1186,13 @@ function calcularFinanceiro() {
 function finLancamentos() {
   const precos = precosPorGrupoAtual || {};
   const lista = [];
-  Object.entries(estadoTimes).forEach(([timeId, { time, alunos }]) => {
+  timesFiltrados().forEach(([timeId, { time, alunos }]) => {
     alunos.forEach((a) => {
       if (!a.pago || ehInterno(a)) return; // interna não gera receita
       lista.push({
         timeId,
         time: time.nome,
+        cliente: nomeClienteDoTime(time),
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
@@ -876,7 +1213,7 @@ function finLancamentos() {
 function finPendencias() {
   const precos = precosPorGrupoAtual || {};
   const lista = [];
-  Object.entries(estadoTimes).forEach(([timeId, { time, alunos }]) => {
+  timesFiltrados().forEach(([timeId, { time, alunos }]) => {
     const fechadoEm = finParaData(time.fechadoEm);
     const limite = time.dataLimite ? finParaData(time.dataLimite) : null;
     alunos.forEach((a) => {
@@ -890,6 +1227,7 @@ function finPendencias() {
       lista.push({
         timeId,
         time: time.nome,
+        cliente: nomeClienteDoTime(time),
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
@@ -1027,7 +1365,7 @@ function finBarraFiltrosHtml(comPeriodo = true) {
     `<button type="button" class="fin-chip${finPeriodo === p.id ? " ativa" : ""}" data-fin-periodo="${p.id}">${p.label}</button>`
   ).join("");
 
-  const times = Object.entries(estadoTimes)
+  const times = timesFiltrados()
     .map(([id, { time }]) => ({ id, nome: time.nome }))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
     .map((t) => `<option value="${t.id}"${finTimeFiltro === t.id ? " selected" : ""}>${escapeHtmlAdmin(t.nome)}</option>`)
@@ -1096,10 +1434,35 @@ function finViewGeral(alvo, f) {
   const inicio7 = new Date(inicioHoje.getTime() - 6 * 86400000);
   const semana = finSomaEntre(lanc, inicio7, agora);
 
+  // Quadro por cliente: só faz sentido quando há mais de um na conta.
+  const tabelaClientes = f.porCliente.length > 1
+    ? `
+    <h3 class="fin-titulo">Por cliente</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr>
+          <th>Cliente</th><th>Times</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Lucro prev.</th>
+        </tr></thead>
+        <tbody>${f.porCliente.map((c) => `<tr>
+          <td>${escapeHtmlAdmin(c.nome)}</td>
+          <td>${c.times}</td>
+          <td>${c.qtd}</td>
+          <td>${formatarReais(c.previsto)}</td>
+          <td class="fin-verde">${formatarReais(c.recebido)}</td>
+          <td class="fin-vermelho">${formatarReais(c.aReceber)}</td>
+          <td>${Math.round(c.pct)}%</td>
+          <td>${formatarReais(c.lucro)}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+    </div>`
+    : "";
+
+  const colCliente = f.porCliente.length > 1; // sem vários clientes, a coluna só ocupa espaço
   const linhasTime = f.porTime.map((t, idx) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     return `<tr>
       <td>${escapeHtmlAdmin(t.nome)}</td>
+      ${colCliente ? `<td>${escapeHtmlAdmin(t.cliente)}</td>` : ""}
       <td>${t.qtd}</td>
       <td>${formatarReais(t.previsto)}</td>
       <td class="fin-verde">${formatarReais(t.recebido)}</td>
@@ -1179,12 +1542,14 @@ function finViewGeral(alvo, f) {
       <span class="badge pago">Dinheiro: ${formatarReais(f.porForma.dinheiro)}</span>
     </div>
 
+    ${tabelaClientes}
+
     <!-- Por time -->
     <h3 class="fin-titulo">Por time (ordenado por valor a receber)</h3>
     <div class="fin-tabela-wrap">
       <table class="fin-tabela">
         <thead><tr>
-          <th>Time</th><th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Custo prev.</th><th>Lucro prev.</th>
+          <th>Time</th>${colCliente ? "<th>Cliente</th>" : ""}<th>Qtd</th><th>Previsto</th><th>Recebido</th><th>A receber</th><th>%</th><th>Custo prev.</th><th>Lucro prev.</th>
         </tr></thead>
         <tbody>${linhasTime}</tbody>
       </table>
@@ -1719,22 +2084,35 @@ function exportarFinanceiro() {
 
 // Visão geral / resumo por time (formato original do relatório).
 function exportarResumoPorTime(f) {
-  const linhas = [["Time", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
+  const linhas = [["Cliente", "Time", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
   f.porTime.forEach((t) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     linhas.push([
-      t.nome, t.qtd,
+      t.cliente, t.nome, t.qtd,
       t.previsto.toFixed(2), t.recebido.toFixed(2), t.aReceber.toFixed(2),
       pct + "%", t.custoImpressao.toFixed(2), t.custoCostureira.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2)
     ]);
   });
   linhas.push([]);
   linhas.push([
-    "TOTAL", f.qtd,
+    "TOTAL", "", f.qtd,
     f.previsto.toFixed(2), f.recebido.toFixed(2), f.aReceber.toFixed(2),
     Math.round(f.pctRecebido) + "%", f.custoImpressao.toFixed(2), f.custoCostureira.toFixed(2), f.custos.toFixed(2), f.lucroPrevisto.toFixed(2)
   ]);
-  baixarCSV("financeiro-interclasse.csv", linhas);
+
+  // Consolidado por cliente, embaixo do detalhe por time.
+  if (f.porCliente.length > 1) {
+    linhas.push([]);
+    linhas.push(["Cliente", "Times", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Lucro previsto"]);
+    f.porCliente.forEach((c) => {
+      linhas.push([
+        c.nome, c.times, c.qtd,
+        c.previsto.toFixed(2), c.recebido.toFixed(2), c.aReceber.toFixed(2),
+        Math.round(c.pct) + "%", c.lucro.toFixed(2)
+      ]);
+    });
+  }
+  baixarCSV(`financeiro-interclasse${sufixoCliente()}.csv`, linhas);
 }
 
 // Extrato analítico: uma linha por pagamento, na ordem do extrato.
@@ -1745,20 +2123,20 @@ function exportarExtrato() {
     alert("Não há recebimentos no período selecionado.");
     return;
   }
-  const linhas = [["Data", "Hora", "Aluno", "Time", "Tamanho", "Forma", "Origem", "Valor"]];
+  const linhas = [["Data", "Hora", "Aluno", "Time", "Cliente", "Tamanho", "Forma", "Origem", "Valor"]];
   todos.forEach((l) => {
     linhas.push([
       l.data ? l.data.toLocaleDateString("pt-BR") : "sem data",
       l.data ? finHora(l.data) : "",
-      l.aluno, l.time, l.tamanho,
+      l.aluno, l.time, l.cliente, l.tamanho,
       l.forma === "dinheiro" ? "Dinheiro" : "PIX",
       l.online ? "Mercado Pago" : "Manual",
       l.valor.toFixed(2)
     ]);
   });
   linhas.push([]);
-  linhas.push(["TOTAL", "", "", "", "", "", todos.length + " pgto", todos.reduce((s, l) => s + l.valor, 0).toFixed(2)]);
-  baixarCSV("extrato-recebimentos.csv", linhas);
+  linhas.push(["TOTAL", "", "", "", "", "", "", todos.length + " pgto", todos.reduce((s, l) => s + l.valor, 0).toFixed(2)]);
+  baixarCSV(`extrato-recebimentos${sufixoCliente()}.csv`, linhas);
 }
 
 // Consolidado por dia (com acumulado) — bom para colar em planilha/gráfico.
@@ -1776,7 +2154,7 @@ function exportarEvolucao() {
       d.qtd, d.pix.toFixed(2), d.dinheiro.toFixed(2), d.total.toFixed(2), d.acumulado.toFixed(2)
     ]);
   });
-  baixarCSV("recebimentos-por-dia.csv", linhas);
+  baixarCSV(`recebimentos-por-dia${sufixoCliente()}.csv`, linhas);
 }
 
 // Tudo o que está em aberto, do mais antigo para o mais novo.
@@ -1788,10 +2166,10 @@ function exportarCobranca() {
     alert("Não há pendências para exportar.");
     return;
   }
-  const linhas = [["Aluno", "Time", "Tamanho", "Situacao", "Valor", "Em aberto (dias)", "Desde", "Bloqueado por ajuste"]];
+  const linhas = [["Aluno", "Time", "Cliente", "Tamanho", "Situacao", "Valor", "Em aberto (dias)", "Desde", "Bloqueado por ajuste"]];
   pend.forEach((p) => {
     linhas.push([
-      p.aluno, p.time, p.tamanho,
+      p.aluno, p.time, p.cliente, p.tamanho,
       p.tipo === "aguardando" ? "Aguardando confirmacao" : "Pendente",
       p.valor.toFixed(2),
       p.dias === null ? "" : p.dias,
@@ -1800,8 +2178,8 @@ function exportarCobranca() {
     ]);
   });
   linhas.push([]);
-  linhas.push(["TOTAL", "", "", "", pend.reduce((s, p) => s + p.valor, 0).toFixed(2), "", "", ""]);
-  baixarCSV("a-receber-interclasse.csv", linhas);
+  linhas.push(["TOTAL", "", "", "", "", pend.reduce((s, p) => s + p.valor, 0).toFixed(2), "", "", ""]);
+  baixarCSV(`a-receber-interclasse${sufixoCliente()}.csv`, linhas);
 }
 
 // DRE + rentabilidade por time e por grupo.
@@ -1819,10 +2197,18 @@ function exportarResultado(f) {
     ["Caixa a receber", f.aReceber]
   ].forEach(([r, v]) => linhas.push([r, v.toFixed(2)]));
 
+  if (f.porCliente.length > 1) {
+    linhas.push([]);
+    linhas.push(["Cliente", "Times", "Qtd", "Receita prevista", "Custo", "Lucro previsto"]);
+    f.porCliente.forEach((c) => {
+      linhas.push([c.nome, c.times, c.qtd, c.previsto.toFixed(2), c.custos.toFixed(2), c.lucro.toFixed(2)]);
+    });
+  }
+
   linhas.push([]);
-  linhas.push(["Time", "Qtd", "Receita prevista", "Custo", "Lucro previsto", "Margem %"]);
+  linhas.push(["Time", "Cliente", "Qtd", "Receita prevista", "Custo", "Lucro previsto", "Margem %"]);
   [...f.porTime].sort((a, b) => b.lucro - a.lucro).forEach((t) => {
-    linhas.push([t.nome, t.qtd, t.previsto.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2), t.margem.toFixed(0)]);
+    linhas.push([t.nome, t.cliente, t.qtd, t.previsto.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2), t.margem.toFixed(0)]);
   });
 
   linhas.push([]);
@@ -1834,7 +2220,7 @@ function exportarResultado(f) {
     linhas.push([g, d.qtd, d.venda.toFixed(2), d.custo.toFixed(2), lucro.toFixed(2), margem.toFixed(0)]);
   });
 
-  baixarCSV("resultado-interclasse.csv", linhas);
+  baixarCSV(`resultado-interclasse${sufixoCliente()}.csv`, linhas);
 }
 
 const elBtnExportarFinanceiro = document.getElementById("btnExportarFinanceiro");
@@ -1870,10 +2256,23 @@ function criarFormEdicaoTime(timeId, time) {
   inSenha.type = "text";
   inSenha.value = time.senha;
 
+  // Cliente dono do pedido: é por aqui que um time muda de cliente.
+  const lblCliente = document.createElement("label");
+  lblCliente.textContent = "Cliente";
+  const selCliente = document.createElement("select");
+  selCliente.innerHTML =
+    '<option value="">Sem cliente</option>' +
+    clientesOrdenados()
+      .map((c) => `<option value="${c.id}">${escapeHtmlAdmin(c.nome || c.id)}</option>`)
+      .join("");
+  selCliente.value = clienteIdDoTime(time);
+
   wrap.appendChild(lblNome);
   wrap.appendChild(inNome);
   wrap.appendChild(lblSenha);
   wrap.appendChild(inSenha);
+  wrap.appendChild(lblCliente);
+  wrap.appendChild(selCliente);
 
   const acoes = document.createElement("div");
 
@@ -1889,7 +2288,11 @@ function criarFormEdicaoTime(timeId, time) {
     }
     btnSalvar.disabled = true;
     try {
-      await db.collection(COL_TIMES).doc(timeId).update({ nome: novoNome, senha: novaSenha });
+      await db.collection(COL_TIMES).doc(timeId).update({
+        nome: novoNome,
+        senha: novaSenha,
+        clienteId: selCliente.value
+      });
       if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
       // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.
       renderizarTimesAdmin();
@@ -2187,9 +2590,10 @@ function exportarTime(time, alunos) {
     alert("Esse time não tem alunos cadastrados.");
     return;
   }
-  const linhas = [["Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+  const cliente = nomeClienteDoTime(time);
   alunos.forEach((a) =>
-    linhas.push([time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
+    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
   );
   baixarCSV(`pedido-${slugify(time.nome)}.csv`, linhas);
 }
@@ -2198,38 +2602,42 @@ function exportarTime(time, alunos) {
 elBtnExportarTudo.addEventListener("click", () => {
   const produzir = [];
   let pendentes = 0;
-  Object.values(estadoTimes).forEach(({ alunos }) => {
+  timesFiltrados().forEach(([, { alunos }]) => {
     const separado = separarProducao(alunos);
     produzir.push(...separado.produzir);
     pendentes += separado.pendentes.length;
   });
   if (produzir.length === 0) {
-    alert("Nenhuma camiseta paga ainda — não há o que produzir.");
+    alert(clienteFiltro
+      ? "Nenhuma camiseta paga no cliente escolhido — não há o que produzir."
+      : "Nenhuma camiseta paga ainda — não há o que produzir.");
     return;
   }
   if (pendentes > 0 && !confirm(
     pendentes + " camiseta(s) não paga(s) ficam de fora da produção.\n\n" +
     "Exportar as " + produzir.length + " camiseta(s) pagas?"
   )) return;
-  baixarCSVProducao("producao-interclasse-geral.csv", produzir);
+  baixarCSVProducao(`producao-interclasse-geral${sufixoCliente()}.csv`, produzir);
 });
 
 // CSV geral de conferência: tudo, com time e situação de pagamento.
 if (elBtnExportarConferencia) {
   elBtnExportarConferencia.addEventListener("click", () => {
-    const linhas = [["Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
     let total = 0;
-    Object.values(estadoTimes).forEach(({ time, alunos }) => {
+    timesFiltrados().forEach(([, { time, alunos }]) => {
       alunos.forEach((a) => {
-        linhas.push([time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
         total++;
       });
     });
     if (total === 0) {
-      alert("Não há alunos cadastrados em nenhum time.");
+      alert(clienteFiltro
+        ? "Não há alunos cadastrados nos times do cliente escolhido."
+        : "Não há alunos cadastrados em nenhum time.");
       return;
     }
-    baixarCSV("pedido-interclasse-geral.csv", linhas);
+    baixarCSV(`pedido-interclasse-geral${sufixoCliente()}.csv`, linhas);
   });
 }
 

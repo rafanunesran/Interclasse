@@ -13,6 +13,7 @@ let configGeral = {}; // config/geral (inclui dados de PIX e preços)
 
 // Elementos
 const elNomeTime = document.getElementById("nomeTime");
+const elClienteTime = document.getElementById("clienteTime");
 const elBadgeStatus = document.getElementById("badgeStatus");
 const elMsgSenha = document.getElementById("msgSenha");
 const elCardSenha = document.getElementById("formSenha");
@@ -69,6 +70,7 @@ async function iniciar() {
   }
   timeAtual = doc.data();
   elNomeTime.textContent = timeAtual.nome;
+  await mostrarCliente();
   await aplicarFechamentoAutomatico();
   atualizarBadge();
 
@@ -89,6 +91,29 @@ async function iniciar() {
       atualizarVisibilidade();
     }
   });
+}
+
+// Mostra de qual cliente é este pedido (quando o time tem um cliente).
+async function mostrarCliente() {
+  if (!elClienteTime) return;
+  const clienteId = clienteIdDoTime(timeAtual);
+  if (!clienteId) {
+    elClienteTime.classList.add("oculto");
+    return;
+  }
+  try {
+    const doc = await db.collection(COL_CLIENTES).doc(clienteId).get();
+    const nome = doc.exists ? doc.data().nome : "";
+    if (!nome) {
+      elClienteTime.classList.add("oculto");
+      return;
+    }
+    elClienteTime.textContent = "Cliente: " + nome;
+    elClienteTime.classList.remove("oculto");
+  } catch (e) {
+    console.warn("Não foi possível carregar o cliente deste time.", e);
+    elClienteTime.classList.add("oculto");
+  }
 }
 
 // Fecha o pedido automaticamente quando a data limite passa (aberto -> fechado).

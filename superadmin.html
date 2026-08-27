@@ -19,11 +19,16 @@
   <div id="painelAdmin" class="oculto">
     <div class="barra-admin">
       <span>Super Admin — <strong id="emailLogado"></strong></span>
+      <span class="filtro-cliente">
+        <label for="filtroCliente">Cliente:</label>
+        <select id="filtroCliente"><option value="">Todos os clientes</option></select>
+      </span>
       <button type="button" id="btnSairAdmin" class="secundario">Sair</button>
     </div>
 
     <nav class="abas-admin">
       <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
+      <button type="button" class="aba" data-aba="clientes">Clientes</button>
       <button type="button" class="aba" data-aba="kanban">Kanban</button>
       <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
       <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
@@ -42,6 +47,9 @@
           <label for="senhaNovoTime">Senha do time (compartilhe com o representante)</label>
           <input type="text" id="senhaNovoTime" required />
 
+          <label for="clienteNovoTime">Cliente</label>
+          <select id="clienteNovoTime"><option value="">Sem cliente</option></select>
+
           <button type="submit" class="primario">Criar time</button>
         </form>
         <p id="msgCriarTime" class="oculto"></p>
@@ -49,6 +57,27 @@
 
       <h2>Times</h2>
       <div id="listaTimesAdmin"></div>
+    </section>
+
+    <!-- ABA: CLIENTES (cada cliente tem os seus próprios times/pedidos) -->
+    <section id="aba-clientes" class="secao-aba oculto">
+      <div class="card">
+        <h2>Novo cliente</h2>
+        <p>Um cliente é quem faz o pedido (uma escola, uma empresa, uma organização). Cada time pertence a um cliente, e o seletor <strong>Cliente</strong> no topo do painel separa os pedidos de cada um.</p>
+        <form id="formCriarCliente">
+          <label for="nomeNovoCliente">Nome do cliente</label>
+          <input type="text" id="nomeNovoCliente" placeholder="Ex: Colégio Santa Rita" required />
+
+          <label for="contatoNovoCliente">Contato (opcional)</label>
+          <input type="text" id="contatoNovoCliente" placeholder="Quem responde pelo cliente: nome, telefone ou e-mail" />
+
+          <button type="submit" class="primario">Criar cliente</button>
+        </form>
+        <p id="msgCriarCliente" class="oculto"></p>
+      </div>
+
+      <h2>Clientes</h2>
+      <div id="listaClientesAdmin"></div>
     </section>
 
     <!-- ABA: KANBAN (pedidos por etapa; arraste os cards para mudar o status) -->
