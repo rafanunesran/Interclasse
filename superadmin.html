@@ -96,7 +96,7 @@
           <h2>Financeiro</h2>
           <button type="button" id="btnExportarFinanceiro" class="secundario">Exportar CSV da visão</button>
         </div>
-        <p>Relatórios de faturamento com base nos preços (aba Pagamentos) e nos custos por grupo (aba Tamanhos). Os valores atualizam em tempo real conforme os pagamentos entram. Use as visões abaixo: <strong>Visão geral</strong> (situação do pedido), <strong>Extrato diário</strong> (o que entrou em cada dia), <strong>Evolução</strong> (ritmo de entrada e projeção), <strong>A receber</strong> (cobrança e conferência) e <strong>Resultado</strong> (DRE, margem e rentabilidade). O botão exporta em CSV exatamente a visão aberta.</p>
+        <p>Relatórios de faturamento com base nos preços em vigor em cada time (a tabela geral da aba Pagamentos, ou o preço próprio do time) e nos custos por grupo (aba Tamanhos). Os valores atualizam em tempo real conforme os pagamentos entram. Use as visões abaixo: <strong>Visão geral</strong> (situação do pedido), <strong>Extrato diário</strong> (o que entrou em cada dia), <strong>Evolução</strong> (ritmo de entrada e projeção), <strong>A receber</strong> (cobrança e conferência) e <strong>Resultado</strong> (DRE, margem e rentabilidade). O botão exporta em CSV exatamente a visão aberta.</p>
         <div id="financeiroConteudo"></div>
       </div>
     </section>
@@ -120,7 +120,7 @@
     <section id="aba-pagamentos" class="secao-aba oculto">
       <div class="card">
         <h2>Pagamento (PIX)</h2>
-        <p>Configure sua chave PIX e o preço por grupo de tamanho. O botão "Pagar (PIX)" aparece nas linhas dos times com o pedido fechado.</p>
+        <p>Configure sua chave PIX e o preço por grupo de tamanho. Esse é o preço <strong>geral</strong>: vale para todos os times que não tiverem um preço próprio. O botão "Pagar (PIX)" aparece nas linhas dos times com o pedido fechado.</p>
         <form id="formPix">
           <label for="pixChave">Chave PIX</label>
           <input type="text" id="pixChave" placeholder="e-mail, telefone, CPF/CNPJ ou chave aleatória" />
@@ -131,7 +131,8 @@
           <label for="pixCidade">Cidade do recebedor (máx. 15)</label>
           <input type="text" id="pixCidade" maxlength="15" placeholder="Ex: SAO PAULO" />
 
-          <h3>Preço por grupo de tamanho</h3>
+          <h3>Preço por grupo de tamanho (geral)</h3>
+          <p class="pix-ajuda">Para cobrar um valor diferente em um time específico, use <strong>"Preço da camiseta neste time"</strong> no card dele, na aba <strong>Inicial</strong>.</p>
           <div id="precosPorGrupo"></div>
 
           <h3>Confirmação automática (Mercado Pago)</h3>
@@ -147,6 +148,12 @@
           <button type="submit" class="primario">Salvar pagamento</button>
         </form>
         <p id="msgPix" class="oculto"></p>
+      </div>
+
+      <div class="card">
+        <h2>Preço em vigor por time</h2>
+        <p>Quanto cada time paga por grupo de tamanho. Os valores em destaque são preços próprios daquela time; os demais vêm da tabela geral acima.</p>
+        <div id="precosTimesResumo"></div>
       </div>
 
       <div class="card">

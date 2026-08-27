@@ -262,6 +262,49 @@ function precoDoTamanho(tamanho, precosPorGrupo) {
   return null;
 }
 
+// ---------------- Preços personalizados por time ----------------
+// A tabela geral (config/geral -> precosPorGrupo) vale para todo mundo.
+// Cada time pode ter preços próprios em config/geral -> precosPorTime:
+//   precosPorTime: { "3o-ano-a-manha": { "Normal": 50, "Plus Size": 60 } }
+// A personalização é grupo a grupo: o que o time não define continua
+// usando o preço geral. Fica em config/geral (e não no time) porque só o
+// admin grava nesse documento — assim o representante não muda o próprio preço.
+
+// Só os preços personalizados de um time (mapa {grupo: valor}), sem os gerais.
+// Mapa {timeId: {grupo: valor}} guardado em config/geral. "precosPorTurma" é
+// o nome antigo do campo, ainda lido para não perder os preços já salvos.
+function mapaPrecosPorTime(cfg) {
+  return (cfg && (cfg.precosPorTime || cfg.precosPorTurma)) || {};
+}
+
+function precosPersonalizadosDoTime(cfg, timeId) {
+  const mapa = mapaPrecosPorTime(cfg)[timeId] || {};
+  const saida = {};
+  Object.keys(mapa).forEach((g) => {
+    const v = Number(mapa[g]);
+    if (mapa[g] != null && !isNaN(v)) saida[g] = v;
+  });
+  return saida;
+}
+
+// Preços que valem de fato num time: os gerais com o personalizado por cima.
+function precosDoTime(cfg, timeId) {
+  const geral = (cfg && cfg.precosPorGrupo) || {};
+  const efetivos = {};
+  Object.keys(geral).forEach((g) => {
+    const v = Number(geral[g]);
+    if (geral[g] != null && !isNaN(v)) efetivos[g] = v;
+  });
+  const proprios = precosPersonalizadosDoTime(cfg, timeId);
+  Object.keys(proprios).forEach((g) => (efetivos[g] = proprios[g]));
+  return efetivos;
+}
+
+// Preço de um tamanho já considerando o preço personalizado do time.
+function precoDoTamanhoNoTime(tamanho, cfg, timeId) {
+  return precoDoTamanho(tamanho, precosDoTime(cfg, timeId));
+}
+
 // Grupo de tamanho ao qual um tamanho pertence (ou null).
 function grupoDoTamanho(tamanho) {
   return GRUPOS_TAMANHO.find((g) => g.tamanhos.includes(tamanho)) || null;

@@ -1,5 +1,5 @@
 // ============================================================
-// PÁGINA DA TIME: cadastro, conferência e fechamento do pedido
+// PÁGINA DO TIME: cadastro, conferência e fechamento do pedido
 // ============================================================
 
 const params = new URLSearchParams(window.location.search);
@@ -34,6 +34,7 @@ const elGaleriaTrilho = document.getElementById("galeriaTrilho");
 const elGaleriaAntes = document.getElementById("galeriaAntes");
 const elGaleriaDepois = document.getElementById("galeriaDepois");
 const elInfoDataLimite = document.getElementById("infoDataLimite");
+const elInfoPrecos = document.getElementById("infoPrecos");
 const elBlocoDataLimite = document.getElementById("blocoDataLimite");
 const elDataLimite = document.getElementById("dataLimite");
 const elBtnSalvarDataLimite = document.getElementById("btnSalvarDataLimite");
@@ -241,6 +242,9 @@ function atualizarBadge() {
   // Galeria de referência: simulação, arte e as medidas de cada grupo.
   renderizarGaleria();
 
+  // Valor da camiseta neste time (o geral ou o preço próprio dele).
+  mostrarPrecosDaTime();
+
   // Info da data limite.
   if (elInfoDataLimite) {
     if (timeAtual.dataLimite) {
@@ -252,6 +256,23 @@ function atualizarBadge() {
       elInfoDataLimite.classList.add("oculto");
     }
   }
+}
+
+// Mostra quanto custa a camiseta neste time, por grupo de tamanho. Usa os
+// preços em vigor aqui: os gerais, com o preço próprio do time por cima.
+function mostrarPrecosDaTime() {
+  if (!elInfoPrecos) return;
+  const precos = precosDoTime(configGeral, timeId);
+  const partes = GRUPOS_TAMANHO
+    .filter((g) => precos[g.grupo] != null)
+    .map((g) => `${g.grupo}: ${formatarReais(precos[g.grupo])}`);
+
+  if (partes.length === 0) {
+    elInfoPrecos.classList.add("oculto");
+    return;
+  }
+  elInfoPrecos.textContent = "Valor da camiseta — " + partes.join(" · ");
+  elInfoPrecos.classList.remove("oculto");
 }
 
 function atualizarVisibilidade() {
@@ -409,7 +430,9 @@ function renderizarTabela() {
       if (podePagar && !ajustePendente) {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
-        btnPagar.textContent = "Pagar";
+        // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
+        const valorLinha = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
+        btnPagar.textContent = valorLinha ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
         btnPagar.onclick = () => abrirPagamentoPix(aluno);
         tdAcoes.appendChild(btnPagar);
       }
@@ -798,7 +821,8 @@ function abrirPagamentoPix(aluno) {
 
 // Modo padrão: PIX estático gerado no próprio site (chave direta, sem taxa).
 function gerarPagamentoEstatico(aluno) {
-  const valor = precoDoTamanho(aluno.tamanho, configGeral.precosPorGrupo);
+  // Preço do time: o geral, ou o personalizado dele, quando houver.
+  const valor = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
   const codigo = pixCopiaECola({
     chave: configGeral.pixChave,
     nome: configGeral.pixNome,

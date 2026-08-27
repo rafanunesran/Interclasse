@@ -488,6 +488,33 @@ tr.duplicado td { background: #fef3c7; }
 /* Trava a rolagem do fundo enquanto o lightbox está aberto. */
 body.sem-rolagem { overflow: hidden; }
 
+/* Preço personalizado por time (card do time, no Super Admin). */
+.precos-time {
+  margin: 12px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  background: var(--cinza-bg);
+}
+.precos-time > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+.precos-time > summary .badge { margin-left: 6px; }
+.precos-time-corpo { margin-top: 10px; }
+.precos-time-grade { margin-top: 8px; }
+.precos-time-grade .campo-custo input { background: var(--branco); }
+.precos-time-grade .pix-ajuda { display: block; margin-top: 4px; }
+.precos-time-corpo button { margin-top: 10px; }
+
+/* Preço próprio do time na tabela da aba Pagamentos. */
+.preco-proprio {
+  font-weight: 700;
+  color: #5b21b6;
+}
+
 /* Imagem de medidas de um grupo, no editor de tamanhos. */
 .bloco-imagem-grupo {
   margin-top: 10px;

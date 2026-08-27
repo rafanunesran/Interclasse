@@ -12,7 +12,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
-- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -98,7 +98,7 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 
 ## Aba Financeiro (Super Admin)
 
-A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam os preços por grupo (aba **Pagamentos**) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
+A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
 - **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time.
 - **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho e forma).
@@ -195,7 +195,38 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 
 - **Chave PIX** — e-mail, telefone, CPF/CNPJ ou chave aleatória da conta que vai receber.
 - **Nome do recebedor** (máx. 25 caracteres) e **Cidade** (máx. 15) — como no seu cadastro bancário.
-- **Preço por grupo de tamanho** — um valor para cada grupo (ex.: Normal R$ 45, Plus Size R$ 55). O valor cobrado em cada linha é o do grupo do tamanho daquele aluno. Se um grupo ficar sem preço, o PIX é gerado sem valor (o pagador digita no app).
+- **Preço por grupo de tamanho (geral)** — um valor para cada grupo (ex.: Normal R$ 45, Plus Size R$ 55). O valor cobrado em cada linha é o do grupo do tamanho daquele aluno. Se um grupo ficar sem preço, o PIX é gerado sem valor (o pagador digita no app). Esse é o preço **padrão**, usado por todos os times que não tiverem um preço próprio — ver [Preço personalizado por time](#preço-personalizado-por-time).
+
+### Preço personalizado por time
+
+Dá para cobrar um valor diferente em um time específico (patrocínio, tecido
+diferente, time que fechou em outra data…), sem mexer no preço dos outros.
+
+1. No **Super Admin → Inicial**, abra o card do time e clique em **"Preço da camiseta neste time"**.
+2. Preencha só os grupos que devem mudar (ex.: Normal R$ 50) e clique em **Salvar preços do time**.
+3. Os grupos deixados **em branco** continuam usando o preço geral da aba Pagamentos — cada campo mostra qual é esse valor ("Geral: R$ 45,00").
+
+O botão **"Usar a tabela geral"** apaga os preços próprios do time de uma vez.
+Ao excluir um time, os preços dele são apagados junto.
+
+O preço personalizado vale em todo o sistema:
+
+- no **PIX** (estático e Mercado Pago) gerado na página do time — o valor no botão "Pagar" já é o do time;
+- no **Financeiro** inteiro (previsto, recebido, a receber, extrato, DRE, rentabilidade por time);
+- na página do pedido, numa linha logo abaixo do status ("Valor da camiseta — Normal: R$ 50,00 · …").
+
+Para conferir tudo de uma vez, a aba **Pagamentos** tem a tabela **"Preço em vigor por time"**:
+uma linha por time, uma coluna por grupo, com os preços próprios em destaque e os da tabela
+geral em cinza.
+
+> Onde ficam guardados: em `config/geral`, no campo `precosPorTime` (`{ "id-do-time": { "Normal": 50 } }`).
+> É de propósito: `config/geral` só pode ser gravado pela conta administradora, então o
+> representante do time não consegue alterar o próprio preço — nem no site, nem na cobrança
+> do Mercado Pago, que também calcula o valor a partir desse documento.
+>
+> O campo se chamava `precosPorTurma` antes da renomeação. O site continua **lendo** o nome
+> antigo (para não perder o que já foi salvo) e **grava nos dois**, para o backend do
+> Mercado Pago ainda não republicado continuar cobrando o valor certo.
 
 ### Status de pagamento
 

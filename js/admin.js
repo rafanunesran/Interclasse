@@ -13,6 +13,8 @@ const PAGINA_LOGIN = "admin.html";
 
 const estadoTimes = {}; // timeId -> { time, alunos, expandido }
 const estadoClientes = {}; // clienteId -> dados do cliente
+const precosTimeAbertos = {}; // timeId -> true quando o bloco de preços está aberto
+const precosTimeSalvos = {};  // timeId -> aviso a mostrar depois de salvar/limpar
 
 // Cliente escolhido no seletor do topo. "" = todos; SEM_CLIENTE = só os times
 // que ainda não foram atribuídos a nenhum cliente. Vale para o painel inteiro
@@ -559,6 +561,9 @@ function renderizarTimesAdmin() {
     }
     card.appendChild(linhaData);
 
+    // Preço personalizado deste time (sobrepõe a tabela geral, grupo a grupo).
+    card.appendChild(criarBlocoPrecosTime(timeId));
+
     // Imagens da camiseta — simulação e arte (Google Drive via Apps Script).
     card.appendChild(criarBlocoImagemTime(timeId, time));
 
@@ -980,6 +985,63 @@ function renderizarResumoPagamentos() {
       <span class="badge pendente">Pendentes: ${pendentes}</span>
     </div>
   `;
+
+  renderizarResumoPrecosTimes();
+}
+
+// Lista os times que têm um preço próprio para um grupo de tamanho.
+function timesComPrecoProprio(nomeGrupo) {
+  return Object.entries(mapaPrecosPorTime(configGeralAtual))
+    .filter(([, mapa]) => mapa && mapa[nomeGrupo] != null && !isNaN(Number(mapa[nomeGrupo])))
+    .map(([id, mapa]) => ({
+      timeId: id,
+      nome: (estadoTimes[id] && estadoTimes[id].time.nome) || id,
+      valor: Number(mapa[nomeGrupo])
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+// Tabela (aba Pagamentos) com o preço que vale em cada time, por grupo.
+// Quem não tem preço próprio aparece com o valor geral, em cinza.
+function renderizarResumoPrecosTimes() {
+  const el = document.getElementById("precosTimesResumo");
+  if (!el) return;
+
+  const ids = Object.keys(estadoTimes).sort((a, b) =>
+    estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR")
+  );
+
+  if (ids.length === 0 || GRUPOS_TAMANHO.length === 0) {
+    el.innerHTML = "<p>Cadastre times e tamanhos para ver os preços aqui.</p>";
+    return;
+  }
+
+  const cabecalho = GRUPOS_TAMANHO.map((g) => `<th>${escapeHtmlAdmin(g.grupo)}</th>`).join("");
+
+  const linhas = ids.map((id) => {
+    const proprios = precosPersonalizadosDoTime(configGeralAtual, id);
+    const efetivos = precosDoTime(configGeralAtual, id);
+    const celulas = GRUPOS_TAMANHO.map((g) => {
+      const valor = efetivos[g.grupo];
+      if (valor == null) return '<td class="fin-sub">—</td>';
+      const proprio = proprios[g.grupo] != null;
+      return `<td class="${proprio ? "preco-proprio" : "fin-sub"}">${formatarReais(valor)}</td>`;
+    }).join("");
+    const marca = Object.keys(proprios).length > 0
+      ? ' <span class="badge interno">próprio</span>'
+      : "";
+    return `<tr><td>${escapeHtmlAdmin(estadoTimes[id].time.nome)}${marca}</td>${celulas}</tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Time</th>${cabecalho}</tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>
+    <p class="pix-ajuda">Em destaque, os preços próprios do time; em cinza, os da tabela geral. Para mudar, use "Preço da camiseta neste time" no card do time (aba Inicial).</p>
+  `;
 }
 
 // ============================================================
@@ -1070,12 +1132,12 @@ function finDiasDesde(data) {
 
 // ---------------- Coleta dos dados ----------------
 
-// Percorre todos os times/alunos e calcula os números do financeiro.
-// venda = preço do tamanho (aba Pagamentos); custo = Impressão + Costureira
-// do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" = declarado mas
-// não confirmado; "pendente" = nem declarado.
+// Percorre os times/alunos que passam pelo filtro de cliente e calcula os
+// números do financeiro. venda = preço do tamanho no time (o geral da aba
+// Pagamentos ou o preço personalizado do time); custo = Impressão +
+// Costureira do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" =
+// declarado mas não confirmado; "pendente" = nem declarado.
 function calcularFinanceiro() {
-  const precos = precosPorGrupoAtual || {};
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
     custos: 0, custosRecebido: 0, custoImpressao: 0, custoCostureira: 0,
@@ -1090,7 +1152,8 @@ function calcularFinanceiro() {
   // Acumulado por cliente (nome -> totais), montado junto com o por time.
   const clientes = {};
 
-  timesFiltrados().forEach(([, { time, alunos }]) => {
+  timesFiltrados().forEach(([timeId, { time, alunos }]) => {
+    const precos = precosDoTime(configGeralAtual, timeId);
     const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
@@ -1184,9 +1247,9 @@ function calcularFinanceiro() {
 // Lista de lançamentos de RECEBIMENTO (uma linha por camiseta paga).
 // É a base do extrato, da evolução e da conciliação por forma de pagamento.
 function finLancamentos() {
-  const precos = precosPorGrupoAtual || {};
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
+    const precos = precosDoTime(configGeralAtual, timeId);
     alunos.forEach((a) => {
       if (!a.pago || ehInterno(a)) return; // interna não gera receita
       lista.push({
@@ -1211,9 +1274,9 @@ function finLancamentos() {
 
 // Lista de PENDÊNCIAS (camisetas ainda não pagas), com o tempo em aberto.
 function finPendencias() {
-  const precos = precosPorGrupoAtual || {};
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
+    const precos = precosDoTime(configGeralAtual, timeId);
     const fechadoEm = finParaData(time.fechadoEm);
     const limite = time.dataLimite ? finParaData(time.dataLimite) : null;
     alunos.forEach((a) => {
@@ -2336,6 +2399,15 @@ async function excluirTime(timeId, time) {
       await lote.commit();
     }
     await db.collection(COL_TIMES).doc(timeId).delete();
+    // Os preços próprios do time ficam em config/geral; apaga junto para não
+    // sobrar lixo (se falhar, não atrapalha: o time já não existe).
+    try {
+      await limparPrecosDoTime(timeId);
+    } catch (e) {
+      console.warn("Time excluído, mas não deu para apagar os preços dele.", e);
+    }
+    delete precosTimeAbertos[timeId];
+    delete precosTimeSalvos[timeId];
     // O onSnapshot dos times remove o card automaticamente.
   } catch (erro) {
     console.error(erro);
@@ -2454,6 +2526,196 @@ const IMAGENS_TIME = [
     confirmRemover: "Remover a arte (sem simulação) deste time?"
   }
 ];
+
+// ---------------- Preço personalizado por time ----------------
+// Cada time pode ter preços próprios, grupo a grupo. O que ele não define
+// continua valendo o preço geral (aba Pagamentos). Os valores ficam em
+// config/geral -> precosPorTime[timeId], documento que só o admin grava.
+
+// Bloco recolhível, no card do time, com um campo de preço por grupo.
+function criarBlocoPrecosTime(timeId) {
+  const bloco = document.createElement("details");
+  bloco.className = "precos-time";
+  bloco.open = !!precosTimeAbertos[timeId];
+  bloco.addEventListener("toggle", () => {
+    precosTimeAbertos[timeId] = bloco.open;
+  });
+
+  const personalizados = precosPersonalizadosDoTime(configGeralAtual, timeId);
+  const nPersonalizados = Object.keys(personalizados).length;
+
+  const resumo = document.createElement("summary");
+  resumo.innerHTML =
+    "Preço da camiseta neste time " +
+    (nPersonalizados > 0
+      ? `<span class="badge interno">${nPersonalizados} preço(s) próprio(s)</span>`
+      : '<span class="badge pendente">tabela geral</span>');
+  bloco.appendChild(resumo);
+
+  const corpo = document.createElement("div");
+  corpo.className = "precos-time-corpo";
+
+  if (GRUPOS_TAMANHO.length === 0) {
+    corpo.innerHTML = "<p>Cadastre os tamanhos primeiro (aba Tamanhos).</p>";
+    bloco.appendChild(corpo);
+    return bloco;
+  }
+
+  const ajuda = document.createElement("small");
+  ajuda.className = "pix-ajuda";
+  ajuda.textContent =
+    "Deixe em branco para usar o preço geral (aba Pagamentos). O valor preenchido " +
+    "vale só para este time — no PIX, no Mercado Pago e no Financeiro.";
+  corpo.appendChild(ajuda);
+
+  const grade = document.createElement("div");
+  grade.className = "linha-custos precos-time-grade";
+
+  const gerais = configGeralAtual.precosPorGrupo || {};
+
+  GRUPOS_TAMANHO.forEach((g) => {
+    const wrap = document.createElement("div");
+    wrap.className = "campo-custo";
+
+    const lbl = document.createElement("label");
+    lbl.textContent = `${g.grupo} (R$)`;
+
+    const geral = gerais[g.grupo] != null ? Number(gerais[g.grupo]) : null;
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.min = "0";
+    inp.dataset.grupo = g.grupo;
+    inp.placeholder = geral != null ? Number(geral).toFixed(2) : "0,00";
+    inp.value = personalizados[g.grupo] != null ? personalizados[g.grupo] : "";
+
+    const base = document.createElement("small");
+    base.className = "pix-ajuda";
+    base.textContent = geral != null ? `Geral: ${formatarReais(geral)}` : "Sem preço geral";
+
+    wrap.appendChild(lbl);
+    wrap.appendChild(inp);
+    wrap.appendChild(base);
+    grade.appendChild(wrap);
+  });
+
+  corpo.appendChild(grade);
+
+  const msg = document.createElement("p");
+  msg.className = "oculto";
+  const acoes = document.createElement("div");
+
+  const btnSalvar = document.createElement("button");
+  btnSalvar.className = "sucesso";
+  btnSalvar.textContent = "Salvar preços do time";
+  btnSalvar.onclick = async () => {
+    const paraGravar = {};   // o que vai para o Firestore (número ou delete)
+    const paraEstado = {};   // espelho local, só com os números
+    let invalido = false;
+
+    grade.querySelectorAll("input").forEach((inp) => {
+      const grupo = inp.dataset.grupo;
+      const bruto = inp.value.trim();
+      if (bruto === "") {
+        // Campo vazio = volta a usar o preço geral (apaga o personalizado).
+        paraGravar[grupo] = firebase.firestore.FieldValue.delete();
+        return;
+      }
+      const v = parseFloat(bruto);
+      if (isNaN(v) || v < 0) {
+        invalido = true;
+        return;
+      }
+      paraGravar[grupo] = v;
+      paraEstado[grupo] = v;
+    });
+
+    if (invalido) {
+      mostrarMensagem(msg, "Informe valores válidos (0 ou mais) ou deixe em branco.", "erro");
+      return;
+    }
+
+    btnSalvar.disabled = true;
+    try {
+      await db.collection("config").doc("geral")
+        // Grava no campo novo e no antigo ("precosPorTurma"), para o backend
+        // do Mercado Pago ainda não republicado continuar cobrando certo.
+        .set({
+          precosPorTime: { [timeId]: paraGravar },
+          precosPorTurma: { [timeId]: paraGravar }
+        }, { merge: true });
+      aplicarPrecosTimeNoEstado(timeId, paraEstado);
+      precosTimeAbertos[timeId] = true;
+      precosTimeSalvos[timeId] = Object.keys(paraEstado).length > 0
+        ? "Preços deste time salvos."
+        : "Sem preço próprio: este time volta a usar a tabela geral.";
+      renderizarTimesAdmin();
+    } catch (erro) {
+      console.error(erro);
+      btnSalvar.disabled = false;
+      mostrarMensagem(
+        msg,
+        "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
+        "erro"
+      );
+    }
+  };
+  acoes.appendChild(btnSalvar);
+
+  if (nPersonalizados > 0) {
+    const btnLimpar = document.createElement("button");
+    btnLimpar.className = "secundario";
+    btnLimpar.textContent = "Usar a tabela geral";
+    btnLimpar.title = "Apaga os preços próprios deste time";
+    btnLimpar.onclick = async () => {
+      if (!confirm("Apagar os preços próprios deste time e voltar para a tabela geral?")) return;
+      btnLimpar.disabled = true;
+      try {
+        await limparPrecosDoTime(timeId);
+        precosTimeAbertos[timeId] = true;
+        precosTimeSalvos[timeId] = "Preços próprios apagados: vale a tabela geral.";
+        renderizarTimesAdmin();
+      } catch (erro) {
+        console.error(erro);
+        btnLimpar.disabled = false;
+        mostrarMensagem(msg, "Erro ao apagar os preços deste time.", "erro");
+      }
+    };
+    acoes.appendChild(btnLimpar);
+  }
+
+  corpo.appendChild(acoes);
+  corpo.appendChild(msg);
+
+  // Aviso de "salvo" que sobrevive ao re-render disparado pelo próprio salvar.
+  if (precosTimeSalvos[timeId]) {
+    mostrarMensagem(msg, precosTimeSalvos[timeId], "aviso");
+    delete precosTimeSalvos[timeId];
+  }
+  bloco.appendChild(corpo);
+  return bloco;
+}
+
+// Espelha no estado local o que acabou de ser gravado, para o Financeiro e os
+// cards reagirem na hora (config/geral não é lido por onSnapshot).
+function aplicarPrecosTimeNoEstado(timeId, mapa) {
+  const todos = { ...mapaPrecosPorTime(configGeralAtual) };
+  if (Object.keys(mapa).length > 0) todos[timeId] = mapa;
+  else delete todos[timeId];
+  configGeralAtual = { ...configGeralAtual, precosPorTime: todos, precosPorTurma: todos };
+}
+
+// Apaga os preços próprios de um time (volta a valer só a tabela geral).
+async function limparPrecosDoTime(timeId) {
+  await db.collection("config").doc("geral").set(
+    {
+      precosPorTime: { [timeId]: firebase.firestore.FieldValue.delete() },
+      precosPorTurma: { [timeId]: firebase.firestore.FieldValue.delete() }
+    },
+    { merge: true }
+  );
+  aplicarPrecosTimeNoEstado(timeId, {});
+}
 
 // Bloco de imagens da camiseta no card do Super Admin (enviar/trocar/remover).
 function criarBlocoImagemTime(timeId, time) {
@@ -2671,6 +2933,7 @@ let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
 let precosPorGrupoAtual = {}; // preço de venda por grupo (aba Pagamentos) — usado p/ o lucro
+let configGeralAtual = {};    // config/geral inteiro (inclui precosPorTime)
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -2686,6 +2949,7 @@ async function carregarPainelConfig() {
   if (elDriveScriptUrl) elDriveScriptUrl.value = cfg.driveScriptUrl || "";
   driveScriptUrl = cfg.driveScriptUrl || "";
 
+  configGeralAtual = cfg || {};
   precosPorGrupoAtual = cfg.precosPorGrupo || {};
 
   await carregarTamanhos();
@@ -2700,8 +2964,10 @@ async function carregarPainelConfig() {
   elMpBackendUrl.value = cfg.mpBackendUrl || "";
   renderizarPrecosPorGrupo(cfg.precosPorGrupo || {});
 
-  // Com preços e custos já carregados, atualiza o financeiro.
+  // Com preços e custos já carregados, atualiza o financeiro e os cards das
+  // times (que mostram o preço em vigor em cada uma).
   renderizarFinanceiro();
+  renderizarTimesAdmin();
 }
 
 // ---------------- Pagamento (PIX) ----------------
@@ -2751,7 +3017,10 @@ elFormPix.addEventListener("submit", async (ev) => {
     await db.collection("config").doc("geral").set(dados, { merge: true });
     // Mantém o lucro do editor de tamanhos em dia com o novo preço de venda.
     precosPorGrupoAtual = precosPorGrupo;
+    configGeralAtual = { ...configGeralAtual, ...dados };
     renderizarEditorTamanhos();
+    // Os preços dos times partem do geral: re-renderiza para refletir a base.
+    renderizarTimesAdmin();
     mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
   } catch (erro) {
     console.error(erro);
@@ -3076,6 +3345,18 @@ function criarBlocoCustos(grupo, iGrupo) {
     aviso.className = "pix-ajuda";
     aviso.textContent = "Defina o preço de venda deste grupo na aba Pagamentos para calcular o lucro.";
     bloco.appendChild(aviso);
+  }
+
+  // Times que cobram um valor diferente do geral neste grupo — o lucro acima
+  // é o da tabela geral; nesses times ele muda.
+  const excecoes = timesComPrecoProprio(grupo.grupo);
+  if (excecoes.length > 0) {
+    const nota = document.createElement("small");
+    nota.className = "pix-ajuda";
+    nota.textContent =
+      "Preço próprio em " + excecoes.map((e) => `${e.nome} (${formatarReais(e.valor)})`).join(", ") +
+      ". O lucro acima usa o preço geral.";
+    bloco.appendChild(nota);
   }
 
   return bloco;
