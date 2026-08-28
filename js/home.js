@@ -14,6 +14,10 @@ const elCarregando = document.getElementById("carregando");
 const elTituloLista = document.getElementById("tituloLista");
 const elSubtituloLista = document.getElementById("subtituloLista");
 const elVoltarClientes = document.getElementById("voltarClientes");
+const elBarraCarrinho = document.getElementById("barraCarrinho");
+const elCarrinhoResumo = document.getElementById("carrinhoResumo");
+const elBtnPagarCarrinho = document.getElementById("btnPagarCarrinho");
+const elBtnEsvaziarCarrinho = document.getElementById("btnEsvaziarCarrinho");
 
 async function carregarInicio() {
   try {
@@ -31,6 +35,10 @@ async function carregarInicio() {
     } catch (e) {
       console.warn("Não foi possível aplicar as configurações gerais.", e);
     }
+
+    // O carrinho vale para o site inteiro: mostramos aqui o que já foi
+    // marcado, mesmo que seja de times que não estão nesta tela.
+    mostrarCarrinho();
 
     const [clientes, snap] = await Promise.all([
       carregarClientes(),
@@ -161,6 +169,47 @@ function mostrarTimes(times, vazioTexto) {
       <span class="time-card-acao">${acao}</span>
     `;
     elLista.appendChild(item);
+  });
+}
+
+// ---------------- Carrinho (barra do rodapé) ----------------
+// A tela inicial não cobra nada: ela só mostra o que já está no carrinho e
+// leva de volta para a página de um dos times, onde o pagamento acontece.
+
+function mostrarCarrinho() {
+  if (!elBarraCarrinho) return;
+  const itens = lerCarrinho();
+  elBarraCarrinho.classList.toggle("oculto", itens.length === 0);
+  document.body.classList.toggle("com-carrinho", itens.length > 0);
+  if (itens.length === 0) return;
+
+  const { total, semPreco } = carrinhoTotal(itens);
+  const times = carrinhoTimes(itens);
+  const valor = total > 0 ? " · " + formatarReais(total) : "";
+  const deQuemE = times.length > 1 ? ` · ${times.length} times` : "";
+  const aviso = semPreco > 0 ? ` (${semPreco} sem preço definido)` : "";
+  elCarrinhoResumo.textContent = `${itens.length} camiseta(s)${deQuemE}${valor}${aviso}`;
+  elCarrinhoResumo.title = times.join(" · ");
+  if (elBtnPagarCarrinho) {
+    elBtnPagarCarrinho.textContent = total > 0 ? `Pagar ${formatarReais(total)}` : "Pagar";
+  }
+}
+
+if (elBtnEsvaziarCarrinho) {
+  elBtnEsvaziarCarrinho.addEventListener("click", () => {
+    if (confirm("Tirar todas as camisetas do carrinho?")) {
+      gravarCarrinho([]);
+      mostrarCarrinho();
+    }
+  });
+}
+if (elBtnPagarCarrinho) {
+  elBtnPagarCarrinho.addEventListener("click", () => {
+    const itens = lerCarrinho();
+    if (itens.length === 0) return;
+    // O pagamento mora na página do time; `?carrinho=1` abre direto nele.
+    window.location.href =
+      "time.html?id=" + encodeURIComponent(itens[0].timeId) + "&carrinho=1";
   });
 }
 

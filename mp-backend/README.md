@@ -18,17 +18,29 @@ Roda de graça na **Vercel** (plano Hobby, sem cartão). Funções:
 - `lib/itens.js` — monta a lista de camisetas da cobrança (uma ou o carrinho inteiro),
   busca cada aluno, calcula os preços e registra a cobrança.
 
-### Carrinho: uma cobrança com várias camisetas
+### Carrinho: uma cobrança com várias camisetas, de vários times
 
-Os dois endpoints de cobrança aceitam `alunoIds: ["id1", "id2", …]` (e continuam aceitando
-o antigo `alunoId`, de uma camiseta só). Sai **uma** cobrança, com um item por camiseta —
-o pagador vê a lista na tela do Mercado Pago —, e o webhook marca **todas** como pagas.
+Os dois endpoints de cobrança aceitam três formatos no corpo, do mais novo para o mais
+antigo — e todos continuam funcionando:
+
+```jsonc
+{ "itens": [ { "timeId": "3o-ano-a", "alunoId": "abc" },
+             { "timeId": "1o-ano-b", "alunoId": "def" } ] }   // carrinho (pode cruzar times)
+{ "timeId": "3o-ano-a", "alunoIds": ["abc", "def"] }          // carrinho de um time só
+{ "timeId": "3o-ano-a", "alunoId": "abc" }                    // uma camiseta
+```
+
+Sai **uma** cobrança, com um item por camiseta — o pagador vê a lista na tela do Mercado
+Pago —, e o webhook marca **todas** como pagas. Cada camiseta é cobrada pelo preço do
+**seu** time (a tabela geral ou a própria do time), e não pelo preço de um time só: é isso
+que deixa um responsável com filhos em times diferentes pagar tudo junto.
 
 Como o `external_reference` do Mercado Pago é curto demais para levar uma lista de ids, a
-lista fica num documento da coleção **`cobrancas`** do Firestore e a referência vira
-`lote:<id-da-cobrança>`. O webhook lê esse documento para saber quem marcar. Referências no
-formato antigo (`<timeId>__<alunoId>`) continuam funcionando, então as cobranças criadas
-antes desta versão são confirmadas normalmente.
+lista (com o time de cada camiseta) fica num documento da coleção **`cobrancas`** do
+Firestore e a referência vira `lote:<id-da-cobrança>`. O webhook lê esse documento para
+saber quem marcar. Ele também entende os dois formatos anteriores: cobranças gravadas com
+`timeId` + `alunoIds` e referências `<timeId>__<alunoId>`, então nada criado antes desta
+versão deixa de ser confirmado.
 
 O limite é de **60 camisetas por cobrança** (`MAX_ITENS` em `lib/itens.js`), só para uma
 requisição estranha não virar centenas de leituras no Firestore.

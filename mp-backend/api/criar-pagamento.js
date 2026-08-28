@@ -4,7 +4,7 @@
 // O valor é calculado AQUI (a partir do Firestore), não confiando no cliente.
 const { db, admin, COL_TIMES } = require("../lib/firebase");
 const { GRUPOS_PADRAO } = require("../lib/preco");
-const { idsDoPedido, carregarItens, registrarCobranca } = require("../lib/itens");
+const { paresDoPedido, carregarItens, registrarCobranca } = require("../lib/itens");
 const { setCors } = require("../lib/http");
 
 module.exports = async (req, res) => {
@@ -16,10 +16,9 @@ module.exports = async (req, res) => {
     // "turmaId" é o nome antigo do campo; aceito para o site publicado antes
     // da renomeação continuar funcionando até atualizar.
     const corpo = req.body || {};
-    const timeId = corpo.timeId || corpo.turmaId;
-    const ids = idsDoPedido(corpo);
-    if (!timeId || ids.length === 0) {
-      return res.status(400).json({ erro: "Informe timeId e alunoIds." });
+    const pares = paresDoPedido(corpo);
+    if (pares.length === 0) {
+      return res.status(400).json({ erro: "Informe as camisetas em `itens` ({ timeId, alunoId })." });
     }
 
     const [geralSnap, tamSnap] = await Promise.all([
@@ -31,7 +30,7 @@ module.exports = async (req, res) => {
 
     // Usa o preço do time (o geral, ou o personalizado dele, se houver).
     const { itens, total, erro, status } = await carregarItens({
-      db, colecao: COL_TIMES, timeId, ids, geral, grupos
+      db, colecao: COL_TIMES, pares, geral, grupos
     });
     if (erro) return res.status(status).json({ erro });
 
@@ -40,12 +39,13 @@ module.exports = async (req, res) => {
     }
 
     const baseUrl = `https://${req.headers.host}`;
-    const idempotencia = (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) || `${timeId}-${ids.join("-")}-${Date.now()}`;
+    const idempotencia = (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) ||
+      `${pares.map((p) => p.timeId + "-" + p.alunoId).join("_")}-${Date.now()}`;
     const primeiroNome = String(itens[0].aluno.nome || "Aluno").trim().split(/\s+/)[0];
 
     // Uma cobrança só, com a lista de camisetas guardada para o webhook.
     const { cobrancaId, referencia } = await registrarCobranca({
-      db, admin, timeId, itens, total, origem: "pix-direto"
+      db, admin, itens, total, origem: "pix-direto"
     });
     const descricao = itens.length === 1
       ? `Camiseta interclasse - ${itens[0].aluno.nome || ""}`.trim()

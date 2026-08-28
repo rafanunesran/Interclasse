@@ -74,13 +74,16 @@ module.exports = async (req, res) => {
 
     if (externalReference) {
       const alvo = await resolverCobranca(externalReference);
-      if (alvo && alvo.timeId && alvo.alunoIds.length > 0) {
-        // Uma cobrança pode ter várias camisetas (carrinho): todas viram pagas
-        // no mesmo lote, para nenhuma ficar para trás se algo falhar no meio.
+      if (alvo && alvo.itens.length > 0) {
+        // Uma cobrança pode ter várias camisetas, inclusive de times
+        // diferentes (o carrinho de um responsável com filhos em mais de um
+        // time). Todas viram pagas no mesmo lote — que atravessa coleções —,
+        // para nenhuma ficar para trás se algo falhar no meio.
         const lote = db.batch();
-        const colecao = db.collection(COL_TIMES).doc(alvo.timeId).collection("alunos");
-        alvo.alunoIds.forEach((alunoId) => {
-          lote.update(colecao.doc(alunoId), {
+        alvo.itens.forEach((item) => {
+          const ref = db.collection(COL_TIMES).doc(item.timeId)
+            .collection("alunos").doc(item.alunoId);
+          lote.update(ref, {
             pago: true,
             pagamentoForma: "pix",
             pagamentoDeclarado: false,
@@ -95,7 +98,8 @@ module.exports = async (req, res) => {
           });
         }
         await lote.commit();
-        console.log(`Pagamento aprovado: time ${alvo.timeId}, ${alvo.alunoIds.length} camiseta(s).`);
+        const times = [...new Set(alvo.itens.map((i) => i.timeId))];
+        console.log(`Pagamento aprovado: ${alvo.itens.length} camiseta(s) em ${times.length} time(s) (${times.join(", ")}).`);
       }
     }
 
@@ -108,7 +112,7 @@ module.exports = async (req, res) => {
 };
 
 // Descobre quais camisetas a cobrança paga, a partir do external_reference.
-// Dois formatos:
+// Devolve { itens: [{ timeId, alunoId }], cobrancaId }. Dois formatos:
 //   "lote:<id>"        -> documento em `cobrancas` com a lista das camisetas
 //                         (o campo do MP é curto demais para levar os ids).
 //   "<timeId>__<id>"   -> formato antigo, de uma camiseta só. Continua aceito
@@ -125,13 +129,24 @@ async function resolverCobranca(externalReference) {
       return null;
     }
     const dados = snap.data();
+
+    // Formato atual: cada camiseta com o seu time.
+    if (Array.isArray(dados.itens)) {
+      const itens = dados.itens.filter(
+        (i) => i && typeof i.timeId === "string" && typeof i.alunoId === "string"
+      );
+      return { itens, cobrancaId };
+    }
+
+    // Cobranças gravadas antes do carrinho entre times: um time só.
     const alunoIds = Array.isArray(dados.alunoIds) ? dados.alunoIds.filter((x) => typeof x === "string") : [];
-    return { timeId: dados.timeId, alunoIds, cobrancaId };
+    const itens = dados.timeId ? alunoIds.map((alunoId) => ({ timeId: dados.timeId, alunoId })) : [];
+    return { itens, cobrancaId };
   }
 
   const [timeId, alunoId] = ref.split("__");
   if (!timeId || !alunoId) return null;
-  return { timeId, alunoIds: [alunoId], cobrancaId: null };
+  return { itens: [{ timeId, alunoId }], cobrancaId: null };
 }
 
 // Valida a assinatura do webhook (cabeçalho x-signature) conforme o padrão do MP:

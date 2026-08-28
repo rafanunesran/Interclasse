@@ -234,24 +234,35 @@ Quem vai pagar não precisa fazer uma cobrança por camiseta. Na lista do pedido
 camiseta ainda não paga tem a caixinha **"somar"** na coluna **Carrinho**: marque quantas
 quiser e a barra no rodapé mostra a quantidade e o total, com o botão **Pagar**.
 
+**O carrinho vale para o site inteiro, não para um time só.** Um responsável com filhos em
+times diferentes abre o pedido de cada time, marca as camisetas de cada um e paga **tudo
+junto**: a barra acompanha entre as páginas e mostra de quantos times é o carrinho. A barra
+aparece também na tela inicial, com um botão que leva de volta ao pagamento.
+
 - **Sem login e sem cadastro.** O carrinho é só uma lista guardada no navegador de quem
   está pagando (`localStorage`), então cada pessoa tem o seu: dois pais pagando pelo mesmo
   link, cada um no seu celular, não se atrapalham. Ele sobrevive a recarregar a página e
   some sozinho quando as camisetas são pagas.
 - **PIX (padrão):** sai **um** QR Code / copia e cola com a **soma** das camisetas
-  escolhidas. O botão **"Já paguei as N camisetas"** avisa a organização de todas de uma
-  vez (elas ficam *Aguardando confirmação*, e você confirma cada uma no Super Admin).
+  escolhidas, mesmo que sejam de times diferentes (cada uma pelo preço do seu time). O
+  botão **"Já paguei as N camisetas"** avisa a organização de todas de uma vez — elas ficam
+  *Aguardando confirmação* na lista de cada time, e você confirma no Super Admin.
 - **Mercado Pago (opcional):** sai **uma** cobrança com um item por camiseta — o pagador vê
-  a lista na tela do Mercado Pago. Quando o PIX cai, o webhook marca **todas** como pagas.
+  a lista na tela do Mercado Pago. Quando o PIX cai, o webhook marca **todas** como pagas,
+  em todos os times envolvidos.
 - O botão **Pagar** de cada linha continua ali para quem quer pagar só aquela camiseta.
 - Uma camiseta só entra no carrinho se puder ser paga agora: pedido na fase de pagamento,
   não suspenso, ainda não paga e **sem ajuste pendente** (ajuste em aberto trava o
   pagamento, como antes).
+- O carrinho é **reconferido no banco** ao abrir a página e antes de cobrar: o que mudou de
+  situação (pagou por outro caminho, ganhou um ajuste, o pedido mudou de etapa) sai da lista
+  com um aviso, e preço/tamanho são atualizados. Ninguém paga um valor desatualizado.
 
-> Com o Mercado Pago ligado, a lista de camisetas de cada cobrança fica em `cobrancas` no
-> Firestore — o campo de referência do Mercado Pago é curto demais para levar todos os ids.
-> Essa coleção é **fechada para o site** (`firestore.rules`): só o backend escreve e lê
-> nela, pelo Admin SDK. Cobranças criadas antes desta versão continuam sendo reconhecidas.
+> Com o Mercado Pago ligado, a lista de camisetas de cada cobrança — com o time de cada uma
+> — fica em `cobrancas` no Firestore, porque o campo de referência do Mercado Pago é curto
+> demais para levar todos os ids. Essa coleção é **fechada para o site**
+> (`firestore.rules`): só o backend escreve e lê nela, pelo Admin SDK. Cobranças criadas
+> antes desta versão continuam sendo reconhecidas.
 
 ### Status de pagamento
 

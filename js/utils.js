@@ -581,6 +581,159 @@ function renderizarBarraStatus(container, statusId) {
 }
 
 // ============================================================
+// CARRINHO — pagar várias camisetas de uma vez, sem login
+// ============================================================
+// O carrinho é uma lista guardada NESTE navegador (localStorage): não existe
+// conta nem cadastro, e cada pessoa tem o seu. Ele vale para o site inteiro,
+// não para um time só — um responsável com filhos em times diferentes junta
+// tudo num pagamento só.
+//
+// Cada item guarda uma cópia do que a tela precisa (nome, tamanho, nome do
+// time e valor), para a barra do carrinho aparecer sem ler o banco de novo.
+// Antes de pagar, tudo é reconferido no Firestore — ver revalidarCarrinho().
+
+const CHAVE_CARRINHO = "carrinho-interclasse";
+
+// Identidade de um item: a camiseta é única dentro do time.
+function chaveDoItem(timeId, alunoId) {
+  return timeId + "/" + alunoId;
+}
+
+// localStorage pode falhar (janela anônima, site sem permissão de dados):
+// aí o carrinho só deixa de sobreviver ao recarregar, o resto continua igual.
+function lerCarrinho() {
+  try {
+    const bruto = localStorage.getItem(CHAVE_CARRINHO);
+    const lista = bruto ? JSON.parse(bruto) : [];
+    if (!Array.isArray(lista)) return [];
+    return lista.filter((i) => i && typeof i.timeId === "string" && typeof i.alunoId === "string");
+  } catch (e) {
+    return [];
+  }
+}
+
+function gravarCarrinho(itens) {
+  try {
+    localStorage.setItem(CHAVE_CARRINHO, JSON.stringify(itens || []));
+  } catch (e) {
+    console.warn("Não deu para guardar o carrinho neste navegador.", e);
+  }
+}
+
+function carrinhoTem(itens, timeId, alunoId) {
+  const chave = chaveDoItem(timeId, alunoId);
+  return (itens || []).some((i) => chaveDoItem(i.timeId, i.alunoId) === chave);
+}
+
+// Adiciona (sem repetir) e devolve a lista nova.
+function carrinhoAdicionar(itens, item) {
+  const lista = itens || [];
+  if (carrinhoTem(lista, item.timeId, item.alunoId)) return lista;
+  return lista.concat([item]);
+}
+
+function carrinhoRemover(itens, timeId, alunoId) {
+  const chave = chaveDoItem(timeId, alunoId);
+  return (itens || []).filter((i) => chaveDoItem(i.timeId, i.alunoId) !== chave);
+}
+
+// Soma do carrinho e quantos itens ficaram sem preço definido.
+function carrinhoTotal(itens) {
+  let total = 0;
+  let semPreco = 0;
+  (itens || []).forEach((i) => {
+    const valor = Number(i.valor || 0);
+    if (valor > 0) total += valor; else semPreco++;
+  });
+  return { total, semPreco };
+}
+
+// Nomes dos times representados no carrinho, na ordem em que aparecem.
+function carrinhoTimes(itens) {
+  const nomes = [];
+  (itens || []).forEach((i) => {
+    const nome = i.time || i.timeId;
+    if (!nomes.includes(nome)) nomes.push(nome);
+  });
+  return nomes;
+}
+
+// Uma camiseta pode ser paga agora? Vale para o time dela, não para o time
+// da página aberta — é o que permite juntar filhos de times diferentes.
+function podePagarAgora(time, aluno) {
+  if (!time || pedidoSuspenso(time) || !pedidoAceitaPagamento(time)) return false;
+  if (!aluno || aluno.excluido || aluno.pago || aluno.ajusteSolicitado) return false;
+  return true;
+}
+
+// Reconfere o carrinho guardado e salva o resultado.
+async function revalidarCarrinho(cfg) {
+  const resultado = await revalidarItens(cfg, lerCarrinho());
+  gravarCarrinho(resultado.itens);
+  return resultado;
+}
+
+// Reconfere uma lista de itens no Firestore: atualiza nome/tamanho/preço de
+// cada camiseta e tira o que não pode mais ser pago (já paga, apagada da
+// lista, com ajuste em aberto, ou de um time que saiu da fase de pagamento).
+// Devolve { itens, removidos } — `removidos` alimenta o aviso na tela.
+async function revalidarItens(cfg, lista) {
+  const itens = lista || [];
+  if (itens.length === 0) return { itens: [], removidos: [] };
+
+  // Um `get` por time e um por camiseta: o carrinho é pequeno por natureza.
+  const times = {};
+  await Promise.all(
+    [...new Set(itens.map((i) => i.timeId))].map(async (timeId) => {
+      try {
+        const doc = await db.collection(COL_TIMES).doc(timeId).get();
+        times[timeId] = doc.exists ? doc.data() : null;
+      } catch (e) {
+        times[timeId] = undefined; // erro de leitura: mantém o item como está
+      }
+    })
+  );
+
+  const validos = [];
+  const removidos = [];
+  await Promise.all(
+    itens.map(async (item) => {
+      const time = times[item.timeId];
+      if (time === undefined) { validos.push(item); return; } // não deu para conferir
+      if (time === null) { removidos.push(item); return; }    // time apagado
+
+      let aluno = null;
+      try {
+        const doc = await db.collection(COL_TIMES).doc(item.timeId)
+          .collection("alunos").doc(item.alunoId).get();
+        aluno = doc.exists ? doc.data() : null;
+      } catch (e) {
+        validos.push(item);
+        return;
+      }
+      if (!podePagarAgora(time, aluno)) { removidos.push(item); return; }
+
+      validos.push({
+        timeId: item.timeId,
+        alunoId: item.alunoId,
+        nome: aluno.nome || "",
+        tamanho: aluno.tamanho || "",
+        numero: aluno.numero || "",
+        nomeCamiseta: aluno.nomeCamiseta || "",
+        time: time.nome || item.timeId,
+        valor: Number(precoDoTamanhoNoTime(aluno.tamanho, cfg, item.timeId) || 0)
+      });
+    })
+  );
+
+  // Mantém a ordem em que foram colocados no carrinho.
+  const ordem = itens.map((i) => chaveDoItem(i.timeId, i.alunoId));
+  validos.sort((a, b) => ordem.indexOf(chaveDoItem(a.timeId, a.alunoId)) - ordem.indexOf(chaveDoItem(b.timeId, b.alunoId)));
+
+  return { itens: validos, removidos };
+}
+
+// ============================================================
 // IMAGEM DA CAMISETA (Google Drive via Apps Script)
 // ============================================================
 

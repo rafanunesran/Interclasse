@@ -1,12 +1,13 @@
 // POST /api/criar-preferencia
 // Checkout Pro: cria uma "preferência" no Mercado Pago e devolve a URL da
 // página hospedada do MP (init_point). O site redireciona o pagador para lá.
-// Aceita uma camiseta ou o carrinho inteiro: sai uma cobrança só, com um
-// item por camiseta. O valor é calculado AQUI (a partir do Firestore),
-// nunca vem do cliente.
+// Aceita uma camiseta ou o carrinho inteiro — que pode ter camisetas de
+// times diferentes (um responsável com filhos em vários times). Sai uma
+// cobrança só, com um item por camiseta. O valor é calculado AQUI (a partir
+// do Firestore), nunca vem do cliente.
 const { db, admin, COL_TIMES } = require("../lib/firebase");
 const { GRUPOS_PADRAO } = require("../lib/preco");
-const { idsDoPedido, carregarItens, registrarCobranca } = require("../lib/itens");
+const { paresDoPedido, carregarItens, registrarCobranca } = require("../lib/itens");
 const { setCors } = require("../lib/http");
 
 module.exports = async (req, res) => {
@@ -18,11 +19,10 @@ module.exports = async (req, res) => {
     // "turmaId" é o nome antigo do campo; aceito para o site publicado antes
     // da renomeação continuar funcionando até atualizar.
     const entrada = req.body || {};
-    const timeId = entrada.timeId || entrada.turmaId;
     const retornoUrl = entrada.retornoUrl;
-    const ids = idsDoPedido(entrada);
-    if (!timeId || ids.length === 0) {
-      return res.status(400).json({ erro: "Informe timeId e alunoIds." });
+    const pares = paresDoPedido(entrada);
+    if (pares.length === 0) {
+      return res.status(400).json({ erro: "Informe as camisetas em `itens` ({ timeId, alunoId })." });
     }
     if (!process.env.MP_ACCESS_TOKEN) {
       return res.status(500).json({ erro: "Backend sem MP_ACCESS_TOKEN configurado." });
@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
 
     // Usa o preço do time (o geral, ou o personalizado dele, se houver).
     const { itens, total, erro, status } = await carregarItens({
-      db, colecao: COL_TIMES, timeId, ids, geral, grupos
+      db, colecao: COL_TIMES, pares, geral, grupos
     });
     if (erro) return res.status(status).json({ erro });
 
@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
 
     // Uma cobrança, um item por camiseta: o pagador vê a lista no Mercado Pago.
     const { cobrancaId, referencia } = await registrarCobranca({
-      db, admin, timeId, itens, total, origem: "checkout-pro"
+      db, admin, itens, total, origem: "checkout-pro"
     });
 
     const corpo = {

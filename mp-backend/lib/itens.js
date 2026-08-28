@@ -7,42 +7,68 @@ const { precoDoTamanhoNoTime } = require("./preco");
 // virar centenas de leituras no Firestore; 60 cobre até uma turma inteira.
 const MAX_ITENS = 60;
 
-// Ids que vieram do site. Aceita a lista nova (`alunoIds`) e o campo antigo
-// de uma camiseta só (`alunoId`), sem duplicados e dentro do teto.
-function idsDoPedido(entrada) {
-  const bruto = Array.isArray(entrada.alunoIds) && entrada.alunoIds.length > 0
-    ? entrada.alunoIds
-    : [entrada.alunoId];
-  const vistos = new Set();
-  const ids = [];
-  bruto.forEach((id) => {
-    if (typeof id !== "string") return;
-    const limpo = id.trim();
-    // "/" quebraria o caminho do documento; ids do Firestore nunca têm.
-    if (!limpo || limpo.includes("/") || vistos.has(limpo)) return;
-    vistos.add(limpo);
-    ids.push(limpo);
-  });
-  return ids.slice(0, MAX_ITENS);
+// Um id de documento válido (sem "/", que quebraria o caminho no Firestore).
+function idValido(id) {
+  return typeof id === "string" && id.trim() !== "" && !id.includes("/");
 }
 
-// Lê os alunos e calcula o preço de cada um (o do time, que pode ser próprio).
-// Devolve { itens, total } ou { erro } quando algum id não serve.
-async function carregarItens({ db, colecao, timeId, ids, geral, grupos }) {
-  const refs = ids.map((id) => db.collection(colecao).doc(timeId).collection("alunos").doc(id));
+// Camisetas que vieram do site, como pares { timeId, alunoId }. Três formatos,
+// do mais novo para o mais antigo:
+//   itens: [{ timeId, alunoId }]  -> carrinho, que pode ter times diferentes
+//   timeId + alunoIds: [...]      -> carrinho de um time só
+//   timeId + alunoId              -> uma camiseta
+// Sem duplicados e dentro do teto.
+function paresDoPedido(entrada) {
+  const timePadrao = entrada.timeId || entrada.turmaId;
+  const bruto = [];
+
+  if (Array.isArray(entrada.itens) && entrada.itens.length > 0) {
+    entrada.itens.forEach((i) => {
+      if (i && typeof i === "object") bruto.push({ timeId: i.timeId || timePadrao, alunoId: i.alunoId });
+    });
+  } else if (Array.isArray(entrada.alunoIds) && entrada.alunoIds.length > 0) {
+    entrada.alunoIds.forEach((alunoId) => bruto.push({ timeId: timePadrao, alunoId }));
+  } else if (entrada.alunoId) {
+    bruto.push({ timeId: timePadrao, alunoId: entrada.alunoId });
+  }
+
+  const vistos = new Set();
+  const pares = [];
+  bruto.forEach((par) => {
+    if (!idValido(par.timeId) || !idValido(par.alunoId)) return;
+    const chave = par.timeId + "/" + par.alunoId;
+    if (vistos.has(chave)) return;
+    vistos.add(chave);
+    pares.push({ timeId: par.timeId.trim(), alunoId: par.alunoId.trim() });
+  });
+  return pares.slice(0, MAX_ITENS);
+}
+
+// Lê os alunos e calcula o preço de cada um. O preço é o do TIME DAQUELA
+// camiseta (que pode ter tabela própria), e não o de um time só — é isso que
+// deixa o carrinho juntar filhos de times diferentes numa cobrança só.
+// Devolve { itens, total } ou { erro } quando alguma camiseta não serve.
+async function carregarItens({ db, colecao, pares, geral, grupos }) {
+  const refs = pares.map((p) => db.collection(colecao).doc(p.timeId).collection("alunos").doc(p.alunoId));
   const snaps = await Promise.all(refs.map((r) => r.get()));
 
   const itens = [];
   let total = 0;
   for (let i = 0; i < snaps.length; i++) {
-    if (!snaps[i].exists) return { erro: `Aluno não encontrado (${ids[i]}).`, status: 404 };
+    if (!snaps[i].exists) return { erro: `Aluno não encontrado (${pares[i].alunoId}).`, status: 404 };
     const aluno = snaps[i].data();
-    const valor = precoDoTamanhoNoTime(aluno.tamanho, geral, timeId, grupos);
+    const valor = precoDoTamanhoNoTime(aluno.tamanho, geral, pares[i].timeId, grupos);
     if (!valor || valor <= 0) {
-      return { erro: `Não há preço definido para o tamanho de ${aluno.nome || ids[i]}.`, status: 400 };
+      return { erro: `Não há preço definido para o tamanho de ${aluno.nome || pares[i].alunoId}.`, status: 400 };
     }
     total += valor;
-    itens.push({ id: ids[i], ref: refs[i], aluno, valor: Number(Number(valor).toFixed(2)) });
+    itens.push({
+      timeId: pares[i].timeId,
+      alunoId: pares[i].alunoId,
+      ref: refs[i],
+      aluno,
+      valor: Number(Number(valor).toFixed(2))
+    });
   }
   return { itens, total: Number(total.toFixed(2)) };
 }
@@ -51,10 +77,12 @@ async function carregarItens({ db, colecao, timeId, ids, geral, grupos }) {
 // vai no `external_reference` do Mercado Pago. O webhook volta por aqui para
 // saber quem marcar como pago: a referência do MP é curta demais para levar
 // uma lista de ids, então ela leva só o id deste documento.
-async function registrarCobranca({ db, admin, timeId, itens, total, origem }) {
+async function registrarCobranca({ db, admin, itens, total, origem }) {
+  const times = [...new Set(itens.map((i) => i.timeId))];
   const doc = await db.collection("cobrancas").add({
-    timeId,
-    alunoIds: itens.map((i) => i.id),
+    // Cada camiseta com o seu time: uma cobrança pode atravessar times.
+    itens: itens.map((i) => ({ timeId: i.timeId, alunoId: i.alunoId })),
+    times,
     valor: total,
     origem: origem || "",
     status: "aberta",
@@ -63,4 +91,4 @@ async function registrarCobranca({ db, admin, timeId, itens, total, origem }) {
   return { cobrancaId: doc.id, referencia: `lote:${doc.id}` };
 }
 
-module.exports = { MAX_ITENS, idsDoPedido, carregarItens, registrarCobranca };
+module.exports = { MAX_ITENS, paresDoPedido, carregarItens, registrarCobranca };
