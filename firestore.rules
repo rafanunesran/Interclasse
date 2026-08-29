@@ -52,6 +52,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Levas de produção (aba Produção do Super Admin): o que foi escolhido
+    // para ir à impressão de uma vez, incluindo camisetas avulsas que não
+    // estão em nenhum pedido. É controle interno da produção, então nem a
+    // leitura é pública: só a conta administradora entra aqui.
+    match /producao/{levaId} {
+      allow read, write: if ehAdmin();
+
+      match /itens/{itemId} {
+        allow read, write: if ehAdmin();
+      }
+    }
+
     // Times (a coleção continua com o nome antigo, "turmas", para não
     // quebrar os dados já cadastrados — ver COL_TIMES em js/utils.js).
     match /turmas/{timeId} {

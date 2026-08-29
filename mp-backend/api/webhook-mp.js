@@ -2,6 +2,9 @@
 // Recebe a notificação do Mercado Pago quando um pagamento muda de status.
 // Valida a assinatura, consulta o pagamento e, se aprovado, marca o aluno
 // como pago no Firestore (via Admin SDK — não depende das regras).
+// Aproveita a mesma consulta para guardar a TAXA do Mercado Pago (o que ele
+// desconta do recebimento) e o valor líquido, para o Financeiro mostrar
+// quanto de fato entrou na conta e não só o preço da camiseta.
 const crypto = require("crypto");
 const { db, admin, COL_TIMES } = require("../lib/firebase");
 
@@ -29,6 +32,7 @@ module.exports = async (req, res) => {
     // Descobre a referência externa e se está aprovado, a partir do tipo de aviso.
     let externalReference = null;
     let pagamentoId = null;
+    let valores = null; // { bruto, taxa, liquido } do Mercado Pago
 
     if (tipo === "payment") {
       // Payments API e Checkout Pro (o pagamento herda o external_reference).
@@ -40,6 +44,7 @@ module.exports = async (req, res) => {
       if (pg.status === "approved") {
         externalReference = pg.external_reference;
         pagamentoId = pg.id;
+        valores = extrairValores(pg);
       }
     } else if (tipo === "merchant_order") {
       // Checkout Pro também notifica por merchant_order.
@@ -72,6 +77,10 @@ module.exports = async (req, res) => {
       return res.status(200).end();
     }
 
+    // merchant_order e order só trazem o id do pagamento; a taxa está no
+    // pagamento em si, então buscamos o detalhe dele.
+    if (!valores && pagamentoId) valores = await valoresDoPagamento(pagamentoId);
+
     if (externalReference) {
       const alvo = await resolverCobranca(externalReference);
       if (alvo && alvo.itens.length > 0) {
@@ -79,27 +88,44 @@ module.exports = async (req, res) => {
         // diferentes (o carrinho de um responsável com filhos em mais de um
         // time). Todas viram pagas no mesmo lote — que atravessa coleções —,
         // para nenhuma ficar para trás se algo falhar no meio.
+        // A taxa vem do pagamento inteiro; aqui ela é rateada camiseta a
+        // camiseta, para o Financeiro somar o líquido por aluno/time.
+        const rateio = ratearValores(alvo.itens, valores);
+
         const lote = db.batch();
-        alvo.itens.forEach((item) => {
+        alvo.itens.forEach((item, i) => {
           const ref = db.collection(COL_TIMES).doc(item.timeId)
             .collection("alunos").doc(item.alunoId);
+          const parte = rateio ? rateio[i] : null;
+          const apagar = admin.firestore.FieldValue.delete();
           lote.update(ref, {
             pago: true,
             pagamentoForma: "pix",
             pagamentoDeclarado: false,
-            pagamentoMpId: pagamentoId ? String(pagamentoId) : admin.firestore.FieldValue.delete(),
+            pagamentoMpId: pagamentoId ? String(pagamentoId) : apagar,
+            // Sem o detalhe do MP, os campos de taxa saem do documento em vez
+            // de ficarem com um valor velho de uma tentativa anterior.
+            pagamentoBruto: parte ? parte.bruto : apagar,
+            pagamentoTaxa: parte ? parte.taxa : apagar,
+            pagamentoLiquido: parte ? parte.liquido : apagar,
             pagamentoEm: admin.firestore.FieldValue.serverTimestamp()
           });
         });
         if (alvo.cobrancaId) {
           lote.update(db.collection("cobrancas").doc(alvo.cobrancaId), {
             status: "paga",
+            valorBruto: valores ? valores.bruto : admin.firestore.FieldValue.delete(),
+            taxa: valores ? valores.taxa : admin.firestore.FieldValue.delete(),
+            valorLiquido: valores ? valores.liquido : admin.firestore.FieldValue.delete(),
             pagaEm: admin.firestore.FieldValue.serverTimestamp()
           });
         }
         await lote.commit();
         const times = [...new Set(alvo.itens.map((i) => i.timeId))];
-        console.log(`Pagamento aprovado: ${alvo.itens.length} camiseta(s) em ${times.length} time(s) (${times.join(", ")}).`);
+        const resumoTaxa = valores
+          ? ` Bruto ${valores.bruto} - taxa ${valores.taxa} = líquido ${valores.liquido}.`
+          : " Sem detalhe de taxa do MP.";
+        console.log(`Pagamento aprovado: ${alvo.itens.length} camiseta(s) em ${times.length} time(s) (${times.join(", ")}).${resumoTaxa}`);
       }
     }
 
@@ -130,11 +156,12 @@ async function resolverCobranca(externalReference) {
     }
     const dados = snap.data();
 
-    // Formato atual: cada camiseta com o seu time.
+    // Formato atual: cada camiseta com o seu time (e o seu valor, quando a
+    // cobrança foi criada por uma versão que já o guarda).
     if (Array.isArray(dados.itens)) {
-      const itens = dados.itens.filter(
-        (i) => i && typeof i.timeId === "string" && typeof i.alunoId === "string"
-      );
+      const itens = dados.itens
+        .filter((i) => i && typeof i.timeId === "string" && typeof i.alunoId === "string")
+        .map((i) => ({ timeId: i.timeId, alunoId: i.alunoId, valor: Number(i.valor) || 0 }));
       return { itens, cobrancaId };
     }
 
@@ -147,6 +174,85 @@ async function resolverCobranca(externalReference) {
   const [timeId, alunoId] = ref.split("__");
   if (!timeId || !alunoId) return null;
   return { itens: [{ timeId, alunoId }], cobrancaId: null };
+}
+
+// Consulta um pagamento no MP só para pegar bruto/taxa/líquido. Usada quando o
+// aviso veio como merchant_order ou order, que não trazem esse detalhe.
+async function valoresDoPagamento(pagamentoId) {
+  try {
+    const resp = await fetch(`https://api.mercadopago.com/v1/payments/${pagamentoId}`, {
+      headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` }
+    });
+    const pg = await resp.json();
+    if (!resp.ok) {
+      console.warn("Não foi possível ler a taxa do pagamento:", pg && pg.message);
+      return null;
+    }
+    return extrairValores(pg);
+  } catch (erro) {
+    // Falhar aqui não pode impedir de marcar a camiseta como paga.
+    console.warn("Erro ao consultar a taxa do pagamento:", erro);
+    return null;
+  }
+}
+
+// Bruto, taxa e líquido de um pagamento do Mercado Pago.
+//   fee_details            -> as tarifas cobradas (a nossa é a do "collector")
+//   net_received_amount    -> o que cai na conta depois da tarifa
+// Quando um dos dois falta, o outro completa a conta.
+function extrairValores(pg) {
+  const bruto = Number(pg.transaction_amount || 0);
+  if (!bruto) return null;
+
+  const detalhes = Array.isArray(pg.fee_details) ? pg.fee_details : [];
+  let taxa = detalhes
+    .filter((f) => !f.fee_payer || f.fee_payer === "collector")
+    .reduce((s, f) => s + (Number(f.amount) || 0), 0);
+
+  const td = pg.transaction_details || {};
+  let liquido = td.net_received_amount != null ? Number(td.net_received_amount) : null;
+
+  // Nenhuma das duas informações veio: taxa desconhecida. Não gravamos zero,
+  // que apareceria no relatório como "não teve taxa".
+  if (detalhes.length === 0 && liquido == null) return null;
+
+  if (!taxa && liquido != null) taxa = bruto - liquido;
+  if (liquido == null) liquido = bruto - taxa;
+  if (taxa < 0 || taxa > bruto) return null; // número estranho: melhor não gravar
+
+  return { bruto: centavos(bruto), taxa: centavos(taxa), liquido: centavos(liquido) };
+}
+
+// Divide bruto/taxa/líquido entre as camisetas da cobrança, na proporção do
+// preço de cada uma (cobranças antigas, sem o valor por item, dividem em
+// partes iguais). A sobra dos centavos vai para a última camiseta, para a
+// soma bater exatamente com o que o Mercado Pago informou.
+function ratearValores(itens, valores) {
+  if (!valores || itens.length === 0) return null;
+
+  const pesos = itens.map((i) => (Number(i.valor) > 0 ? Number(i.valor) : 0));
+  const somaPesos = pesos.reduce((s, v) => s + v, 0);
+  const base = somaPesos > 0 ? pesos : itens.map(() => 1);
+  const soma = somaPesos > 0 ? somaPesos : itens.length;
+
+  const partes = itens.map((_, i) => ({
+    bruto: centavos((valores.bruto * base[i]) / soma),
+    taxa: centavos((valores.taxa * base[i]) / soma),
+    liquido: centavos((valores.liquido * base[i]) / soma)
+  }));
+
+  // Ajuste do arredondamento na última parte.
+  const ultima = partes[partes.length - 1];
+  ["bruto", "taxa", "liquido"].forEach((campo) => {
+    const somado = partes.reduce((s, p) => s + p[campo], 0);
+    ultima[campo] = centavos(ultima[campo] + (valores[campo] - somado));
+  });
+  return partes;
+}
+
+// Arredonda para centavos (evita 0.1 + 0.2 aparecendo no relatório).
+function centavos(valor) {
+  return Math.round((Number(valor) || 0) * 100) / 100;
 }
 
 // Valida a assinatura do webhook (cabeçalho x-signature) conforme o padrão do MP:

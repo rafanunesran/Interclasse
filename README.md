@@ -12,7 +12,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
-- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -122,15 +122,35 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 
 A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
-- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time.
-- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho e forma).
+- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos, taxas do Mercado Pago e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time.
+- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia, taxa do Mercado Pago e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho, forma, taxa e líquido).
 - **Evolução** — hoje, ontem, últimos 7 dias (com a variação em relação aos 7 anteriores), gráfico de entradas por dia, fechamento por semana e a projeção de quando o valor em aberto termina de entrar, no ritmo atual.
 - **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por time e as maiores pendências individuais.
-- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira e as camisetas internas), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
+- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira, as camisetas internas e as taxas do Mercado Pago), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
 
 O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por time; a visão **A receber** tem só o filtro por time, porque mostra sempre a situação de hoje.
 
 O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
+
+### Taxas do Mercado Pago
+
+Quando a [confirmação automática](#confirmação-automática-mercado-pago--opcional) está ligada, o
+aviso que o Mercado Pago manda ao aprovar o pagamento **já traz a tarifa cobrada** (`fee_details`)
+e o valor líquido (`transaction_details.net_received_amount`). O webhook grava os dois em cada
+camiseta da cobrança — rateando a taxa na proporção do preço de cada uma, quando a cobrança tem
+mais de uma —, então o Financeiro mostra o que de fato caiu na conta, sem ninguém digitar nada:
+
+- **Visão geral** — card *Taxas do Mercado Pago* (com o percentual médio sobre o que veio online),
+  o líquido ao lado do recebido e o *Lucro realizado* já descontando as taxas.
+- **Extrato diário** — coluna de taxa por dia e, no detalhe, taxa e líquido de cada pagamento.
+- **Resultado (DRE)** — linha `(-) Taxas do Mercado Pago` entre a receita recebida e o lucro realizado.
+- Os CSVs do resumo por time, do extrato, do consolidado por dia e do DRE trazem as colunas de
+  taxa e líquido.
+
+O **previsto** continua sem taxa: ela só existe depois que o pagamento acontece, e varia com o
+meio de pagamento. Pagamento em dinheiro ou PIX marcado na mão não tem taxa — e marcar um
+pagamento manualmente no Super Admin apaga a taxa que porventura estivesse gravada naquela
+camiseta. Cobranças pagas antes desta versão ficam sem taxa registrada (entram como zero).
 
 > O extrato por dia usa a data em que o pagamento foi confirmado. Pagamentos confirmados antes de o sistema passar a gravar essa data aparecem num aviso à parte, fora do agrupamento por dia (mas continuam somando no total recebido).
 
@@ -148,6 +168,9 @@ São dois formatos, com finalidades diferentes.
   nome do estudante), **B: número**, **C: tamanho**.
 - Separador **vírgula**, UTF-8 **sem BOM** — o BOM grudaria no primeiro nome do arquivo.
 - Arquivos: `producao-<time>.csv` (por time) e `producao-interclasse-geral.csv` (todos).
+- A aba **Produção** usa exatamente este formato, mas com um arquivo **por modelo de camiseta**:
+  `producao-<leva>-<modelo>.csv`. Lá o que entra é o que você escolheu, pago ou não — ver
+  [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo).
 
 ```csv
 ANINHA,10,M
@@ -181,6 +204,73 @@ Logística, Entregue), a lista se separa em duas:
 A separação é sempre calculada na hora, a partir do pagamento: se um pendente pagar depois
 (o Super Admin confirma o pagamento na lista), ele entra na produção e passa a sair no CSV
 na próxima exportação.
+
+> Isso vale para os CSVs **do pedido** (aba Inicial e Configurações). Na aba **Produção**, quem
+> escolhe o que entra é você, camiseta por camiseta — é por lá que se adianta a impressão de uma
+> camiseta ainda não paga.
+
+## Aba Produção (levas e um CSV por modelo)
+
+O CSV da aba **Inicial** exporta um pedido inteiro (e só o que foi pago). A aba
+**Produção** faz o contrário: você **monta a leva** escolhendo camiseta por camiseta.
+É o caminho para adiantar um pedaço de um pedido junto com outro — algumas unidades de
+professores saindo na mesma impressão das camisetas de outro time, por exemplo.
+
+Uma **leva** é o que vai para a impressão de uma vez. Cada camiseta dela carrega o seu
+**modelo** (a arte que será impressa) e, na exportação, a leva sai **dividida por modelo**:
+um arquivo para cada arte, porque cada uma é uma abertura diferente no programa de impressão.
+
+### Como se usa
+
+1. **Crie a leva** (nome e, se quiser, uma observação). Ex.: *"Leva 1 — professores + 3º Ano A"*.
+2. **Escolha as camisetas** no card *Escolher camisetas*: marque uma a uma ou use os atalhos
+   **Marcar todas** / **Marcar só as pagas** de cada time. Filtre por time, pagamento, tamanho
+   ou pelo nome; o seletor **Cliente** do topo vale aqui também.
+3. Clique em **Enviar para a produção** e escolha a leva de destino (ou crie uma na hora).
+4. **Acrescente as avulsas**, se houver: dentro da leva, em *"+ Acrescentar camisetas avulsas"*,
+   informe o modelo e cadastre uma a uma (com quantidade) ou **cole uma lista** — uma camiseta
+   por linha, no formato `nome, número, tamanho`.
+5. **Baixe os CSVs**: **Baixar CSVs por modelo** gera um arquivo para cada arte da leva; ou use
+   **CSV deste modelo** no bloco de um modelo só. O **CSV de conferência** traz a leva inteira
+   num arquivo, com time, cliente, modelo e pagamento.
+
+A leva tem uma situação própria — **Em montagem**, **Enviada para impressão** e **Concluída** —,
+que é só do controle interno da produção e **não** mexe no status do pedido de nenhum time.
+
+### O modelo (o que divide os arquivos)
+
+O modelo de cada camiseta vinda de um pedido é, por padrão, o **nome do time** (cada time tem a
+sua arte). Para mudar, use **Editar time → Modelo da camiseta (arte)**:
+
+- dois times que usam a **mesma arte**: dê a eles o mesmo nome de modelo e eles saem
+  **num arquivo só**;
+- um time cuja arte é diferente da dos outros: um nome de modelo próprio o separa.
+
+Dentro da leva, cada linha ainda tem um seletor de modelo — dá para mover uma camiseta
+específica para outra arte (ou para uma nova, pela opção *"Outro modelo…"*) sem mexer no time.
+
+### Pago x não pago
+
+Diferente do CSV da aba Inicial, a leva **não filtra por pagamento**: quem decide o que entra é
+você. É isso que permite adiantar a produção de camisetas ainda não pagas. A tela mostra a
+situação de pagamento de cada linha, e o aviso na hora de enviar diz quantas ainda não foram
+pagas.
+
+### Camisetas que mudam depois de entrar na leva
+
+O que vai para o CSV é sempre o **cadastro de agora**: se o nome for corrigido depois de a
+camiseta entrar na leva, o arquivo sai com o nome corrigido (a linha fica marcada como
+*"Mudou no pedido depois de entrar na leva"*). A leva também guarda uma **cópia** do que estava
+valendo na hora de enviar — ela só é usada se a camiseta for apagada do pedido, e nesse caso a
+linha aparece destacada como *"Já não existe no pedido"*, para você conferir antes de imprimir.
+
+> Vários downloads de uma vez: **Baixar CSVs por modelo** dispara um arquivo por modelo, em
+> fila. Na primeira vez o navegador costuma pedir permissão para baixar vários arquivos do site.
+
+> No Firestore as levas ficam na coleção `producao` (uma leva por documento) e as camisetas
+> escolhidas na subcoleção `itens`. É controle interno, então **nem a leitura é pública**: só a
+> conta administradora entra. Depois de atualizar, **republique o `firestore.rules`** no console
+> do Firebase — a versão anterior não conhecia a coleção `producao`.
 
 ## Tamanhos disponíveis
 
@@ -308,7 +398,7 @@ pagamento no Firestore.
   auto-declaração + confirmação manual.
 - **Ligado**, o Mercado Pago cobra ~0,99% por PIX recebido e o dinheiro passa pela conta MP.
 
-O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Clientes**, **Kanban**, **Financeiro**, **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
+O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Clientes**, **Kanban**, **Produção**, **Financeiro**, **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
 
 Detalhes técnicos:
 

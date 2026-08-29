@@ -10,6 +10,12 @@ const COL_TIMES = "turmas";
 // Coleção dos clientes: cada cliente tem os seus próprios times/pedidos.
 const COL_CLIENTES = "clientes";
 
+// Coleção das levas de produção ("mandar para produção"): cada documento é uma
+// leva, e a subcoleção `itens` guarda as camisetas escolhidas para ela — de
+// times diferentes, de clientes diferentes ou avulsas (professores, reposição).
+const COL_PRODUCAO = "producao";
+const SUB_ITENS_PRODUCAO = "itens";
+
 // Tamanhos padrão (usados quando ainda não há nada salvo no Firestore
 // ou para restaurar o padrão no painel administrativo). NÃO alterar em runtime.
 const TAMANHOS_PADRAO = [
@@ -372,16 +378,40 @@ function nomeNaCamiseta(aluno) {
   return String((aluno && (aluno.nomeCamiseta || aluno.nome)) || "").trim();
 }
 
+// Modelo de camiseta de um time: é a arte que vai ser impressa. Por padrão é o
+// próprio nome do time (cada time tem a sua arte), mas dá para dar um nome de
+// modelo no "Editar time" — assim dois times que usam a MESMA arte saem juntos
+// num arquivo só, e um time cuja arte é diferente sai separado.
+const MODELO_PADRAO = "Sem modelo";
+
+function modeloDoTime(time) {
+  const m = time && time.modeloCamiseta;
+  const texto = String(m || "").trim();
+  if (texto) return texto;
+  return String((time && time.nome) || MODELO_PADRAO).trim() || MODELO_PADRAO;
+}
+
+// Uma linha do CSV de produção: nome na camiseta (A), número (B), tamanho (C).
+function linhaProducaoDe(item) {
+  return [nomeNaCamiseta(item), (item && item.numero) || "", (item && item.tamanho) || ""];
+}
+
+// CSV no padrão do programa de impressão a partir de itens JÁ escolhidos, sem
+// filtrar por pagamento: quem decide o que entra é o Super Admin, na aba
+// Produção (é assim que dá para adiantar camisetas ainda não pagas — as dos
+// professores, por exemplo). Devolve quantas linhas foram geradas.
+function baixarCSVProducaoItens(nomeArquivo, itens) {
+  const linhas = (itens || []).map(linhaProducaoDe);
+  if (linhas.length === 0) return 0;
+  baixarCSV(nomeArquivo, linhas, { separador: ",", bom: false });
+  return linhas.length;
+}
+
 // CSV no padrão do programa de impressão: SEM cabeçalho e separado por vírgula,
 // com nome na camiseta (coluna A), número (B) e tamanho (C). Só entram as
 // camisetas que serão produzidas. Devolve quantas linhas foram geradas.
 function baixarCSVProducao(nomeArquivo, alunos) {
-  const linhas = (alunos || [])
-    .filter(alunoSeraProduzido)
-    .map((a) => [nomeNaCamiseta(a), a.numero || "", a.tamanho || ""]);
-  if (linhas.length === 0) return 0;
-  baixarCSV(nomeArquivo, linhas, { separador: ",", bom: false });
-  return linhas.length;
+  return baixarCSVProducaoItens(nomeArquivo, (alunos || []).filter(alunoSeraProduzido));
 }
 
 // Marca, nas etapas de produção, quem ficou de fora dela por não ter pago.

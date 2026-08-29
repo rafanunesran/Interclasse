@@ -54,6 +54,8 @@ auth.onAuthStateChanged((user) => {
         escutarClientes();
         escutarTimes();
         carregarPainelConfig();
+        // Aba Produção (js/producao.js) — carregada depois deste arquivo.
+        if (typeof escutarLevas === "function") escutarLevas();
       }, 0);
     }
   } else {
@@ -476,6 +478,7 @@ function renderizarTimesAdmin() {
     renderizarKanban();
     renderizarFinanceiro();
     renderizarClientesAdmin();
+    if (typeof renderizarProducao === "function") renderizarProducao();
     return;
   }
 
@@ -511,7 +514,11 @@ function renderizarTimesAdmin() {
 
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(time.nome)} ${status}</h2>
-      <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong></p>
+      <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong>${
+        time.modeloCamiseta
+          ? ` &middot; Modelo: <strong>${escapeHtmlAdmin(time.modeloCamiseta)}</strong>`
+          : ""
+      }</p>
       ${linhaRepresentanteHtml(time)}
       <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
@@ -763,6 +770,8 @@ function renderizarTimesAdmin() {
   renderizarFinanceiro();
   // A aba Clientes conta os times de cada um, então acompanha a lista.
   renderizarClientesAdmin();
+  // A aba Produção escolhe camisetas a partir desta mesma lista.
+  if (typeof renderizarProducao === "function") renderizarProducao();
 }
 
 // Linha do representante no card do pedido: nome e número clicáveis, cada um
@@ -1015,15 +1024,25 @@ function criarCardKanban(timeId, statusId) {
 }
 
 // Atualiza o status de pagamento de um aluno (usado no seletor por linha).
+// Marcar na mão apaga a taxa do Mercado Pago que porventura estivesse gravada:
+// ela vale para o pagamento online que o webhook confirmou, não para o que o
+// admin está registrando agora.
 function atualizarPagamento(timeId, alunoId, valor) {
   const ref = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
+  const apagar = firebase.firestore.FieldValue.delete();
+  const semTaxa = {
+    pagamentoBruto: apagar,
+    pagamentoTaxa: apagar,
+    pagamentoLiquido: apagar
+  };
   if (valor === "pendente") {
-    ref.update({ pago: false, pagamentoForma: "", pagamentoDeclarado: false });
+    ref.update({ pago: false, pagamentoForma: "", pagamentoDeclarado: false, ...semTaxa });
   } else {
     ref.update({
       pago: true,
       pagamentoForma: valor, // "pix" ou "dinheiro"
       pagamentoDeclarado: false,
+      ...semTaxa,
       pagamentoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
   }
@@ -1199,6 +1218,13 @@ function finDiasDesde(data) {
 
 // ---------------- Coleta dos dados ----------------
 
+// Taxa do Mercado Pago cobrada nesta camiseta. Vem do webhook (só nos
+// pagamentos online); no dinheiro e no PIX marcado na mão não existe taxa.
+function taxaMpDoAluno(a) {
+  const taxa = Number(a.pagamentoTaxa);
+  return isNaN(taxa) || taxa < 0 ? 0 : taxa;
+}
+
 // Percorre os times/alunos que passam pelo filtro de cliente e calcula os
 // números do financeiro. venda = preço do tamanho no time (o geral da aba
 // Pagamentos ou o preço personalizado do time); custo = Impressão +
@@ -1208,6 +1234,9 @@ function calcularFinanceiro() {
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
     custos: 0, custosRecebido: 0, custoImpressao: 0, custoCostureira: 0,
+    // Taxas do Mercado Pago já descontadas do que entrou: só existem nos
+    // pagamentos online, que o webhook grava camiseta a camiseta.
+    taxas: 0, qtdComTaxa: 0, recebidoOnline: 0,
     qtd: 0, qtdPagas: 0, qtdAguardando: 0, qtdPendentes: 0,
     qtdInternas: 0, custoInterno: 0,
     porForma: { pix: 0, dinheiro: 0 },
@@ -1221,7 +1250,7 @@ function calcularFinanceiro() {
 
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
     const precos = precosDoTime(configGeralAtual, timeId);
-    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
+    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, taxas: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
@@ -1256,11 +1285,16 @@ function calcularFinanceiro() {
       t.previsto += venda;
 
       if (a.pago) {
+        const taxa = taxaMpDoAluno(a);
         fin.recebido += venda;
         fin.custosRecebido += custo;
+        fin.taxas += taxa;
         fin.qtdPagas++;
         t.recebido += venda;
+        t.taxas += taxa;
         t.pagas++;
+        if (taxa > 0) fin.qtdComTaxa++;
+        if (a.pagamentoMpId) fin.recebidoOnline += venda;
         if (a.pagamentoForma === "dinheiro") fin.porForma.dinheiro += venda;
         else fin.porForma.pix += venda;
       } else if (a.pagamentoDeclarado) {
@@ -1272,6 +1306,7 @@ function calcularFinanceiro() {
       }
     });
     t.aReceber = t.previsto - t.recebido;
+    t.recebidoLiquido = t.recebido - t.taxas;
     t.lucro = t.previsto - t.custos;
     t.vendaveis = t.qtd - t.internas;
     t.margem = t.previsto > 0 ? (t.lucro / t.previsto) * 100 : 0;
@@ -1300,7 +1335,10 @@ function calcularFinanceiro() {
   fin.qtdVendaveis = fin.qtd - fin.qtdInternas;
   fin.aReceber = fin.previsto - fin.recebido;
   fin.lucroPrevisto = fin.previsto - fin.custos;
-  fin.lucroRealizado = fin.recebido - fin.custosRecebido;
+  // O que entrou de verdade na conta: o preço menos a taxa do Mercado Pago.
+  fin.recebidoLiquido = fin.recebido - fin.taxas;
+  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas;
+  fin.taxaMedia = fin.recebidoOnline > 0 ? (fin.taxas / fin.recebidoOnline) * 100 : 0;
   fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
   fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
   fin.ticketMedio = fin.qtdVendaveis > 0 ? fin.previsto / fin.qtdVendaveis : 0;
@@ -1328,12 +1366,14 @@ function finLancamentos() {
         tamanho: a.tamanho,
         valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
         custo: custoDoTamanho(a.tamanho),
+        taxa: taxaMpDoAluno(a), // o que o Mercado Pago descontou
         forma: a.pagamentoForma === "dinheiro" ? "dinheiro" : "pix",
         online: !!a.pagamentoMpId, // confirmado pelo Mercado Pago (automático)
         data: finParaData(a.pagamentoEm)
       });
     });
   });
+  lista.forEach((l) => { l.liquido = l.valor - l.taxa; });
   // Mais recentes primeiro; os sem data ficam no fim.
   lista.sort((x, y) => (y.data ? y.data.getTime() : -1) - (x.data ? x.data.getTime() : -1));
   return lista;
@@ -1414,10 +1454,12 @@ function finAgruparPorDia(lista) {
   lista.forEach((l) => {
     if (!l.data) return;
     const chave = finChaveDia(l.data);
-    if (!mapa[chave]) mapa[chave] = { chave, qtd: 0, total: 0, pix: 0, dinheiro: 0, online: 0, custo: 0, itens: [] };
+    if (!mapa[chave]) mapa[chave] = { chave, qtd: 0, total: 0, pix: 0, dinheiro: 0, online: 0, taxa: 0, liquido: 0, custo: 0, itens: [] };
     const d = mapa[chave];
     d.qtd++;
     d.total += l.valor;
+    d.taxa += l.taxa;
+    d.liquido += l.liquido;
     d.custo += l.custo;
     if (l.forma === "dinheiro") d.dinheiro += l.valor; else d.pix += l.valor;
     if (l.online) d.online += l.valor;
@@ -1616,7 +1658,7 @@ function finViewGeral(alvo, f) {
       <div class="fin-card fin-card-verde">
         <span class="fin-rotulo">Já chegou (recebido)</span>
         <span class="fin-valor">${formatarReais(f.recebido)}</span>
-        <span class="fin-sub">${f.qtdPagas} paga(s)</span>
+        <span class="fin-sub">${f.qtdPagas} paga(s)${f.taxas > 0 ? ` · ${formatarReais(f.recebidoLiquido)} líquido` : ""}</span>
       </div>
       <div class="fin-card fin-card-vermelho">
         <span class="fin-rotulo">Falta chegar (a receber)</span>
@@ -1641,21 +1683,28 @@ function finViewGeral(alvo, f) {
 
     <!-- Custos e lucro -->
     <h3 class="fin-titulo">Custos e lucro</h3>
-    <div class="fin-destaques fin-destaques-3">
+    <div class="fin-destaques fin-destaques-4">
       <div class="fin-card fin-card-click" data-fin-modal="total" role="button" tabindex="0" title="Ver detalhe do custo">
         <span class="fin-rotulo">Custos previstos</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
         <span class="fin-sub fin-link">Impressão + Costureira · ver detalhe ›</span>
       </div>
       <div class="fin-card">
+        <span class="fin-rotulo">Taxas do Mercado Pago</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(f.taxas)}</span>
+        <span class="fin-sub">${f.taxas > 0
+          ? `${f.taxaMedia.toFixed(1)}% do que veio online · ${f.qtdComTaxa} pagamento(s)`
+          : "nenhum pagamento online com taxa registrada"}</span>
+      </div>
+      <div class="fin-card">
         <span class="fin-rotulo">Lucro previsto</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroPrevisto)}</span>
-        <span class="fin-sub">margem ${f.margem.toFixed(0)}% · já desconta as internas</span>
+        <span class="fin-sub">margem ${f.margem.toFixed(0)}% · sem as taxas (só conhecidas ao pagar)</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Lucro realizado</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroRealizado)}</span>
-        <span class="fin-sub">sobre o que já chegou</span>
+        <span class="fin-sub">sobre o que já chegou · já desconta as taxas</span>
       </div>
       ${f.qtdInternas > 0 ? `
       <div class="fin-card fin-card-interno">
@@ -1670,6 +1719,8 @@ function finViewGeral(alvo, f) {
     <div class="resumo-tamanhos">
       <span class="badge pago">PIX: ${formatarReais(f.porForma.pix)}</span>
       <span class="badge pago">Dinheiro: ${formatarReais(f.porForma.dinheiro)}</span>
+      <span class="badge pago">Online (Mercado Pago): ${formatarReais(f.recebidoOnline)}</span>
+      <span class="badge aguardando">Taxas descontadas: ${formatarReais(f.taxas)}</span>
     </div>
 
     ${tabelaClientes}
@@ -1717,6 +1768,8 @@ function finViewExtrato(alvo, f) {
   const pix = dentro.filter((l) => l.forma === "pix").reduce((s, l) => s + l.valor, 0);
   const dinheiro = total - pix;
   const online = dentro.filter((l) => l.forma === "pix" && l.online).reduce((s, l) => s + l.valor, 0);
+  const taxa = dentro.reduce((s, l) => s + l.taxa, 0);
+  const liquido = total - taxa;
   const ticket = dentro.length > 0 ? total / dentro.length : 0;
   const mediaDia = dias.length > 0 ? total / dias.length : 0;
 
@@ -1730,6 +1783,8 @@ function finViewExtrato(alvo, f) {
         <td>${escapeHtmlAdmin(l.tamanho)}</td>
         <td>${l.forma === "dinheiro" ? "Dinheiro" : (l.online ? "PIX (online)" : "PIX")}</td>
         <td class="fin-verde">${formatarReais(l.valor)}</td>
+        <td class="${l.taxa > 0 ? "fin-vermelho" : ""}">${l.taxa > 0 ? "-" + formatarReais(l.taxa) : "—"}</td>
+        <td>${formatarReais(l.liquido)}</td>
       </tr>`).join("");
 
     return `
@@ -1740,11 +1795,12 @@ function finViewExtrato(alvo, f) {
           <td>${formatarReais(d.pix)}</td>
           <td>${formatarReais(d.dinheiro)}</td>
           <td class="fin-verde"><strong>${formatarReais(d.total)}</strong></td>
+          <td class="${d.taxa > 0 ? "fin-vermelho" : ""}">${d.taxa > 0 ? "-" + formatarReais(d.taxa) : "—"}</td>
           <td>${formatarReais(d.acumulado)}</td>
         </tr>
-        ${aberto ? `<tr class="fin-linha-detalhe"><td colspan="6">
+        ${aberto ? `<tr class="fin-linha-detalhe"><td colspan="7">
           <table class="fin-tabela fin-tabela-interna">
-            <thead><tr><th>Hora</th><th>Aluno</th><th>Time</th><th>Tam.</th><th>Forma</th><th>Valor</th></tr></thead>
+            <thead><tr><th>Hora</th><th>Aluno</th><th>Time</th><th>Tam.</th><th>Forma</th><th>Valor</th><th>Taxa MP</th><th>Líquido</th></tr></thead>
             <tbody>${detalhe}</tbody>
           </table>
         </td></tr>` : ""}
@@ -1762,7 +1818,7 @@ function finViewExtrato(alvo, f) {
       <div class="fin-card fin-card-verde">
         <span class="fin-rotulo">Recebido no período</span>
         <span class="fin-valor">${formatarReais(total)}</span>
-        <span class="fin-sub">${dentro.length} pagamento(s) · ${label}</span>
+        <span class="fin-sub">${dentro.length} pagamento(s) · ${label}${taxa > 0 ? ` · líquido ${formatarReais(liquido)}` : ""}</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Média por dia com entrada</span>
@@ -1777,7 +1833,7 @@ function finViewExtrato(alvo, f) {
       <div class="fin-card">
         <span class="fin-rotulo">Recebido em PIX</span>
         <span class="fin-valor fin-valor-md">${formatarReais(pix)}</span>
-        <span class="fin-sub">dinheiro ${formatarReais(dinheiro)} · ${formatarReais(online)} confirmados automaticamente</span>
+        <span class="fin-sub">dinheiro ${formatarReais(dinheiro)} · ${formatarReais(online)} confirmados automaticamente (taxa ${formatarReais(taxa)})</span>
       </div>
     </div>
 
@@ -1788,7 +1844,7 @@ function finViewExtrato(alvo, f) {
       ? "<p>Nenhum recebimento neste período.</p>"
       : `<div class="fin-tabela-wrap">
           <table class="fin-tabela fin-tabela-extrato">
-            <thead><tr><th>Dia</th><th>Qtd</th><th>PIX</th><th>Dinheiro</th><th>Total do dia</th><th>Acumulado no período</th></tr></thead>
+            <thead><tr><th>Dia</th><th>Qtd</th><th>PIX</th><th>Dinheiro</th><th>Total do dia</th><th>Taxa MP</th><th>Acumulado no período</th></tr></thead>
             ${linhas}
           </table>
         </div>`}
@@ -2114,6 +2170,7 @@ function finViewResultado(alvo, f) {
     ["(=) Lucro previsto", f.lucroPrevisto, "total"],
     ["Receita já recebida", f.recebido, "linha"],
     ["(-) Custo das camisetas já pagas", -f.custosRecebido, "linha"],
+    ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
     ["(=) Lucro realizado", f.lucroRealizado, "total"],
     ["Custo das camisetas internas (sem receita)", -f.custoInterno, "linha"],
     ["(=) Caixa a receber", f.aReceber, "total"]
@@ -2138,7 +2195,7 @@ function finViewResultado(alvo, f) {
       <div class="fin-card fin-card-verde">
         <span class="fin-rotulo">Margem prevista</span>
         <span class="fin-valor fin-valor-md">${f.margem.toFixed(0)}%</span>
-        <span class="fin-sub">lucro ${formatarReais(f.lucroPrevisto)}</span>
+        <span class="fin-sub">lucro ${formatarReais(f.lucroPrevisto)} · antes das taxas do MP</span>
       </div>
       <div class="fin-card fin-card-interno">
         <span class="fin-rotulo">Camisetas internas</span>
@@ -2153,6 +2210,7 @@ function finViewResultado(alvo, f) {
         <tbody>${dre}</tbody>
       </table>
     </div>
+    <p class="pix-ajuda">A taxa do Mercado Pago é a informada por ele em cada pagamento online (chega junto com a confirmação automática), rateada entre as camisetas da cobrança. Pagamento em dinheiro ou PIX marcado na mão não tem taxa, e o previsto ainda não a considera — ela só é conhecida quando o pagamento acontece.</p>
 
     <h3 class="fin-titulo">Rentabilidade por time</h3>
     <div class="fin-tabela-wrap">
@@ -2214,19 +2272,19 @@ function exportarFinanceiro() {
 
 // Visão geral / resumo por time (formato original do relatório).
 function exportarResumoPorTime(f) {
-  const linhas = [["Cliente", "Time", "Camisetas", "Previsto", "Recebido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
+  const linhas = [["Cliente", "Time", "Camisetas", "Previsto", "Recebido", "Taxa MP", "Recebido liquido", "A receber", "% recebido", "Impressao", "Costureira", "Custos", "Lucro previsto"]];
   f.porTime.forEach((t) => {
     const pct = t.previsto > 0 ? Math.round((t.recebido / t.previsto) * 100) : 0;
     linhas.push([
       t.cliente, t.nome, t.qtd,
-      t.previsto.toFixed(2), t.recebido.toFixed(2), t.aReceber.toFixed(2),
+      t.previsto.toFixed(2), t.recebido.toFixed(2), t.taxas.toFixed(2), t.recebidoLiquido.toFixed(2), t.aReceber.toFixed(2),
       pct + "%", t.custoImpressao.toFixed(2), t.custoCostureira.toFixed(2), t.custos.toFixed(2), t.lucro.toFixed(2)
     ]);
   });
   linhas.push([]);
   linhas.push([
     "TOTAL", "", f.qtd,
-    f.previsto.toFixed(2), f.recebido.toFixed(2), f.aReceber.toFixed(2),
+    f.previsto.toFixed(2), f.recebido.toFixed(2), f.taxas.toFixed(2), f.recebidoLiquido.toFixed(2), f.aReceber.toFixed(2),
     Math.round(f.pctRecebido) + "%", f.custoImpressao.toFixed(2), f.custoCostureira.toFixed(2), f.custos.toFixed(2), f.lucroPrevisto.toFixed(2)
   ]);
 
@@ -2253,7 +2311,7 @@ function exportarExtrato() {
     alert("Não há recebimentos no período selecionado.");
     return;
   }
-  const linhas = [["Data", "Hora", "Aluno", "Time", "Cliente", "Tamanho", "Forma", "Origem", "Valor"]];
+  const linhas = [["Data", "Hora", "Aluno", "Time", "Cliente", "Tamanho", "Forma", "Origem", "Valor", "Taxa MP", "Liquido"]];
   todos.forEach((l) => {
     linhas.push([
       l.data ? l.data.toLocaleDateString("pt-BR") : "sem data",
@@ -2261,11 +2319,16 @@ function exportarExtrato() {
       l.aluno, l.time, l.cliente, l.tamanho,
       l.forma === "dinheiro" ? "Dinheiro" : "PIX",
       l.online ? "Mercado Pago" : "Manual",
-      l.valor.toFixed(2)
+      l.valor.toFixed(2), l.taxa.toFixed(2), l.liquido.toFixed(2)
     ]);
   });
   linhas.push([]);
-  linhas.push(["TOTAL", "", "", "", "", "", "", todos.length + " pgto", todos.reduce((s, l) => s + l.valor, 0).toFixed(2)]);
+  linhas.push([
+    "TOTAL", "", "", "", "", "", "", todos.length + " pgto",
+    todos.reduce((s, l) => s + l.valor, 0).toFixed(2),
+    todos.reduce((s, l) => s + l.taxa, 0).toFixed(2),
+    todos.reduce((s, l) => s + l.liquido, 0).toFixed(2)
+  ]);
   baixarCSV(`extrato-recebimentos${sufixoCliente()}.csv`, linhas);
 }
 
@@ -2277,11 +2340,12 @@ function exportarEvolucao() {
     alert("Não há recebimentos no período selecionado.");
     return;
   }
-  const linhas = [["Dia", "Qtd", "PIX", "Dinheiro", "Total do dia", "Acumulado"]];
+  const linhas = [["Dia", "Qtd", "PIX", "Dinheiro", "Total do dia", "Taxa MP", "Liquido do dia", "Acumulado"]];
   dias.forEach((d) => {
     linhas.push([
       finDataDaChave(d.chave).toLocaleDateString("pt-BR"),
-      d.qtd, d.pix.toFixed(2), d.dinheiro.toFixed(2), d.total.toFixed(2), d.acumulado.toFixed(2)
+      d.qtd, d.pix.toFixed(2), d.dinheiro.toFixed(2), d.total.toFixed(2),
+      d.taxa.toFixed(2), d.liquido.toFixed(2), d.acumulado.toFixed(2)
     ]);
   });
   baixarCSV(`recebimentos-por-dia${sufixoCliente()}.csv`, linhas);
@@ -2322,6 +2386,8 @@ function exportarResultado(f) {
     ["Lucro previsto", f.lucroPrevisto],
     ["Receita recebida", f.recebido],
     ["Custo das camisetas pagas", -f.custosRecebido],
+    ["Taxas do Mercado Pago", -f.taxas],
+    ["Receita liquida recebida", f.recebidoLiquido],
     ["Lucro realizado", f.lucroRealizado],
     ["Custo das camisetas internas", -f.custoInterno],
     ["Caixa a receber", f.aReceber]
@@ -2386,6 +2452,21 @@ function criarFormEdicaoTime(timeId, time) {
   inSenha.type = "text";
   inSenha.value = time.senha;
 
+  // Modelo (arte) da camiseta deste time. Vazio = o nome do time. É o que
+  // divide os CSVs da aba Produção: dois times com o MESMO modelo saem juntos
+  // num arquivo só; modelos diferentes saem em arquivos separados.
+  const lblModelo = document.createElement("label");
+  lblModelo.textContent = "Modelo da camiseta (arte)";
+  const inModelo = document.createElement("input");
+  inModelo.type = "text";
+  inModelo.placeholder = `Em branco = "${time.nome}"`;
+  inModelo.value = time.modeloCamiseta || "";
+
+  const ajudaModelo = document.createElement("p");
+  ajudaModelo.className = "pix-ajuda";
+  ajudaModelo.textContent =
+    "Usado na aba Produção para separar os CSVs por arte. Deixe em branco para usar o nome do time; repita o mesmo nome em times que usam a mesma arte.";
+
   // Cliente dono do pedido: é por aqui que um time muda de cliente.
   const lblCliente = document.createElement("label");
   lblCliente.textContent = "Cliente";
@@ -2426,6 +2507,9 @@ function criarFormEdicaoTime(timeId, time) {
   wrap.appendChild(inNome);
   wrap.appendChild(lblSenha);
   wrap.appendChild(inSenha);
+  wrap.appendChild(lblModelo);
+  wrap.appendChild(inModelo);
+  wrap.appendChild(ajudaModelo);
   wrap.appendChild(lblCliente);
   wrap.appendChild(selCliente);
   wrap.appendChild(lblRepNome);
@@ -2448,12 +2532,14 @@ function criarFormEdicaoTime(timeId, time) {
     }
     btnSalvar.disabled = true;
     try {
+      const novoModelo = inModelo.value.trim();
       await db.collection(COL_TIMES).doc(timeId).update({
         nome: novoNome,
         senha: novaSenha,
         clienteId: selCliente.value,
         representanteNome: inRepNome.value.trim(),
-        representanteTelefone: inRepFone.value.trim()
+        representanteTelefone: inRepFone.value.trim(),
+        modeloCamiseta: novoModelo || firebase.firestore.FieldValue.delete()
       });
       if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
       // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.
