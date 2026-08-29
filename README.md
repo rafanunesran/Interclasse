@@ -100,15 +100,35 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 
 A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
-- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time.
-- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho e forma).
+- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos, taxas do Mercado Pago e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time.
+- **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia, taxa do Mercado Pago e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho, forma, taxa e líquido).
 - **Evolução** — hoje, ontem, últimos 7 dias (com a variação em relação aos 7 anteriores), gráfico de entradas por dia, fechamento por semana e a projeção de quando o valor em aberto termina de entrar, no ritmo atual.
 - **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por time e as maiores pendências individuais.
-- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira e as camisetas internas), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
+- **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira, as camisetas internas e as taxas do Mercado Pago), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
 
 O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por time; a visão **A receber** tem só o filtro por time, porque mostra sempre a situação de hoje.
 
 O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
+
+### Taxas do Mercado Pago
+
+Quando a [confirmação automática](#confirmação-automática-mercado-pago--opcional) está ligada, o
+aviso que o Mercado Pago manda ao aprovar o pagamento **já traz a tarifa cobrada** (`fee_details`)
+e o valor líquido (`transaction_details.net_received_amount`). O webhook grava os dois em cada
+camiseta da cobrança — rateando a taxa na proporção do preço de cada uma, quando a cobrança tem
+mais de uma —, então o Financeiro mostra o que de fato caiu na conta, sem ninguém digitar nada:
+
+- **Visão geral** — card *Taxas do Mercado Pago* (com o percentual médio sobre o que veio online),
+  o líquido ao lado do recebido e o *Lucro realizado* já descontando as taxas.
+- **Extrato diário** — coluna de taxa por dia e, no detalhe, taxa e líquido de cada pagamento.
+- **Resultado (DRE)** — linha `(-) Taxas do Mercado Pago` entre a receita recebida e o lucro realizado.
+- Os CSVs do resumo por time, do extrato, do consolidado por dia e do DRE trazem as colunas de
+  taxa e líquido.
+
+O **previsto** continua sem taxa: ela só existe depois que o pagamento acontece, e varia com o
+meio de pagamento. Pagamento em dinheiro ou PIX marcado na mão não tem taxa — e marcar um
+pagamento manualmente no Super Admin apaga a taxa que porventura estivesse gravada naquela
+camiseta. Cobranças pagas antes desta versão ficam sem taxa registrada (entram como zero).
 
 > O extrato por dia usa a data em que o pagamento foi confirmado. Pagamentos confirmados antes de o sistema passar a gravar essa data aparecem num aviso à parte, fora do agrupamento por dia (mas continuam somando no total recebido).
 

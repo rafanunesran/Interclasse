@@ -81,7 +81,9 @@ async function registrarCobranca({ db, admin, itens, total, origem }) {
   const times = [...new Set(itens.map((i) => i.timeId))];
   const doc = await db.collection("cobrancas").add({
     // Cada camiseta com o seu time: uma cobrança pode atravessar times.
-    itens: itens.map((i) => ({ timeId: i.timeId, alunoId: i.alunoId })),
+    // O valor de cada uma fica guardado porque o webhook rateia a taxa do
+    // Mercado Pago entre as camisetas na proporção do que cada uma custou.
+    itens: itens.map((i) => ({ timeId: i.timeId, alunoId: i.alunoId, valor: i.valor })),
     times,
     valor: total,
     origem: origem || "",
