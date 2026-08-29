@@ -52,6 +52,8 @@ auth.onAuthStateChanged((user) => {
         escutarClientes();
         escutarTimes();
         carregarPainelConfig();
+        // Aba Produção (js/producao.js) — carregada depois deste arquivo.
+        if (typeof escutarLevas === "function") escutarLevas();
       }, 0);
     }
   } else {
@@ -471,6 +473,7 @@ function renderizarTimesAdmin() {
     renderizarKanban();
     renderizarFinanceiro();
     renderizarClientesAdmin();
+    if (typeof renderizarProducao === "function") renderizarProducao();
     return;
   }
 
@@ -506,7 +509,11 @@ function renderizarTimesAdmin() {
 
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(time.nome)} ${status}</h2>
-      <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong></p>
+      <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong>${
+        time.modeloCamiseta
+          ? ` &middot; Modelo: <strong>${escapeHtmlAdmin(time.modeloCamiseta)}</strong>`
+          : ""
+      }</p>
       <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
       ${linhaProducao}
@@ -748,6 +755,8 @@ function renderizarTimesAdmin() {
   renderizarFinanceiro();
   // A aba Clientes conta os times de cada um, então acompanha a lista.
   renderizarClientesAdmin();
+  // A aba Produção escolhe camisetas a partir desta mesma lista.
+  if (typeof renderizarProducao === "function") renderizarProducao();
 }
 
 // Atualiza o status do pedido de um time (usado no seletor da aba Inicial
@@ -2376,6 +2385,21 @@ function criarFormEdicaoTime(timeId, time) {
   inSenha.type = "text";
   inSenha.value = time.senha;
 
+  // Modelo (arte) da camiseta deste time. Vazio = o nome do time. É o que
+  // divide os CSVs da aba Produção: dois times com o MESMO modelo saem juntos
+  // num arquivo só; modelos diferentes saem em arquivos separados.
+  const lblModelo = document.createElement("label");
+  lblModelo.textContent = "Modelo da camiseta (arte)";
+  const inModelo = document.createElement("input");
+  inModelo.type = "text";
+  inModelo.placeholder = `Em branco = "${time.nome}"`;
+  inModelo.value = time.modeloCamiseta || "";
+
+  const ajudaModelo = document.createElement("p");
+  ajudaModelo.className = "pix-ajuda";
+  ajudaModelo.textContent =
+    "Usado na aba Produção para separar os CSVs por arte. Deixe em branco para usar o nome do time; repita o mesmo nome em times que usam a mesma arte.";
+
   // Cliente dono do pedido: é por aqui que um time muda de cliente.
   const lblCliente = document.createElement("label");
   lblCliente.textContent = "Cliente";
@@ -2391,6 +2415,9 @@ function criarFormEdicaoTime(timeId, time) {
   wrap.appendChild(inNome);
   wrap.appendChild(lblSenha);
   wrap.appendChild(inSenha);
+  wrap.appendChild(lblModelo);
+  wrap.appendChild(inModelo);
+  wrap.appendChild(ajudaModelo);
   wrap.appendChild(lblCliente);
   wrap.appendChild(selCliente);
 
@@ -2408,10 +2435,12 @@ function criarFormEdicaoTime(timeId, time) {
     }
     btnSalvar.disabled = true;
     try {
+      const novoModelo = inModelo.value.trim();
       await db.collection(COL_TIMES).doc(timeId).update({
         nome: novoNome,
         senha: novaSenha,
-        clienteId: selCliente.value
+        clienteId: selCliente.value,
+        modeloCamiseta: novoModelo || firebase.firestore.FieldValue.delete()
       });
       if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
       // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.

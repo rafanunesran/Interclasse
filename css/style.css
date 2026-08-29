@@ -1315,3 +1315,130 @@ body.com-carrinho { padding-bottom: 96px; }
 .fin-grafico-compacto .fin-gr-col { min-width: 0; flex: 1 1 0; }
 .fin-grafico-compacto .fin-gr-barras { gap: 2px; }
 .fin-grafico-compacto .fin-gr-dia { font-size: 0.62rem; }
+
+/* ============================================================
+   ABA PRODUÇÃO — levas (Super Admin)
+   ============================================================ */
+
+/* Card de uma leva: um pouco mais discreto que os cards de time. */
+.card.leva { border-left: 5px solid var(--azul); }
+.card.leva h3 { margin: 0 0 6px; font-size: 1.05rem; }
+
+/* Filtros do seletor de camisetas: cada rótulo é uma coluninha. */
+.filtros-producao label {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+.filtros-producao label.checkbox-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.filtros-producao input,
+.filtros-producao select {
+  width: auto;
+  min-width: 150px;
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+}
+.filtros-producao input[type="checkbox"] { min-width: 0; }
+
+/* Barra de ações: acompanha a rolagem enquanto você marca as camisetas. */
+.barra-producao {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: #eff6ff;
+  border: 1px solid var(--azul);
+  border-radius: 10px;
+}
+.barra-producao label {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+.barra-producao select { width: auto; margin: 0; padding: 6px 8px; font-size: 0.85rem; }
+.barra-producao button { margin: 0; padding: 8px 14px; }
+
+/* Um time no seletor de camisetas. */
+.prod-time {
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: var(--branco);
+}
+.prod-time > summary { cursor: pointer; font-size: 0.95rem; }
+.prod-time > summary .pix-ajuda { display: block; margin: 2px 0 0; }
+.prod-atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.prod-atalhos button { margin: 0; padding: 5px 10px; font-size: 0.8rem; }
+.cel-marcar { width: 32px; text-align: center; }
+.cel-marcar input { width: auto; }
+tr.linha-marcada > td { background: #eff6ff; }
+
+/* Um modelo dentro da leva: é exatamente o conteúdo de um CSV. */
+.modelo-leva {
+  border: 1px solid var(--cinza-borda);
+  border-left: 4px solid var(--verde);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 12px;
+}
+.modelo-leva-cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.modelo-leva-cabecalho h4 { margin: 0; font-size: 0.95rem; }
+.modelo-leva-cabecalho button { margin: 0; padding: 6px 12px; font-size: 0.85rem; }
+.modelo-leva .select-status { min-width: 130px; }
+
+/* Camisetas avulsas (professores, reposição) dentro da leva. */
+.avulso-leva {
+  border: 1px dashed var(--cinza-borda);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  background: var(--cinza-bg);
+}
+.avulso-leva > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.avulso-campos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.avulso-campos input,
+.avulso-campos select { width: auto; min-width: 120px; margin: 0; }
+.avulso-campos input[type="number"] { min-width: 80px; }
+.avulso-campos button { margin: 0; }
+.avulso-leva textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.avulso-campos label.avulso-qtd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}

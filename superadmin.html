@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260830a" />
+<link rel="stylesheet" href="css/style.css?v=20260901a" />
 </head>
 <body>
 
@@ -30,6 +30,7 @@
       <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
       <button type="button" class="aba" data-aba="clientes">Clientes</button>
       <button type="button" class="aba" data-aba="kanban">Kanban</button>
+      <button type="button" class="aba" data-aba="producao">Produção</button>
       <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
       <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
       <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
@@ -86,6 +87,35 @@
         <h2>Kanban de pedidos</h2>
         <p>Cada card é o pedido de um time. Arraste um card para outra coluna para mudar o status — ou use o seletor dentro do card (melhor no celular). A mudança vale na hora para todo o sistema.</p>
         <div id="kanbanBoard" class="kanban-board"></div>
+      </div>
+    </section>
+
+    <!-- ABA: PRODUÇÃO (levas: escolher camisetas e gerar um CSV por modelo) -->
+    <section id="aba-producao" class="secao-aba oculto">
+      <div class="card">
+        <h2>Levas de produção</h2>
+        <p>Uma <strong>leva</strong> é o que vai para a impressão de uma vez. Você monta a leva escolhendo camiseta por camiseta — de times e de clientes diferentes, pagas ou não — e ainda pode acrescentar unidades <strong>avulsas</strong> (professores, reposição, amostra) que não estão em nenhum pedido. É assim que se adianta um pedaço de um pedido junto com outro.</p>
+        <p>Cada camiseta carrega o seu <strong>modelo</strong> (a arte que será impressa). Na exportação, a leva sai <strong>dividida por modelo</strong>: um CSV de produção para cada arte, no padrão do programa de impressão. O modelo de um time vem do nome dele e pode ser mudado em <strong>Editar time</strong> — dois times com a mesma arte saem num arquivo só.</p>
+        <form id="formNovaLeva">
+          <label for="nomeNovaLeva">Nome da leva</label>
+          <input type="text" id="nomeNovaLeva" placeholder="Ex: Leva 1 — professores + 3º Ano A" required />
+
+          <label for="obsNovaLeva">Observação (opcional)</label>
+          <input type="text" id="obsNovaLeva" placeholder="Ex: entrega antecipada, combinada com a costureira" />
+
+          <button type="submit" class="primario">Criar leva</button>
+        </form>
+        <p id="msgNovaLeva" class="oculto"></p>
+
+        <div id="listaLevas"></div>
+      </div>
+
+      <div class="card">
+        <h2>Escolher camisetas</h2>
+        <p>Marque o que entra na produção e clique em <strong>Enviar para a produção</strong>. O seletor <strong>Cliente</strong> do topo também vale aqui.</p>
+        <div id="filtrosProducao"></div>
+        <div id="barraProducao" class="barra-producao oculto"></div>
+        <div id="selecaoProducao"></div>
       </div>
     </section>
 
@@ -216,8 +246,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260830a"></script>
+<script src="js/utils.js?v=20260901a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260830a"></script>
+<script src="js/admin.js?v=20260901a"></script>
+<script src="js/producao.js?v=20260901a"></script>
 </body>
 </html>

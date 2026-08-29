@@ -12,7 +12,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
-- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -146,6 +146,9 @@ São dois formatos, com finalidades diferentes.
   nome do estudante), **B: número**, **C: tamanho**.
 - Separador **vírgula**, UTF-8 **sem BOM** — o BOM grudaria no primeiro nome do arquivo.
 - Arquivos: `producao-<time>.csv` (por time) e `producao-interclasse-geral.csv` (todos).
+- A aba **Produção** usa exatamente este formato, mas com um arquivo **por modelo de camiseta**:
+  `producao-<leva>-<modelo>.csv`. Lá o que entra é o que você escolheu, pago ou não — ver
+  [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo).
 
 ```csv
 ANINHA,10,M
@@ -179,6 +182,73 @@ Logística, Entregue), a lista se separa em duas:
 A separação é sempre calculada na hora, a partir do pagamento: se um pendente pagar depois
 (o Super Admin confirma o pagamento na lista), ele entra na produção e passa a sair no CSV
 na próxima exportação.
+
+> Isso vale para os CSVs **do pedido** (aba Inicial e Configurações). Na aba **Produção**, quem
+> escolhe o que entra é você, camiseta por camiseta — é por lá que se adianta a impressão de uma
+> camiseta ainda não paga.
+
+## Aba Produção (levas e um CSV por modelo)
+
+O CSV da aba **Inicial** exporta um pedido inteiro (e só o que foi pago). A aba
+**Produção** faz o contrário: você **monta a leva** escolhendo camiseta por camiseta.
+É o caminho para adiantar um pedaço de um pedido junto com outro — algumas unidades de
+professores saindo na mesma impressão das camisetas de outro time, por exemplo.
+
+Uma **leva** é o que vai para a impressão de uma vez. Cada camiseta dela carrega o seu
+**modelo** (a arte que será impressa) e, na exportação, a leva sai **dividida por modelo**:
+um arquivo para cada arte, porque cada uma é uma abertura diferente no programa de impressão.
+
+### Como se usa
+
+1. **Crie a leva** (nome e, se quiser, uma observação). Ex.: *"Leva 1 — professores + 3º Ano A"*.
+2. **Escolha as camisetas** no card *Escolher camisetas*: marque uma a uma ou use os atalhos
+   **Marcar todas** / **Marcar só as pagas** de cada time. Filtre por time, pagamento, tamanho
+   ou pelo nome; o seletor **Cliente** do topo vale aqui também.
+3. Clique em **Enviar para a produção** e escolha a leva de destino (ou crie uma na hora).
+4. **Acrescente as avulsas**, se houver: dentro da leva, em *"+ Acrescentar camisetas avulsas"*,
+   informe o modelo e cadastre uma a uma (com quantidade) ou **cole uma lista** — uma camiseta
+   por linha, no formato `nome, número, tamanho`.
+5. **Baixe os CSVs**: **Baixar CSVs por modelo** gera um arquivo para cada arte da leva; ou use
+   **CSV deste modelo** no bloco de um modelo só. O **CSV de conferência** traz a leva inteira
+   num arquivo, com time, cliente, modelo e pagamento.
+
+A leva tem uma situação própria — **Em montagem**, **Enviada para impressão** e **Concluída** —,
+que é só do controle interno da produção e **não** mexe no status do pedido de nenhum time.
+
+### O modelo (o que divide os arquivos)
+
+O modelo de cada camiseta vinda de um pedido é, por padrão, o **nome do time** (cada time tem a
+sua arte). Para mudar, use **Editar time → Modelo da camiseta (arte)**:
+
+- dois times que usam a **mesma arte**: dê a eles o mesmo nome de modelo e eles saem
+  **num arquivo só**;
+- um time cuja arte é diferente da dos outros: um nome de modelo próprio o separa.
+
+Dentro da leva, cada linha ainda tem um seletor de modelo — dá para mover uma camiseta
+específica para outra arte (ou para uma nova, pela opção *"Outro modelo…"*) sem mexer no time.
+
+### Pago x não pago
+
+Diferente do CSV da aba Inicial, a leva **não filtra por pagamento**: quem decide o que entra é
+você. É isso que permite adiantar a produção de camisetas ainda não pagas. A tela mostra a
+situação de pagamento de cada linha, e o aviso na hora de enviar diz quantas ainda não foram
+pagas.
+
+### Camisetas que mudam depois de entrar na leva
+
+O que vai para o CSV é sempre o **cadastro de agora**: se o nome for corrigido depois de a
+camiseta entrar na leva, o arquivo sai com o nome corrigido (a linha fica marcada como
+*"Mudou no pedido depois de entrar na leva"*). A leva também guarda uma **cópia** do que estava
+valendo na hora de enviar — ela só é usada se a camiseta for apagada do pedido, e nesse caso a
+linha aparece destacada como *"Já não existe no pedido"*, para você conferir antes de imprimir.
+
+> Vários downloads de uma vez: **Baixar CSVs por modelo** dispara um arquivo por modelo, em
+> fila. Na primeira vez o navegador costuma pedir permissão para baixar vários arquivos do site.
+
+> No Firestore as levas ficam na coleção `producao` (uma leva por documento) e as camisetas
+> escolhidas na subcoleção `itens`. É controle interno, então **nem a leitura é pública**: só a
+> conta administradora entra. Depois de atualizar, **republique o `firestore.rules`** no console
+> do Firebase — a versão anterior não conhecia a coleção `producao`.
 
 ## Tamanhos disponíveis
 
@@ -306,7 +376,7 @@ pagamento no Firestore.
   auto-declaração + confirmação manual.
 - **Ligado**, o Mercado Pago cobra ~0,99% por PIX recebido e o dinheiro passa pela conta MP.
 
-O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Clientes**, **Kanban**, **Financeiro**, **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
+O Super Admin é organizado em abas: **Inicial** (criar times e lista de times), **Clientes**, **Kanban**, **Produção**, **Financeiro**, **Tamanhos**, **Pagamentos** e **Configurações** (gerais + exportar).
 
 Detalhes técnicos:
 
