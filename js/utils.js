@@ -411,6 +411,50 @@ function linkWhatsapp(tel, texto) {
   return "https://wa.me/" + fone + "?text=" + encodeURIComponent(texto || "");
 }
 
+// Formata um telefone brasileiro para exibir: "(11) 91234-5678".
+// Se não reconhecer o formato, devolve o que foi digitado, sem inventar nada.
+function formatarTelefone(tel) {
+  const texto = String(tel || "").trim();
+  let d = texto.replace(/\D/g, "");
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return texto;
+}
+
+// ---------------- Representante do time (contato rápido) ----------------
+
+// Contato do representante guardado no time ({ nome, telefone }).
+function contatoDoTime(time) {
+  return {
+    nome: String((time && time.representanteNome) || "").trim(),
+    telefone: String((time && time.representanteTelefone) || "").trim()
+  };
+}
+
+function timeTemContato(time) {
+  const c = contatoDoTime(time);
+  return !!(c.nome || c.telefone);
+}
+
+// Mensagem que já vai escrita no WhatsApp, para não começar do zero.
+function mensagemParaRepresentante(time) {
+  const c = contatoDoTime(time);
+  const primeiroNome = c.nome ? c.nome.split(/\s+/)[0] : "";
+  const nomeTime = (time && time.nome) || "";
+  return (
+    (primeiroNome ? `Olá, ${primeiroNome}! ` : "Olá! ") +
+    `Aqui é da organização do interclasse, sobre o pedido de camisetas do time ${nomeTime}` +
+    ` (situação: ${labelStatus(statusPedidoDe(time))}).`
+  );
+}
+
+// Link do WhatsApp do representante ("" quando não dá para abrir).
+function linkRepresentante(time) {
+  const c = contatoDoTime(time);
+  return linkWhatsapp(c.telefone, mensagemParaRepresentante(time));
+}
+
 // Formata um instante em millis (Date.now()) como "dd/mm/aaaa hh:mm".
 function formatarMillis(ms) {
   if (!ms) return "";

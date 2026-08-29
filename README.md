@@ -12,7 +12,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
-- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
@@ -67,6 +67,28 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 4. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`) — que lista os clientes — ou direto pelo link do cliente (`SEU-SITE/index.html?cliente=ID-DO-CLIENTE`).
 5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
 6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez). Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+
+## Contato do representante (WhatsApp)
+
+Cada time pode guardar **quem responde por ele** — nome e WhatsApp — para a organização
+falar com essa pessoa em um clique, sem procurar o telefone em outro lugar.
+
+- **Onde cadastrar:** Super Admin → aba **Inicial**. No formulário **Criar novo time** (os
+  campos são opcionais) ou depois, em **Editar time**. No card de um time sem contato, o
+  atalho **"+ adicionar contato"** já abre a edição.
+- **Como usar:** no card do pedido, o **nome** e o **número** viram links — clicar em
+  qualquer um dos dois abre a conversa no WhatsApp com a mensagem já escrita, citando o
+  time e a situação atual do pedido (ex.: *"Olá, Ana! Aqui é da organização do interclasse,
+  sobre o pedido de camisetas do time 3º Ano A (situação: Fechado)."*).
+- O mesmo atalho aparece no card do **Kanban**, que é onde se acompanha o andamento dos
+  pedidos — clicar no link não atrapalha o arraste do card.
+- Informe o número **com DDD** (ex.: `(11) 91234-5678`). Se o número não servir para o
+  WhatsApp, o contato aparece como texto simples, marcado com *(sem WhatsApp)* — melhor do
+  que um link que não abre.
+
+> O contato fica no próprio time (`representanteNome` e `representanteTelefone`) e é
+> **visível só no painel administrativo**: a página pública do pedido não mostra o telefone
+> de ninguém.
 
 ## Clientes (separação dos pedidos)
 

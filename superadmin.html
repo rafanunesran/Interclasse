@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260830a" />
+<link rel="stylesheet" href="css/style.css?v=20260831a" />
 </head>
 <body>
 
@@ -49,6 +49,13 @@
 
           <label for="clienteNovoTime">Cliente</label>
           <select id="clienteNovoTime"><option value="">Sem cliente</option></select>
+
+          <label for="repNomeNovoTime">Representante (opcional)</label>
+          <input type="text" id="repNomeNovoTime" placeholder="Nome de quem responde pelo time" />
+
+          <label for="repFoneNovoTime">WhatsApp do representante (opcional)</label>
+          <input type="tel" id="repFoneNovoTime" inputmode="tel" placeholder="Ex: (11) 91234-5678" />
+          <p class="pix-ajuda">Com DDD. No card do pedido, o nome e o número viram links que abrem a conversa no WhatsApp.</p>
 
           <button type="submit" class="primario">Criar time</button>
         </form>
@@ -217,8 +224,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260830a"></script>
+<script src="js/utils.js?v=20260831a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260830a"></script>
+<script src="js/admin.js?v=20260831a"></script>
 </body>
 </html>

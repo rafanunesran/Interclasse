@@ -34,6 +34,8 @@ const elFormCriarCliente = document.getElementById("formCriarCliente");
 const elListaClientesAdmin = document.getElementById("listaClientesAdmin");
 const elMsgCriarCliente = document.getElementById("msgCriarCliente");
 const elClienteNovoTime = document.getElementById("clienteNovoTime");
+const elRepNomeNovoTime = document.getElementById("repNomeNovoTime");
+const elRepFoneNovoTime = document.getElementById("repFoneNovoTime");
 
 let painelIniciado = false;
 
@@ -382,6 +384,9 @@ elFormCriarTime.addEventListener("submit", async (ev) => {
       senha,
       // Cliente dono do pedido ("" = ainda sem cliente).
       clienteId: elClienteNovoTime ? elClienteNovoTime.value : "",
+      // Contato do representante (opcional): vira o link de WhatsApp no card.
+      representanteNome: elRepNomeNovoTime ? elRepNomeNovoTime.value.trim() : "",
+      representanteTelefone: elRepFoneNovoTime ? elRepFoneNovoTime.value.trim() : "",
       fechado: false,
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -507,11 +512,21 @@ function renderizarTimesAdmin() {
     card.innerHTML = `
       <h2>${escapeHtmlAdmin(time.nome)} ${status}</h2>
       <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong></p>
+      ${linhaRepresentanteHtml(time)}
       <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
       <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)</p>
       ${linhaProducao}
       ${avisoAjustes}
     `;
+
+    // "Adicionar contato" leva direto para o formulário de edição do time.
+    const btnAddContato = card.querySelector("[data-add-contato]");
+    if (btnAddContato) {
+      btnAddContato.onclick = () => {
+        estadoTimes[timeId].editando = true;
+        renderizarTimesAdmin();
+      };
+    }
 
     // Barra de acompanhamento das etapas do pedido.
     const barra = document.createElement("div");
@@ -750,6 +765,40 @@ function renderizarTimesAdmin() {
   renderizarClientesAdmin();
 }
 
+// Linha do representante no card do pedido: nome e número clicáveis, cada um
+// abrindo o WhatsApp com a mensagem já escrita. É o caminho curto para falar
+// com quem responde pelo time, sem procurar o telefone em outro lugar.
+function linhaRepresentanteHtml(time) {
+  const { nome, telefone } = contatoDoTime(time);
+
+  if (!nome && !telefone) {
+    return '<p class="linha-representante linha-sem-contato">Representante: ' +
+      '<button type="button" class="link-inline" data-add-contato>+ adicionar contato</button></p>';
+  }
+
+  const url = linkRepresentante(time);
+  const rotuloNome = nome || "Representante";
+  const rotuloFone = telefone ? formatarTelefone(telefone) : "";
+
+  // Sem um telefone que o WhatsApp aceite, mostramos o texto sem link (um
+  // link quebrado seria pior do que nenhum) e explicamos no title.
+  if (!url) {
+    const aviso = telefone
+      ? ` title="Este número não abre o WhatsApp: informe com DDD, ex. (11) 91234-5678"`
+      : ` title="Sem telefone cadastrado para este representante"`;
+    return `<p class="linha-representante"${aviso}>Representante: ` +
+      `<strong>${escapeHtmlAdmin(rotuloNome)}</strong>` +
+      (rotuloFone ? ` &middot; ${escapeHtmlAdmin(rotuloFone)}` : "") +
+      ` <span class="pix-ajuda">(sem WhatsApp)</span></p>`;
+  }
+
+  const abrir = `href="${escapeHtmlAdmin(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar com ${escapeHtmlAdmin(rotuloNome)} no WhatsApp"`;
+  return `<p class="linha-representante">Representante: ` +
+    `<a ${abrir}>💬 ${escapeHtmlAdmin(rotuloNome)}</a>` +
+    (rotuloFone ? ` &middot; <a ${abrir}>${escapeHtmlAdmin(rotuloFone)}</a>` : "") +
+    `</p>`;
+}
+
 // Atualiza o status do pedido de um time (usado no seletor da aba Inicial
 // e ao arrastar cards no Kanban). Mantém `fechado` em sincronia com o status.
 function atualizarStatusPedido(timeId, novo) {
@@ -918,6 +967,24 @@ function criarCardKanban(timeId, statusId) {
     `${alunos.length} camiseta(s) · ${nPagos} paga(s)` +
     (alunos.length - nPagos > 0 ? `, ${alunos.length - nPagos} pendente(s)` : "");
   card.appendChild(info);
+
+  // Falar com o representante sem sair do quadro: é aqui que a gente cobra
+  // o andamento do pedido.
+  const urlWhats = linkRepresentante(time);
+  if (urlWhats) {
+    const link = document.createElement("a");
+    link.className = "kanban-card-whats";
+    link.href = urlWhats;
+    link.target = "_blank";
+    link.rel = "noopener";
+    const contato = contatoDoTime(time);
+    link.textContent = "💬 " + (contato.nome || formatarTelefone(contato.telefone));
+    link.title = "Falar no WhatsApp com o representante do time";
+    // O card é arrastável: sem isso, clicar no link viraria um arraste.
+    link.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    link.addEventListener("dragstart", (ev) => ev.preventDefault());
+    card.appendChild(link);
+  }
 
   if (nAjustes > 0) {
     const aviso = document.createElement("div");
@@ -2330,12 +2397,42 @@ function criarFormEdicaoTime(timeId, time) {
       .join("");
   selCliente.value = clienteIdDoTime(time);
 
+  // Contato do representante: com ele, o card do pedido passa a ter o nome e
+  // o número clicáveis, abrindo o WhatsApp.
+  const contato = contatoDoTime(time);
+
+  const lblRepNome = document.createElement("label");
+  lblRepNome.textContent = "Representante (nome)";
+  const inRepNome = document.createElement("input");
+  inRepNome.type = "text";
+  inRepNome.placeholder = "Ex: Ana Souza";
+  inRepNome.value = contato.nome;
+
+  const lblRepFone = document.createElement("label");
+  lblRepFone.textContent = "WhatsApp do representante";
+  const inRepFone = document.createElement("input");
+  inRepFone.type = "tel";
+  inRepFone.inputMode = "tel";
+  inRepFone.placeholder = "Ex: (11) 91234-5678";
+  inRepFone.value = contato.telefone;
+
+  const ajudaRep = document.createElement("small");
+  ajudaRep.className = "pix-ajuda";
+  ajudaRep.textContent =
+    "Com DDD. No card do pedido, o nome e o número viram links que abrem a " +
+    "conversa no WhatsApp já com uma mensagem escrita.";
+
   wrap.appendChild(lblNome);
   wrap.appendChild(inNome);
   wrap.appendChild(lblSenha);
   wrap.appendChild(inSenha);
   wrap.appendChild(lblCliente);
   wrap.appendChild(selCliente);
+  wrap.appendChild(lblRepNome);
+  wrap.appendChild(inRepNome);
+  wrap.appendChild(lblRepFone);
+  wrap.appendChild(inRepFone);
+  wrap.appendChild(ajudaRep);
 
   const acoes = document.createElement("div");
 
@@ -2354,7 +2451,9 @@ function criarFormEdicaoTime(timeId, time) {
       await db.collection(COL_TIMES).doc(timeId).update({
         nome: novoNome,
         senha: novaSenha,
-        clienteId: selCliente.value
+        clienteId: selCliente.value,
+        representanteNome: inRepNome.value.trim(),
+        representanteTelefone: inRepFone.value.trim()
       });
       if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
       // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.
