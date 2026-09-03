@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260902a" />
+<link rel="stylesheet" href="css/style.css?v=20260903a" />
 </head>
 <body>
 
@@ -17,25 +17,27 @@
 
 <main>
   <div id="painelAdmin" class="oculto">
-    <div class="barra-admin">
-      <span>Super Admin — <strong id="emailLogado"></strong></span>
-      <span class="filtro-cliente">
-        <label for="filtroCliente">Cliente:</label>
-        <select id="filtroCliente"><option value="">Todos os clientes</option></select>
-      </span>
-      <button type="button" id="btnSairAdmin" class="secundario">Sair</button>
-    </div>
+    <div class="topo-admin">
+      <div class="barra-admin">
+        <span>Super Admin — <strong id="emailLogado"></strong></span>
+        <span class="filtro-cliente">
+          <label for="filtroCliente">Cliente:</label>
+          <select id="filtroCliente"><option value="">Todos os clientes</option></select>
+        </span>
+        <button type="button" id="btnSairAdmin" class="secundario">Sair</button>
+      </div>
 
-    <nav class="abas-admin">
-      <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
-      <button type="button" class="aba" data-aba="clientes">Clientes</button>
-      <button type="button" class="aba" data-aba="kanban">Kanban</button>
-      <button type="button" class="aba" data-aba="producao">Produção</button>
-      <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
-      <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
-      <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
-      <button type="button" class="aba" data-aba="config">Configurações</button>
-    </nav>
+      <nav class="abas-admin">
+        <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
+        <button type="button" class="aba" data-aba="clientes">Clientes</button>
+        <button type="button" class="aba" data-aba="kanban">Kanban</button>
+        <button type="button" class="aba" data-aba="producao">Produção</button>
+        <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
+        <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
+        <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
+        <button type="button" class="aba" data-aba="config">Configurações</button>
+      </nav>
+    </div>
 
     <!-- ABA: INICIAL (criar times + lista de times) -->
     <section id="aba-inicial" class="secao-aba">
@@ -253,9 +255,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260902a"></script>
+<script src="js/utils.js?v=20260903a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260902a"></script>
-<script src="js/producao.js?v=20260902a"></script>
+<script src="js/admin.js?v=20260903a"></script>
+<script src="js/producao.js?v=20260903a"></script>
 </body>
 </html>

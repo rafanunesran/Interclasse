@@ -83,6 +83,32 @@ document.querySelectorAll(".aba").forEach((btn) => {
   });
 });
 
+// ---------------- Topo fixo (identificação + abas) ----------------
+// O bloco do topo é "sticky" no CSS: ele acompanha a rolagem para trocar de
+// aba de qualquer altura da página. Aqui só publicamos a altura real dele em
+// --altura-topo-admin (a barra de produção usa esse valor para parar logo
+// abaixo, em vez de ficar escondida atrás) e marcamos quando ele já descolou
+// do topo do conteúdo, para ganhar a sombra.
+
+const elTopoAdmin = document.querySelector(".topo-admin");
+
+if (elTopoAdmin) {
+  const medirTopoAdmin = () => {
+    const altura = elTopoAdmin.offsetHeight;
+    document.documentElement.style.setProperty("--altura-topo-admin", altura + "px");
+    elTopoAdmin.classList.toggle("grudado", elTopoAdmin.getBoundingClientRect().top <= 0);
+  };
+
+  medirTopoAdmin();
+  window.addEventListener("scroll", medirTopoAdmin, { passive: true });
+  window.addEventListener("resize", medirTopoAdmin);
+  if (window.ResizeObserver) {
+    // A altura muda quando as abas quebram em duas linhas ou quando o painel
+    // sai do "oculto" depois do login.
+    new ResizeObserver(medirTopoAdmin).observe(elTopoAdmin);
+  }
+}
+
 // ============================================================
 // CLIENTES
 // ============================================================

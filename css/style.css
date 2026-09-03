@@ -282,6 +282,56 @@ tr.duplicado td { background: #fef3c7; }
   text-decoration: underline;
 }
 
+/* Topo do painel: identificação e abas acompanham a rolagem da página, para
+   trocar de aba de qualquer altura sem voltar até o começo. A altura real é
+   publicada em --altura-topo-admin (js/admin.js) para as outras barras
+   grudentas pararem logo abaixo dela em vez de ficarem escondidas. */
+.topo-admin {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--cinza-bg);
+  /* Estende o fundo até a borda do <main>: nada passa pelos cantos. */
+  margin: 0 -16px 18px;
+  padding: 12px 16px 0;
+}
+.topo-admin .barra-admin { margin-bottom: 12px; }
+.topo-admin .abas-admin { margin-bottom: 0; }
+/* Sombra só quando a barra realmente descolou do topo do conteúdo. */
+.topo-admin.grudado {
+  box-shadow: 0 6px 12px -6px rgba(0, 0, 0, 0.25);
+}
+
+/* Em telas estreitas as abas rolam na horizontal, para o topo fixo continuar
+   baixo e não comer a altura da tela. */
+@media (max-width: 640px) {
+  .topo-admin .barra-admin {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  /* O seletor encolhe para o "Sair" caber na mesma linha. */
+  .topo-admin .filtro-cliente {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-right: 0;
+  }
+  .topo-admin .filtro-cliente select {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .topo-admin .abas-admin {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .topo-admin .abas-admin::-webkit-scrollbar { display: none; }
+  .topo-admin .abas-admin .aba {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+  }
+}
+
 /* Abas do Super Admin. */
 .abas-admin {
   display: flex;
@@ -1393,7 +1443,7 @@ body.com-carrinho { padding-bottom: 96px; }
 /* Barra de ações: acompanha a rolagem enquanto você marca as camisetas. */
 .barra-producao {
   position: sticky;
-  top: 0;
+  top: var(--altura-topo-admin, 0px);
   z-index: 5;
   display: flex;
   flex-wrap: wrap;
