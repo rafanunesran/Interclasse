@@ -1252,6 +1252,12 @@ body.com-carrinho { padding-bottom: 96px; }
 .fin-tabela-modal td { text-align: left; }
 .fin-tabela-modal td:last-child { text-align: right; }
 .fin-linha-total td { border-top: 2px solid var(--cinza-borda); }
+/* Soma parcial (ex.: "Custos realizados" dentro do lucro realizado). */
+.fin-linha-subtotal td {
+  border-top: 1px solid var(--cinza-borda);
+  font-weight: 600;
+}
+.fin-tabela-modal .fin-linha-total td { font-weight: 700; background: var(--cinza-bg); }
 
 /* ---- Sub-abas do Financeiro (visões do relatório) ---- */
 .fin-subabas {

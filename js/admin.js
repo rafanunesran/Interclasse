@@ -1260,6 +1260,9 @@ function calcularFinanceiro() {
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
     custos: 0, custosRecebido: 0, custoImpressao: 0, custoCostureira: 0,
+    // Mesma quebra dos custos, mas só das camisetas já pagas: é o que entra
+    // no lucro realizado.
+    custoImpressaoRecebido: 0, custoCostureiraRecebido: 0,
     // Taxas do Mercado Pago já descontadas do que entrou: só existem nos
     // pagamentos online, que o webhook grava camiseta a camiseta.
     taxas: 0, qtdComTaxa: 0, recebidoOnline: 0,
@@ -1314,6 +1317,8 @@ function calcularFinanceiro() {
         const taxa = taxaMpDoAluno(a);
         fin.recebido += venda;
         fin.custosRecebido += custo;
+        fin.custoImpressaoRecebido += cImp;
+        fin.custoCostureiraRecebido += cCos;
         fin.taxas += taxa;
         fin.qtdPagas++;
         t.recebido += venda;
@@ -1727,10 +1732,10 @@ function finViewGeral(alvo, f) {
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroPrevisto)}</span>
         <span class="fin-sub">margem ${f.margem.toFixed(0)}% · sem as taxas (só conhecidas ao pagar)</span>
       </div>
-      <div class="fin-card">
+      <div class="fin-card fin-card-click" data-fin-modal="lucro-realizado" role="button" tabindex="0" title="Ver detalhe do lucro realizado">
         <span class="fin-rotulo">Lucro realizado</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroRealizado)}</span>
-        <span class="fin-sub">sobre o que já chegou · já desconta as taxas</span>
+        <span class="fin-sub fin-link">Custos realizados + taxas · ver detalhe ›</span>
       </div>
       ${f.qtdInternas > 0 ? `
       <div class="fin-card fin-card-interno">
@@ -1763,23 +1768,27 @@ function finViewGeral(alvo, f) {
     </div>
   `;
 
-  // Liga os cliques que abrem o pop-up de detalhe de custo (total e por time).
-  const cardTotal = alvo.querySelector('[data-fin-modal="total"]');
-  if (cardTotal) {
-    const abrir = () => abrirModalCusto("Custo previsto — total", {
+  // Liga os cliques que abrem os pop-ups de detalhe (custo total, custo por
+  // time e lucro realizado).
+  const ligarDetalhe = (el, abrir) => {
+    if (!el) return;
+    el.onclick = abrir;
+    el.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
+  };
+
+  ligarDetalhe(alvo.querySelector('[data-fin-modal="total"]'), () =>
+    abrirModalCusto("Custo previsto — total", {
       impressao: f.custoImpressao, costureira: f.custoCostureira, total: f.custos, qtd: f.qtd
-    });
-    cardTotal.onclick = abrir;
-    cardTotal.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
-  }
+    }));
+
+  ligarDetalhe(alvo.querySelector('[data-fin-modal="lucro-realizado"]'), () =>
+    abrirModalLucroRealizado(f));
   alvo.querySelectorAll(".fin-custo-cel").forEach((cel) => {
     const t = f.porTime[Number(cel.dataset.timeIdx)];
     if (!t) return;
-    const abrir = () => abrirModalCusto("Custo previsto — " + t.nome, {
+    ligarDetalhe(cel, () => abrirModalCusto("Custo previsto — " + t.nome, {
       impressao: t.custoImpressao, costureira: t.custoCostureira, total: t.custos, qtd: t.qtd
-    });
-    cel.onclick = abrir;
-    cel.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); } };
+    }));
   });
 }
 
@@ -2256,24 +2265,58 @@ function finViewResultado(alvo, f) {
   `;
 }
 
-// Pop-up com o detalhe do custo (Impressão + Costureira).
-function abrirModalCusto(titulo, d) {
+// Pop-up de detalhe (custo, lucro): uma tabela de "rótulo → valor" com uma
+// observação embaixo. Cada linha é [rótulo, valor, tipo]; o valor negativo é
+// o que sai (vai em vermelho, sem o sinal, com o "(-)" já no rótulo, como no
+// DRE), e o tipo marca as somas: "subtotal" e "total".
+function abrirModalDetalhe(titulo, linhas, nota) {
   const modal = document.getElementById("modalCusto");
   const tit = document.getElementById("modalCustoTitulo");
   const corpo = document.getElementById("modalCustoCorpo");
   if (!modal || !corpo) return;
   if (tit) tit.textContent = titulo;
+  const corpoTabela = linhas.map(([rotulo, valor, tipo]) => {
+    const classeLinha = tipo === "total" ? "fin-linha-total" : (tipo === "subtotal" ? "fin-linha-subtotal" : "");
+    const valorFmt = formatarReais(Math.abs(valor));
+    return `
+      <tr class="${classeLinha}">
+        <td>${rotulo}</td>
+        <td class="${valor < 0 ? "fin-vermelho" : ""}">${valorFmt}</td>
+      </tr>`;
+  }).join("");
   corpo.innerHTML = `
     <table class="fin-tabela fin-tabela-modal">
-      <tbody>
-        <tr><td>Impressão</td><td>${formatarReais(d.impressao)}</td></tr>
-        <tr><td>Costureira</td><td>${formatarReais(d.costureira)}</td></tr>
-        <tr class="fin-linha-total"><td><strong>Total</strong></td><td><strong>${formatarReais(d.total)}</strong></td></tr>
-      </tbody>
+      <tbody>${corpoTabela}</tbody>
     </table>
-    <p class="pix-ajuda">${d.qtd} camiseta(s) considerada(s) (inclui as internas).</p>
+    ${nota ? `<p class="pix-ajuda">${nota}</p>` : ""}
   `;
   modal.classList.remove("oculto");
+}
+
+// Detalhe do custo (Impressão + Costureira) do total ou de um time.
+function abrirModalCusto(titulo, d) {
+  abrirModalDetalhe(titulo, [
+    ["Impressão", d.impressao, "linha"],
+    ["Costureira", d.costureira, "linha"],
+    ["Total", d.total, "total"]
+  ], `${d.qtd} camiseta(s) considerada(s) (inclui as internas).`);
+}
+
+// Detalhe do lucro realizado: o que já entrou, menos os custos das camisetas
+// que foram pagas (impressão + costureira) e as taxas do Mercado Pago.
+function abrirModalLucroRealizado(f) {
+  const nota = `${f.qtdPagas} camiseta(s) paga(s). O custo das que ainda não foram pagas fica no custo previsto.`
+    + (f.qtdInternas > 0
+      ? ` As ${f.qtdInternas} interna(s) (${formatarReais(f.custoInterno)}) não entram aqui: não têm receita e aparecem à parte no DRE (visão Resultado).`
+      : "");
+  abrirModalDetalhe("Lucro realizado — detalhe", [
+    ["Receita já recebida", f.recebido, "linha"],
+    ["(-) Custo de impressão", -f.custoImpressaoRecebido, "linha"],
+    ["(-) Custo de costureira", -f.custoCostureiraRecebido, "linha"],
+    ["(=) Custos realizados", -f.custosRecebido, "subtotal"],
+    ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
+    ["(=) Lucro realizado", f.lucroRealizado, "total"]
+  ], nota);
 }
 
 function fecharModalCusto() {
