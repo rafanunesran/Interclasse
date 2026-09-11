@@ -66,7 +66,7 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 3. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã"), uma senha própria para ele e o cliente a que ele pertence.
 4. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`) — que lista os clientes — ou direto pelo link do cliente (`SEU-SITE/index.html?cliente=ID-DO-CLIENTE`).
 5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
-6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez). Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
 
 ## Contato do representante (WhatsApp)
 
@@ -117,6 +117,56 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 > constante `COL_TIMES` (`js/utils.js` e `mp-backend/lib/firebase.js`). Depois de atualizar,
 > **republique o `firestore.rules`** no console do Firebase — a versão anterior não conhecia
 > a coleção `clientes`.
+
+## Busca de pedidos (Super Admin)
+
+A caixa **🔎 Buscar**, no topo do painel (logo acima do menu de abas, junto do seletor de
+cliente), acha um pedido sem precisar abrir time por time.
+
+- **Onde procura:** no **time** (nome, cliente, modelo e representante) e, dentro dele, em
+  cada camiseta — **nome do estudante**, **apelido** (nome na camiseta) e **número**.
+- **Onde vale:** na lista de times da aba **Inicial** e no **Kanban** — as telas de pedidos.
+  As abas **Financeiro**, **Produção** e **Pagamentos** e as exportações continuam seguindo
+  só o seletor **Cliente**, para os totais não mudarem por causa de uma busca.
+- **Como escreve:** sem se preocupar com acentos nem com maiúsculas — `joao` acha "João" e
+  `3o ano` acha "3º Ano A". Com **mais de uma palavra**, todas precisam bater, e elas podem
+  vir de lugares diferentes: `3o maria` acha a Maria do 3º Ano A.
+- **O que aparece:** só os pedidos que combinam. Quando quem combinou foi uma camiseta, o
+  card do time **já abre** mostrando só as camisetas encontradas, com o aviso *"Mostrando 1
+  de 3 camiseta(s)"* — o botão **Ver lista completa** abre o time inteiro, com as linhas
+  encontradas em destaque. O resumo ao lado da caixa conta quantos pedidos e quantas
+  camisetas a busca achou.
+- **Para limpar:** o botão **Limpar**, o **×** do próprio campo ou a tecla **Esc**.
+
+> A busca **soma** com o seletor **Cliente**: com um cliente escolhido, ela procura só
+> dentro dos pedidos dele.
+
+## Status do pedido
+
+Cada time tem um **status**, mudado pelo Super Admin no card do pedido (aba **Inicial**) ou
+arrastando o card no **Kanban**. A ordem normal é a linha do tempo do pedido:
+
+**Aberto** → **Fechado** → **Pagamento em andamento** → **Pagamento encerrado** →
+**Impressão** → **Costura** → **Logística** → **Entregue ao representante**
+
+- O representante **cadastra e edita** nomes em *Aberto*, *Fechado* e *Pagamento em
+  andamento*; a lista trava de vez a partir de *Pagamento encerrado*.
+- O **pagamento** é aceito em *Fechado* e *Pagamento em andamento*.
+- Da **Impressão** em diante o pedido está em produção: o que foi pago entra, o que não foi
+  fica pendente e fora da leva.
+- O time também fecha sozinho (*Aberto* → *Fechado*) quando passa a **data limite**.
+
+Fora dessa linha existem dois status que **travam o pedido** — sem cadastrar ou editar
+nomes e sem receber pagamento:
+
+- **Suspenso** ⏸ — pausa temporária da organização. A página do time avisa que o pedido
+  está suspenso e pede para tentar mais tarde.
+- **Bloqueado** 🚫 — trava por decisão da organização (pendência com o cliente, pedido em
+  disputa...). A página do time avisa que o pedido está bloqueado e manda falar com a
+  coordenação.
+
+Para destravar, é só devolver o pedido ao status em que ele estava — nada se perde no
+caminho: a lista, os pagamentos e o histórico continuam como estavam.
 
 ## Aba Financeiro (Super Admin)
 
@@ -364,8 +414,8 @@ aparece também na tela inicial, com um botão que leva de volta ao pagamento.
   em todos os times envolvidos.
 - O botão **Pagar** de cada linha continua ali para quem quer pagar só aquela camiseta.
 - Uma camiseta só entra no carrinho se puder ser paga agora: pedido na fase de pagamento,
-  não suspenso, ainda não paga e **sem ajuste pendente** (ajuste em aberto trava o
-  pagamento, como antes).
+  nem suspenso nem bloqueado, ainda não paga e **sem ajuste pendente** (ajuste em aberto
+  trava o pagamento, como antes).
 - O carrinho é **reconferido no banco** ao abrir a página e antes de cobrar: o que mudou de
   situação (pagou por outro caminho, ganhou um ajuste, o pedido mudou de etapa) sai da lista
   com um aviso, e preço/tamanho são atualizados. Ninguém paga um valor desatualizado.

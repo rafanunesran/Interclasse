@@ -28,6 +28,7 @@ const elBtnExportar = document.getElementById("btnExportar");
 const elMensagemFechado = document.getElementById("mensagemFechado");
 const elMensagemGlobalFechado = document.getElementById("mensagemGlobalFechado");
 const elMensagemSuspenso = document.getElementById("mensagemSuspenso");
+const elMensagemBloqueado = document.getElementById("mensagemBloqueado");
 const elMensagemProducao = document.getElementById("mensagemProducao");
 const elBarraStatus = document.getElementById("barraStatus");
 const elGaleria = document.getElementById("galeriaImagens");
@@ -285,6 +286,9 @@ function mostrarPrecosDaTime() {
 function atualizarVisibilidade() {
   const aberto = pedidoAberto(timeAtual);
   const suspenso = pedidoSuspenso(timeAtual);
+  const bloqueado = pedidoBloqueado(timeAtual);
+  // Suspenso ou bloqueado: nada de cadastro nem de pagamento.
+  const travado = pedidoTravado(timeAtual);
   const aceitaCadastro = pedidoAceitaCadastro(timeAtual); // aberto/fechado/pagamento
   const podeEditar = desbloqueado && aceitaCadastro && cadastrosGlobaisAbertos;
 
@@ -310,10 +314,11 @@ function atualizarVisibilidade() {
     }
   }
 
-  // Mensagem de suspenso tem prioridade sobre a de "lista travada".
+  // As mensagens de suspenso/bloqueado têm prioridade sobre a de "lista travada".
   if (elMensagemSuspenso) elMensagemSuspenso.classList.toggle("oculto", !suspenso);
+  if (elMensagemBloqueado) elMensagemBloqueado.classList.toggle("oculto", !bloqueado);
   // "Não é mais possível editar" só quando a lista realmente travou (pagamento encerrado+).
-  elMensagemFechado.classList.toggle("oculto", aceitaCadastro || suspenso);
+  elMensagemFechado.classList.toggle("oculto", aceitaCadastro || travado);
   if (elMensagemGlobalFechado) {
     // Aviso global só quando o time aceitaria cadastro, mas o admin fechou tudo.
     elMensagemGlobalFechado.classList.toggle("oculto", cadastrosGlobaisAbertos || !aceitaCadastro);
@@ -560,7 +565,7 @@ function renderizarTabela() {
 
     const tdAcoes = tr.querySelector(".acoes-linha");
 
-    if (!pedidoSuspenso(timeAtual)) {
+    if (!pedidoTravado(timeAtual)) {
       // Editar/excluir: liberado enquanto a lista aceita cadastro
       // (aberto, fechado e pagamento em andamento).
       if (podeEditar) {

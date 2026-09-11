@@ -125,6 +125,7 @@ tr.duplicado td { background: #fef3c7; }
 .badge.aguardando { background: #fef3c7; color: #92400e; }
 .badge.pendente { background: #e5e7eb; color: #374151; }
 .badge.suspenso { background: #ffedd5; color: #9a3412; }
+.badge.bloqueado { background: #fee2e2; color: #7f1d1d; }
 .badge.interno { background: #ede9fe; color: #5b21b6; }
 
 /* Barra de acompanhamento do pedido (etapas). */
@@ -160,6 +161,11 @@ tr.duplicado td { background: #fef3c7; }
   background: #ea580c;
   border-color: #ea580c;
   box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
+}
+.status-etapa.bloqueado.atual {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  box-shadow: 0 2px 8px rgba(185, 28, 28, 0.3);
 }
 
 .aviso {
@@ -296,6 +302,7 @@ tr.duplicado td { background: #fef3c7; }
   padding: 12px 16px 0;
 }
 .topo-admin .barra-admin { margin-bottom: 12px; }
+.topo-admin .busca-pedidos { margin-bottom: 12px; }
 .topo-admin .abas-admin { margin-bottom: 0; }
 /* Sombra só quando a barra realmente descolou do topo do conteúdo. */
 .topo-admin.grudado {
@@ -318,6 +325,15 @@ tr.duplicado td { background: #fef3c7; }
   .topo-admin .filtro-cliente select {
     flex: 1 1 auto;
     min-width: 0;
+    max-width: none;
+  }
+  .topo-admin .busca-pedidos {
+    flex-wrap: wrap;
+    gap: 6px 8px;
+  }
+  /* O campo divide a linha com o rótulo; o botão e o resumo caem embaixo. */
+  .topo-admin .busca-pedidos input[type="search"] {
+    flex: 1 1 160px;
     max-width: none;
   }
   .topo-admin .abas-admin {
@@ -669,6 +685,55 @@ body.sem-rolagem { overflow: hidden; }
   font-size: 0.85rem;
   padding: 6px 8px;
 }
+
+/* Caixa de busca do topo: acha um pedido pelo time, pelo nome do estudante ou
+   pelo apelido da camiseta. Fica acima do menu de abas, junto do seletor de
+   cliente, e vale para a lista de times e para o Kanban. */
+.busca-pedidos {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+.busca-pedidos label {
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.busca-pedidos input[type="search"] {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 420px;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+}
+.busca-pedidos button {
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 0.85rem;
+}
+.busca-resumo {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--azul);
+  white-space: nowrap;
+}
+
+/* Aviso de que a lista do time está recortada pelo que a busca achou. */
+.busca-nota {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  font-size: 0.85rem;
+}
+
+/* Linha que a busca achou, dentro da lista do time. */
+tr.linha-busca td { background: #eff6ff; }
 
 /* De quem é o pedido (card do time, página do time). */
 .linha-cliente {
