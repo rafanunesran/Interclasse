@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260903b" />
+<link rel="stylesheet" href="css/style.css?v=20260911a" />
 </head>
 <body>
 
@@ -25,6 +25,17 @@
           <select id="filtroCliente"><option value="">Todos os clientes</option></select>
         </span>
         <button type="button" id="btnSairAdmin" class="secundario">Sair</button>
+      </div>
+
+      <!-- Busca dos pedidos: acha um time, um estudante ou um apelido de
+           camiseta sem precisar abrir time por time. Vale para a lista de
+           times (aba Inicial) e para o Kanban. -->
+      <div class="busca-pedidos">
+        <label for="buscaPedidos">🔎 Buscar:</label>
+        <input type="search" id="buscaPedidos" autocomplete="off"
+               placeholder="Time, nome do estudante ou apelido na camiseta" />
+        <button type="button" id="btnLimparBusca" class="secundario oculto">Limpar</button>
+        <span id="resumoBusca" class="busca-resumo oculto"></span>
       </div>
 
       <nav class="abas-admin">
@@ -255,9 +266,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260903b"></script>
+<script src="js/utils.js?v=20260911a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260903b"></script>
-<script src="js/producao.js?v=20260903b"></script>
+<script src="js/admin.js?v=20260911a"></script>
+<script src="js/producao.js?v=20260911a"></script>
 </body>
 </html>

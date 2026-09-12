@@ -117,6 +117,21 @@ function slugify(texto) {
     .replace(/(^-|-$)/g, "");
 }
 
+// Texto "achatado" para comparar/buscar: sem acentos, minúsculo e sem espaços
+// sobrando. É o que faz "joao" encontrar "João" e "3o ano" encontrar "3º Ano"
+// — os indicadores ordinais (º ª) e o sinal de grau viram letra, porque cada
+// um digita o nome do time de um jeito.
+function normalizarTexto(texto) {
+  const marcasDiacriticas = new RegExp("[" + "\u0300" + "-" + "\u036f" + "]", "g");
+  return String(texto ?? "")
+    .normalize("NFD")
+    .replace(marcasDiacriticas, "")
+    .replace(/[\u00ba\u00b0]/g, "o") // º e °
+    .replace(/\u00aa/g, "a")          // ª
+    .toLowerCase()
+    .trim();
+}
+
 function formatarData(timestamp) {
   if (!timestamp || !timestamp.toDate) return "";
   const d = timestamp.toDate();
@@ -560,10 +575,22 @@ const STATUS_PEDIDO = [
   { id: "costura", label: "Costura" },
   { id: "logistica", label: "Logística" },
   { id: "entregue", label: "Entregue ao representante" },
-  // Status especial (fora da linha do tempo): pausa tudo para os usuários —
+  // Status especiais (fora da linha do tempo): param tudo para os usuários —
   // sem cadastrar/editar nomes e sem receber pagamento. Só o admin muda.
-  { id: "suspenso", label: "Suspenso" }
+  // "Suspenso" é a pausa temporária (o pedido volta de onde parou);
+  // "Bloqueado" é a trava por decisão da organização (pendência com o cliente,
+  // pedido em disputa...), até que ela mesma resolva e devolva o status.
+  { id: "suspenso", label: "Suspenso" },
+  { id: "bloqueado", label: "Bloqueado" }
 ];
+
+// Status que NÃO fazem parte da linha do tempo do pedido: ficam fora da barra
+// de etapas e travam o pedido, apesar de virem no fim da lista acima.
+const STATUS_FORA_DA_LINHA = ["suspenso", "bloqueado"];
+
+function statusForaDaLinha(statusId) {
+  return STATUS_FORA_DA_LINHA.includes(statusId);
+}
 
 // Status atual do time (com compatibilidade para times antigos que só têm `fechado`).
 function statusPedidoDe(time) {
@@ -585,14 +612,24 @@ function pedidoAberto(time) {
   return statusPedidoDe(time) === "aberto";
 }
 
-// Pedido suspenso: tudo bloqueado para os usuários (sem cadastro e sem pagamento).
+// Pedido suspenso: tudo parado para os usuários (sem cadastro e sem pagamento).
 function pedidoSuspenso(time) {
   return statusPedidoDe(time) === "suspenso";
 }
 
+// Pedido bloqueado: mesma trava do suspenso, mas por decisão da organização.
+function pedidoBloqueado(time) {
+  return statusPedidoDe(time) === "bloqueado";
+}
+
+// Pedido travado (suspenso OU bloqueado): nada de cadastro nem de pagamento.
+function pedidoTravado(time) {
+  return statusForaDaLinha(statusPedidoDe(time));
+}
+
 // Etapas em que o representante ainda pode ADICIONAR/EDITAR nomes na lista.
 // A lista só trava de verdade quando o pagamento encerra (pagamento_encerrado
-// em diante). "Suspenso" fica de fora (bloqueia tudo).
+// em diante). "Suspenso" e "Bloqueado" ficam de fora (travam tudo).
 function pedidoAceitaCadastro(time) {
   const s = statusPedidoDe(time);
   return s === "aberto" || s === "fechado" || s === "pagamento_andamento";
@@ -606,10 +643,11 @@ function pedidoAceitaPagamento(time) {
 
 // Da Impressão em diante o pedido já está sendo produzido: é o momento em que
 // a lista se separa entre o que vai para a impressão (pago) e o que fica
-// pendente (não pago). "Suspenso" fica de fora, apesar de vir depois na lista.
+// pendente (não pago). Os status fora da linha do tempo ("Suspenso" e
+// "Bloqueado") ficam de fora, apesar de virem depois na lista.
 function pedidoEmProducao(time) {
   const s = statusPedidoDe(time);
-  return s !== "suspenso" && indiceStatus(s) >= indiceStatus("impressao");
+  return !statusForaDaLinha(s) && indiceStatus(s) >= indiceStatus("impressao");
 }
 
 // Classe CSS do badge conforme o status (usada em todas as telas).
@@ -617,6 +655,7 @@ function classeBadgeStatus(statusId) {
   if (statusId === "aberto") return "aberto";
   if (statusId === "entregue") return "pago";
   if (statusId === "suspenso") return "suspenso";
+  if (statusId === "bloqueado") return "bloqueado";
   return "fechado";
 }
 
@@ -635,18 +674,19 @@ function renderizarBarraStatus(container, statusId) {
   container.className = "barra-status";
   container.innerHTML = "";
 
-  // Suspenso não faz parte da linha do tempo: mostra um indicador destacado.
-  if (statusId === "suspenso") {
+  // Suspenso e bloqueado não fazem parte da linha do tempo: mostram um
+  // indicador destacado no lugar das etapas.
+  if (statusForaDaLinha(statusId)) {
     const etapa = document.createElement("span");
-    etapa.className = "status-etapa suspenso atual";
-    etapa.textContent = "⏸ Pedido suspenso";
+    etapa.className = "status-etapa " + statusId + " atual";
+    etapa.textContent = statusId === "bloqueado" ? "🚫 Pedido bloqueado" : "⏸ Pedido suspenso";
     container.appendChild(etapa);
     return;
   }
 
   const atual = indiceStatus(statusId);
   STATUS_PEDIDO.forEach((s, i) => {
-    if (s.id === "suspenso") return; // fora da linha do tempo
+    if (statusForaDaLinha(s.id)) return; // fora da linha do tempo
     const etapa = document.createElement("span");
     etapa.className = "status-etapa" + (i < atual ? " concluida" : i === atual ? " atual" : "");
     etapa.textContent = s.label;
@@ -735,7 +775,7 @@ function carrinhoTimes(itens) {
 // Uma camiseta pode ser paga agora? Vale para o time dela, não para o time
 // da página aberta — é o que permite juntar filhos de times diferentes.
 function podePagarAgora(time, aluno) {
-  if (!time || pedidoSuspenso(time) || !pedidoAceitaPagamento(time)) return false;
+  if (!time || pedidoTravado(time) || !pedidoAceitaPagamento(time)) return false;
   if (!aluno || aluno.excluido || aluno.pago || aluno.ajusteSolicitado) return false;
   return true;
 }

@@ -21,6 +21,11 @@ const precosTimeSalvos = {};  // timeId -> aviso a mostrar depois de salvar/limp
 // (lista, Kanban, Financeiro, resumo de pagamentos e exportações).
 let clienteFiltro = "";
 
+// Texto digitado na busca do topo. Vale para as telas de pedidos (lista de
+// times da aba Inicial e Kanban) e procura no nome do time, no nome do
+// estudante e no apelido (nome na camiseta). Ver buscaTermos().
+let buscaFiltro = "";
+
 const elPainel = document.getElementById("painelAdmin");
 const elEmailLogado = document.getElementById("emailLogado");
 const elFormCriarTime = document.getElementById("formCriarTime");
@@ -30,6 +35,9 @@ const elBtnExportarConferencia = document.getElementById("btnExportarConferencia
 const elMsgCriarTime = document.getElementById("msgCriarTime");
 const elBtnSairAdmin = document.getElementById("btnSairAdmin");
 const elFiltroCliente = document.getElementById("filtroCliente");
+const elBuscaPedidos = document.getElementById("buscaPedidos");
+const elBtnLimparBusca = document.getElementById("btnLimparBusca");
+const elResumoBusca = document.getElementById("resumoBusca");
 const elFormCriarCliente = document.getElementById("formCriarCliente");
 const elListaClientesAdmin = document.getElementById("listaClientesAdmin");
 const elMsgCriarCliente = document.getElementById("msgCriarCliente");
@@ -202,6 +210,110 @@ if (elFiltroCliente) {
     renderizarSeletoresDeCliente();
     renderizarTimesAdmin();
   });
+}
+
+// ============================================================
+// BUSCA DOS PEDIDOS (caixa do topo, acima do menu de abas)
+// ============================================================
+// Acha um pedido sem abrir time por time: procura no nome do TIME (e no
+// cliente, no modelo e no representante dele) e, dentro dele, no NOME do
+// estudante e no APELIDO (nome na camiseta). Vale para as telas de pedidos —
+// a lista da aba Inicial e o Kanban. As outras abas (Financeiro, Produção,
+// Pagamentos) e as exportações continuam só com o filtro de Cliente, para os
+// totais não mudarem por causa de uma busca.
+
+// Termos da busca: texto sem acentos, em minúsculas, quebrado em palavras.
+// Todas as palavras precisam bater — "3a joao" acha o João do 3º Ano A.
+function buscaTermos() {
+  const texto = normalizarTexto(buscaFiltro);
+  return texto ? texto.split(/\s+/) : [];
+}
+
+function buscaAtiva() {
+  return buscaTermos().length > 0;
+}
+
+// O que, no time, entra na busca.
+function textoDoTimeParaBusca(time) {
+  return [
+    time.nome,
+    nomeClienteDoTime(time),
+    time.modeloCamiseta,
+    contatoDoTime(time).nome
+  ].filter(Boolean).join(" ");
+}
+
+// O que, na camiseta, entra na busca (o número ajuda a achar pelo dorsal).
+function textoDoAlunoParaBusca(aluno) {
+  return [aluno.nome, aluno.nomeCamiseta, aluno.numero].filter(Boolean).join(" ");
+}
+
+// Resultado da busca em um pedido:
+//   { casa, alunos } — `casa` diz se o pedido entra na lista; `alunos` são as
+//   camisetas que bateram (vazio quando quem bateu foi o próprio time).
+// As palavras que já batem no time saem da conta, então "3a joao" funciona
+// mesmo com "3a" vindo do nome do time e "joao" do nome do estudante.
+function resultadoBusca(time, alunos, termos) {
+  if (!termos.length) return { casa: true, alunos: [] };
+
+  const alvoTime = normalizarTexto(textoDoTimeParaBusca(time));
+  const faltando = termos.filter((t) => !alvoTime.includes(t));
+  if (faltando.length === 0) return { casa: true, alunos: [] };
+
+  const achados = (alunos || []).filter((a) => {
+    const alvo = normalizarTexto(textoDoAlunoParaBusca(a));
+    return faltando.every((t) => alvo.includes(t));
+  });
+  return { casa: achados.length > 0, alunos: achados };
+}
+
+// Times das telas de pedidos: filtro de Cliente do topo + busca.
+function timesDosPedidos() {
+  const termos = buscaTermos();
+  if (!termos.length) return timesFiltrados();
+  return timesFiltrados().filter(([, e]) => resultadoBusca(e.time, e.alunos, termos).casa);
+}
+
+// Mostra quanto a busca achou e liga/desliga o botão de limpar.
+function atualizarResumoBusca(nTimes, nCamisetas) {
+  if (elBtnLimparBusca) elBtnLimparBusca.classList.toggle("oculto", !buscaAtiva());
+  if (!elResumoBusca) return;
+
+  if (!buscaAtiva()) {
+    elResumoBusca.textContent = "";
+    elResumoBusca.classList.add("oculto");
+    return;
+  }
+  elResumoBusca.classList.remove("oculto");
+  elResumoBusca.textContent = nTimes === 0
+    ? "Nada encontrado"
+    : `${nTimes} pedido(s)` + (nCamisetas > 0 ? ` · ${nCamisetas} camiseta(s)` : "");
+}
+
+function limparBusca() {
+  buscaFiltro = "";
+  if (elBuscaPedidos) elBuscaPedidos.value = "";
+  renderizarTimesAdmin();
+  if (elBuscaPedidos) elBuscaPedidos.focus();
+}
+
+if (elBuscaPedidos) {
+  elBuscaPedidos.addEventListener("input", () => {
+    buscaFiltro = elBuscaPedidos.value;
+    // Redesenha a lista de times — que já redesenha o Kanban no fim.
+    renderizarTimesAdmin();
+  });
+  // Esc limpa a busca sem tirar a mão do teclado.
+  elBuscaPedidos.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      limparBusca();
+    }
+  });
+}
+
+if (elBtnLimparBusca) {
+  elBtnLimparBusca.addEventListener("click", limparBusca);
 }
 
 // ---------------- Criar cliente ----------------
@@ -492,14 +604,21 @@ function escutarAlunosDaTime(timeId) {
 function renderizarTimesAdmin() {
   elListaTimesAdmin.innerHTML = "";
 
-  const ids = timesFiltrados()
+  const termosBusca = buscaTermos();
+  // Quantas camisetas a busca achou no total (mostrado no resumo do topo).
+  let camisetasAchadas = 0;
+
+  const ids = timesDosPedidos()
     .map(([id]) => id)
     .sort((a, b) => estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR"));
 
   if (ids.length === 0) {
-    elListaTimesAdmin.innerHTML = clienteFiltro
-      ? "<p>Nenhum time para o cliente escolhido. Troque o cliente no seletor do topo ou crie um time para ele.</p>"
-      : "<p>Nenhum time cadastrado ainda.</p>";
+    elListaTimesAdmin.innerHTML = termosBusca.length
+      ? `<p>Nenhum pedido encontrado para <strong>${escapeHtmlAdmin(buscaFiltro.trim())}</strong>. A busca procura no nome do time, no nome do estudante e no apelido da camiseta${clienteFiltro ? ", dentro do cliente escolhido no topo" : ""}.</p>`
+      : clienteFiltro
+        ? "<p>Nenhum time para o cliente escolhido. Troque o cliente no seletor do topo ou crie um time para ele.</p>"
+        : "<p>Nenhum time cadastrado ainda.</p>";
+    atualizarResumoBusca(0, 0);
     renderizarResumoPagamentos();
     renderizarKanban();
     renderizarFinanceiro();
@@ -510,6 +629,14 @@ function renderizarTimesAdmin() {
 
   ids.forEach((timeId) => {
     const { time, alunos, expandido } = estadoTimes[timeId];
+
+    // O que a busca achou dentro deste pedido. Com camisetas achadas, o card
+    // já abre mostrando só elas (e o botão passa a oferecer a lista completa).
+    const achado = resultadoBusca(time, alunos, termosBusca);
+    const idsAchados = new Set(achado.alunos.map((a) => a.id));
+    camisetasAchadas += achado.alunos.length;
+    const soResultados = idsAchados.size > 0 && !expandido;
+    const mostrarLista = expandido || soResultados;
 
     const card = document.createElement("div");
     card.className = "card";
@@ -619,9 +746,13 @@ function renderizarTimesAdmin() {
 
     const btnExpandir = document.createElement("button");
     btnExpandir.className = "secundario";
-    btnExpandir.textContent = expandido ? "Ocultar lista" : "Ver lista";
+    btnExpandir.textContent = soResultados
+      ? "Ver lista completa"
+      : expandido ? "Ocultar lista" : "Ver lista";
     btnExpandir.onclick = () => {
-      estadoTimes[timeId].expandido = !estadoTimes[timeId].expandido;
+      // Com a lista aberta só nos resultados da busca, o botão abre o time
+      // inteiro em vez de fechar o que a busca mostrou.
+      estadoTimes[timeId].expandido = soResultados ? true : !estadoTimes[timeId].expandido;
       renderizarTimesAdmin();
     };
     botoes.appendChild(btnExpandir);
@@ -657,7 +788,17 @@ function renderizarTimesAdmin() {
 
     card.appendChild(botoes);
 
-    if (expandido) {
+    if (mostrarLista) {
+      // Aviso de que a lista está recortada pela busca (com a saída pelo botão).
+      if (soResultados) {
+        const nota = document.createElement("p");
+        nota.className = "busca-nota";
+        nota.innerHTML =
+          `🔎 Mostrando <strong>${idsAchados.size}</strong> de ${alunos.length} camiseta(s) — ` +
+          `as que combinam com a busca. Use <strong>Ver lista completa</strong> para ver o time inteiro.`;
+        card.appendChild(nota);
+      }
+
       const tabela = document.createElement("table");
       tabela.innerHTML = `
         <thead>
@@ -667,9 +808,13 @@ function renderizarTimesAdmin() {
       `;
       const tbody = tabela.querySelector("tbody");
 
-      alunos.forEach((aluno) => {
+      const alunosDaTabela = soResultados ? achado.alunos : alunos;
+
+      alunosDaTabela.forEach((aluno) => {
         const tr = document.createElement("tr");
         if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
+        // Realce de quem a busca achou (útil na lista completa do time).
+        if (idsAchados.has(aluno.id)) tr.classList.add("linha-busca");
         // Nas etapas de produção, quem não pagou fica visivelmente de fora.
         if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno)) {
           tr.classList.add("linha-fora-producao");
@@ -791,6 +936,8 @@ function renderizarTimesAdmin() {
     elListaTimesAdmin.appendChild(card);
   });
 
+  atualizarResumoBusca(ids.length, camisetasAchadas);
+
   renderizarResumoPagamentos();
   renderizarKanban();
   renderizarFinanceiro();
@@ -888,11 +1035,13 @@ function renderizarKanban() {
 
   board.innerHTML = "";
 
-  const ids = timesFiltrados().map(([id]) => id);
+  const ids = timesDosPedidos().map(([id]) => id);
   if (ids.length === 0) {
-    board.innerHTML = clienteFiltro
-      ? "<p>Nenhum pedido para o cliente escolhido.</p>"
-      : "<p>Nenhum pedido (time) cadastrado ainda.</p>";
+    board.innerHTML = buscaAtiva()
+      ? `<p>Nenhum pedido encontrado para <strong>${escapeHtmlAdmin(buscaFiltro.trim())}</strong>.</p>`
+      : clienteFiltro
+        ? "<p>Nenhum pedido para o cliente escolhido.</p>"
+        : "<p>Nenhum pedido (time) cadastrado ainda.</p>";
     return;
   }
 
