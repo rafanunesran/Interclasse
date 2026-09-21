@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260921a" />
+<link rel="stylesheet" href="css/style.css?v=20260921b" />
 </head>
 <body>
 
@@ -249,6 +249,43 @@
   </div>
 </main>
 
+<!-- Acrescentar uma camiseta à lista de um time, sem sair do painel. É o
+     caminho do Super Admin para o nome que faltou: vale mesmo com o pedido
+     já fechado, e o formulário fica aberto para cadastrar um atrás do outro. -->
+<div id="modalNovaCamiseta" class="modal-pix oculto">
+  <div class="modal-pix-conteudo modal-form-conteudo">
+    <button id="fecharNovaCamiseta" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Adicionar camiseta</h3>
+    <p id="novaCamisetaTime" class="pix-ajuda"></p>
+    <p id="novaCamisetaAviso" class="aviso oculto"></p>
+
+    <form id="formNovaCamiseta">
+      <label for="novaCamisetaNome">Nome do estudante</label>
+      <input type="text" id="novaCamisetaNome" autocomplete="off" required />
+
+      <label for="novaCamisetaTamanho">Tamanho da camiseta</label>
+      <select id="novaCamisetaTamanho" required></select>
+
+      <label for="novaCamisetaNumero">Número da camiseta</label>
+      <input type="text" id="novaCamisetaNumero" inputmode="numeric" autocomplete="off" />
+      <p id="novaCamisetaDuplicado" class="motivo-ajuste oculto"></p>
+
+      <label for="novaCamisetaCostas">Nome na camiseta (costas)</label>
+      <input type="text" id="novaCamisetaCostas" autocomplete="off" placeholder="Em branco = o nome do estudante" />
+
+      <label class="checkbox-inline" for="novaCamisetaGoleiro">
+        <input type="checkbox" id="novaCamisetaGoleiro" />
+        🧤 É goleiro (camiseta de cor especial)
+      </label>
+
+      <button type="submit" class="primario">Adicionar à lista</button>
+    </form>
+
+    <p id="msgNovaCamiseta" class="oculto"></p>
+    <p class="pix-ajuda">A camiseta entra como <strong>pendente</strong>; o pagamento se marca na lista, na coluna Pagamento.</p>
+  </div>
+</div>
+
 <!-- Pop-up de detalhe de custo (Financeiro) -->
 <div id="modalCusto" class="modal-pix oculto">
   <div class="modal-pix-conteudo">
@@ -266,9 +303,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260921a"></script>
+<script src="js/utils.js?v=20260921b"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260921a"></script>
-<script src="js/producao.js?v=20260921a"></script>
+<script src="js/admin.js?v=20260921b"></script>
+<script src="js/producao.js?v=20260921b"></script>
 </body>
 </html>

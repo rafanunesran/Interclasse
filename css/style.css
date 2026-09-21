@@ -1096,6 +1096,14 @@ tr.linha-ajuste td { background: #fef2f2; }
   overflow-y: auto;
 }
 .modal-pix-conteudo h3 { margin: 0 0 8px; }
+/* Modal que é um formulário: rótulos e campos alinhados à esquerda, e um
+   pouco mais largo. Vem depois do bloco acima de propósito, senão o
+   text-align: center dele venceria. */
+.modal-form-conteudo {
+  text-align: left;
+  max-width: 420px;
+}
+.modal-form-conteudo h3 { text-align: center; }
 .modal-pix-fechar {
   position: absolute;
   top: 8px;
