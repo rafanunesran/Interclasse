@@ -166,7 +166,9 @@ function itemAtual(item) {
     removido: false,
     mudou: false,
     pago: !!item.pago,
-    pagamentoForma: item.pagamentoForma || ""
+    pagamentoForma: item.pagamentoForma || "",
+    // Camiseta de cor especial: manda o goleiro para um CSV próprio.
+    goleiro: !!item.goleiro
   };
   if (item.origem === "avulso") return base;
 
@@ -180,11 +182,13 @@ function itemAtual(item) {
     (aluno.nome || "") !== (item.nome || "") ||
     (aluno.nomeCamiseta || "") !== (item.nomeCamiseta || "") ||
     String(aluno.numero || "") !== String(item.numero || "") ||
-    (aluno.tamanho || "") !== (item.tamanho || "");
+    (aluno.tamanho || "") !== (item.tamanho || "") ||
+    ehGoleiro(aluno) !== !!item.goleiro;
   base.nome = aluno.nome || "";
   base.nomeCamiseta = aluno.nomeCamiseta || "";
   base.numero = aluno.numero || "";
   base.tamanho = aluno.tamanho || "";
+  base.goleiro = ehGoleiro(aluno);
   base.pago = !!aluno.pago;
   base.pagamentoForma = aluno.pagamentoForma || "";
   base.timeNome = (estado.time && estado.time.nome) || item.timeNome || "";
@@ -196,7 +200,9 @@ function agruparPorModelo(itens) {
   const grupos = new Map();
   (itens || []).forEach((item) => {
     const atual = itemAtual(item);
-    const modelo = String(item.modelo || MODELO_PADRAO).trim() || MODELO_PADRAO;
+    // O goleiro veste outra cor: mesmo sendo a mesma arte, ele não pode sair
+    // no mesmo arquivo de impressão — vira o modelo "<arte> — goleiro".
+    const modelo = modeloComGoleiro(item.modelo, atual.goleiro);
     if (!grupos.has(modelo)) grupos.set(modelo, []);
     grupos.get(modelo).push({ item, atual });
   });
@@ -391,7 +397,7 @@ function criarBlocoModelo(leva, grupo) {
         : "");
 
     tr.innerHTML = `
-      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")}${avisos}
+      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${avisos}
           ${!atual.avulso && atual.nome && atual.nomeCamiseta
             ? `<br><small class="pix-ajuda">${escapeHtmlAdmin(atual.nome)}</small>` : ""}</td>
       <td>${escapeHtmlAdmin(atual.numero || "-")}</td>
@@ -911,7 +917,7 @@ function renderizarSelecaoProducao() {
 
       tr.innerHTML = `
         <td class="cel-marcar"></td>
-        <td>${escapeHtmlAdmin(aluno.nome)}</td>
+        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}</td>
         <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
         <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
         <td>${escapeHtmlAdmin(aluno.tamanho || "-")}</td>
@@ -1079,6 +1085,7 @@ async function enviarSelecaoParaProducao() {
             nomeCamiseta: aluno.nomeCamiseta || "",
             numero: aluno.numero || "",
             tamanho: aluno.tamanho || "",
+            goleiro: ehGoleiro(aluno),
             criadoEmMs: Date.now()
           },
           { merge: true }
@@ -1131,7 +1138,7 @@ function baixarCsvsDaLeva(leva, grupos) {
 
 // Conferência da leva inteira: um arquivo só, com o modelo em cada linha.
 function exportarConferenciaLeva(leva, grupos) {
-  const linhas = [["Leva", "Modelo", "Cliente", "Time", "Origem", "Nome do Estudante", "Nome na Camiseta", "Numero", "Tamanho", "Pago", "Forma Pagto", "Situacao"]];
+  const linhas = [["Leva", "Modelo", "Cliente", "Time", "Origem", "Nome do Estudante", "Nome na Camiseta", "Numero", "Tamanho", "Goleiro", "Pago", "Forma Pagto", "Situacao"]];
   grupos.forEach((g) => {
     g.linhas.forEach(({ atual }) => {
       linhas.push([
@@ -1144,6 +1151,7 @@ function exportarConferenciaLeva(leva, grupos) {
         nomeNaCamiseta(atual),
         atual.numero || "",
         atual.tamanho || "",
+        atual.goleiro ? "Sim" : "Nao",
         atual.avulso ? "-" : (atual.pago ? "Sim" : "Nao"),
         atual.avulso ? "" : (atual.pagamentoForma || ""),
         atual.removido ? "Fora do pedido" : (atual.mudou ? "Alterada apos entrar" : "OK")

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Time — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260911a" />
+<link rel="stylesheet" href="css/style.css?v=20260921a" />
 </head>
 <body>
 
@@ -79,6 +79,12 @@
       <label for="nomeCostas">Nome na camiseta (costas)</label>
       <input type="text" id="nomeCostas" required />
 
+      <label class="checkbox-inline" for="goleiroAluno">
+        <input type="checkbox" id="goleiroAluno" />
+        🧤 É goleiro (camiseta de cor especial)
+      </label>
+      <p class="pix-ajuda">O goleiro joga com uma camiseta de cor diferente, para ser identificado em quadra. Dá para marcar e desmarcar depois, na lista.</p>
+
       <button type="submit" class="primario">Adicionar à lista</button>
     </form>
   </div>
@@ -95,6 +101,7 @@
           <th>Tamanho</th>
           <th>Número</th>
           <th>Nome na camiseta</th>
+          <th>Goleiro</th>
           <th>Pagamento</th>
           <th>Carrinho</th>
           <th>Ações</th>
@@ -183,7 +190,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260911a"></script>
-<script src="js/time.js?v=20260911a"></script>
+<script src="js/utils.js?v=20260921a"></script>
+<script src="js/time.js?v=20260921a"></script>
 </body>
 </html>

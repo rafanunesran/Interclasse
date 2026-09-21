@@ -406,6 +406,111 @@ function modeloDoTime(time) {
   return String((time && time.nome) || MODELO_PADRAO).trim() || MODELO_PADRAO;
 }
 
+// ============================================================
+// GOLEIRO — camiseta de cor especial
+// ============================================================
+// O goleiro veste uma camiseta de cor diferente, para ser identificado em
+// quadra. Aqui isso é só uma marca na camiseta (o campo `goleiro` do aluno):
+// quem cuida da lista do time (com a senha do time) e o Super Admin marcam e
+// desmarcam, e a produção separa essas camisetas das demais — cor diferente
+// quer dizer arquivo de impressão diferente.
+
+function ehGoleiro(aluno) {
+  return !!(aluno && aluno.goleiro);
+}
+
+// Marca do goleiro para as listas que não têm a coluna de marcar (produção,
+// levas, conferência). Onde dá para editar, quem manda é a caixa de marcar.
+function badgeGoleiroHtml(aluno) {
+  return ehGoleiro(aluno)
+    ? '<span class="badge goleiro" title="Goleiro — camiseta de cor especial">🧤 Goleiro</span>'
+    : "";
+}
+
+// Caixa de marcar o goleiro — a mesma na página do time e no Super Admin.
+// `aoMudar(valor, chk)` é chamada a cada clique quando a marca grava na hora;
+// sem ela, a caixa só fica ali para ser lida ao salvar a linha inteira (é o
+// caso da edição). O rótulo devolvido expõe a caixa em `.chk`.
+function criarCheckGoleiro(aluno, aoMudar) {
+  const rotulo = document.createElement("label");
+  rotulo.className = "check-goleiro";
+  rotulo.title = "Goleiro — camiseta de cor especial";
+
+  const chk = document.createElement("input");
+  chk.type = "checkbox";
+  chk.checked = ehGoleiro(aluno);
+  chk.setAttribute("aria-label",
+    "Marcar " + ((aluno && aluno.nome) || "esta camiseta") + " como goleiro");
+
+  // Ícone e palavra são separados de propósito: no celular a palavra some
+  // (CSS) para a coluna não alargar a tabela, e a luva continua identificando.
+  const icone = document.createElement("span");
+  icone.className = "check-goleiro-icone";
+  icone.textContent = "🧤";
+  const texto = document.createElement("span");
+  texto.className = "check-goleiro-texto";
+
+  const pintar = () => {
+    icone.hidden = !chk.checked;
+    texto.textContent = chk.checked ? "goleiro" : "marcar";
+  };
+  pintar();
+
+  chk.onchange = () => {
+    pintar();
+    if (aoMudar) aoMudar(chk.checked, chk);
+  };
+
+  rotulo.appendChild(chk);
+  rotulo.appendChild(icone);
+  rotulo.appendChild(texto);
+  rotulo.chk = chk;
+  return rotulo;
+}
+
+// Separa os goleiros do resto da lista.
+function separarGoleiros(itens) {
+  const lista = itens || [];
+  return {
+    goleiros: lista.filter(ehGoleiro),
+    demais: lista.filter((i) => !ehGoleiro(i))
+  };
+}
+
+// Na produção, o goleiro vira uma variação do modelo: como a cor da camiseta
+// é outra, ele não pode sair no mesmo arquivo de impressão do restante.
+const SUFIXO_MODELO_GOLEIRO = " — goleiro";
+
+function modeloComGoleiro(modelo, goleiro) {
+  const base = String(modelo || MODELO_PADRAO).trim() || MODELO_PADRAO;
+  return goleiro ? base + SUFIXO_MODELO_GOLEIRO : base;
+}
+
+// Nome de arquivo irmão ("producao-time.csv" + "-goleiros" ->
+// "producao-time-goleiros.csv").
+function nomeComSufixo(nomeArquivo, sufixo) {
+  const base = String(nomeArquivo || "").replace(/\.csv$/i, "");
+  return base + sufixo + ".csv";
+}
+
+// CSV de produção com os goleiros à parte: o arquivo principal sai igual ao de
+// sempre (mesmo nome, mesmo formato) e, SÓ se houver goleiro na lista, sai
+// também um "-goleiros.csv" com eles. Devolve as contagens de cada arquivo.
+function baixarCSVProducaoSeparado(nomeArquivo, alunos) {
+  const produzir = (alunos || []).filter(alunoSeraProduzido);
+  const { goleiros, demais } = separarGoleiros(produzir);
+
+  if (demais.length > 0) baixarCSVProducaoItens(nomeArquivo, demais);
+  if (goleiros.length > 0) {
+    // O navegador barra dois downloads disparados no mesmo instante: o
+    // segundo arquivo sai logo depois, com um respiro.
+    const nomeGoleiros = nomeComSufixo(nomeArquivo, "-goleiros");
+    if (demais.length === 0) baixarCSVProducaoItens(nomeGoleiros, goleiros);
+    else setTimeout(() => baixarCSVProducaoItens(nomeGoleiros, goleiros), 400);
+  }
+  return { goleiros: goleiros.length, demais: demais.length };
+}
+
 // Uma linha do CSV de produção: nome na camiseta (A), número (B), tamanho (C).
 function linhaProducaoDe(item) {
   return [nomeNaCamiseta(item), (item && item.numero) || "", (item && item.tamanho) || ""];
