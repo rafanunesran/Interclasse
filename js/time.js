@@ -540,10 +540,15 @@ function renderizarTabela() {
       <td>${escapeHtml(aluno.tamanho)}</td>
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
+      <td class="cel-goleiro"></td>
       <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
       <td class="cel-carrinho"></td>
       <td class="acoes-linha"></td>
     `;
+
+    // Goleiro: quem entrou com a senha do time marca e desmarca aqui mesmo,
+    // num clique. Para quem só está olhando a lista, fica a marca (ou "-").
+    preencherCelulaGoleiro(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
 
     // Carrinho: marque quantas quiser e pague todas de uma vez lá embaixo.
     const tdCarrinho = tr.querySelector(".cel-carrinho");
@@ -633,6 +638,35 @@ function renderizarTabela() {
   renderizarResumo();
 }
 
+// Célula "Goleiro" da lista. Com permissão de editar (senha do time, lista
+// aberta), é uma caixa de marcar que grava na hora; sem permissão, é só a
+// marca de quem é goleiro.
+function preencherCelulaGoleiro(td, aluno, podeEditar) {
+  if (!td) return;
+  td.innerHTML = "";
+
+  if (!podeEditar) {
+    td.innerHTML = ehGoleiro(aluno) ? badgeGoleiroHtml(aluno) : '<span class="pix-ajuda">-</span>';
+    return;
+  }
+
+  td.appendChild(criarCheckGoleiro(aluno, (valor, chk) => {
+    chk.disabled = true;
+    marcarGoleiro(aluno, valor).finally(() => { chk.disabled = false; });
+  }));
+}
+
+// Grava a marca do goleiro. O onSnapshot redesenha a lista sozinho.
+function marcarGoleiro(aluno, valor) {
+  return db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
+    .update({ goleiro: !!valor })
+    .catch((erro) => {
+      console.error(erro);
+      alert("Não foi possível salvar a marca de goleiro. Tente novamente.");
+      renderizarTabela();
+    });
+}
+
 function renderizarResumo() {
   const contagem = {};
   TODOS_TAMANHOS.forEach((t) => (contagem[t] = 0));
@@ -651,6 +685,13 @@ function renderizarResumo() {
       fora.textContent = `Fora da produção: ${pendentes.length}`;
       elResumo.appendChild(fora);
     }
+  }
+  const nGoleiros = alunosAtuais.filter(ehGoleiro).length;
+  if (nGoleiros > 0) {
+    const span = document.createElement("span");
+    span.innerHTML = `<strong>🧤 Goleiros: ${nGoleiros}</strong>`;
+    span.title = "Camiseta de cor especial";
+    elResumo.appendChild(span);
   }
   TODOS_TAMANHOS.forEach((t) => {
     if (contagem[t] > 0) {
@@ -683,6 +724,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
   const tamanho = document.getElementById("tamanho").value;
   const numero = document.getElementById("numeroCamiseta").value.trim();
   const nomeCamiseta = document.getElementById("nomeCostas").value.trim();
+  const elGoleiro = document.getElementById("goleiroAluno");
+  const goleiro = !!(elGoleiro && elGoleiro.checked);
 
   if (!nome || !tamanho || !nomeCamiseta) {
     alert("Preencha nome, tamanho e nome para a camiseta.");
@@ -698,6 +741,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
       tamanho,
       numero,
       nomeCamiseta,
+      // Camiseta de cor especial: o goleiro sai separado na produção.
+      goleiro,
       excluido: false,
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -740,6 +785,10 @@ function editarLinha(tr, aluno) {
   inputCostas.value = aluno.nomeCamiseta || "";
   tdCostas.appendChild(inputCostas);
 
+  const tdGoleiro = document.createElement("td");
+  const rotuloGoleiro = criarCheckGoleiro(aluno);
+  tdGoleiro.appendChild(rotuloGoleiro);
+
   const tdAcoes = document.createElement("td");
   tdAcoes.className = "acoes-linha";
 
@@ -758,7 +807,8 @@ function editarLinha(tr, aluno) {
         nome: novoNome,
         tamanho: selectTamanho.value,
         numero: inputNumero.value.trim(),
-        nomeCamiseta: novoNomeCamiseta
+        nomeCamiseta: novoNomeCamiseta,
+        goleiro: rotuloGoleiro.chk.checked
       });
     } catch (erro) {
       console.error(erro);
@@ -781,6 +831,7 @@ function editarLinha(tr, aluno) {
   tr.appendChild(tdTamanho);
   tr.appendChild(tdNumero);
   tr.appendChild(tdCostas);
+  tr.appendChild(tdGoleiro);
   tr.appendChild(tdPagamento);
   tr.appendChild(tdCarrinho);
   tr.appendChild(tdAcoes);
@@ -1235,9 +1286,9 @@ elBtnExportar.addEventListener("click", () => {
     alert("Não há alunos cadastrados para exportar.");
     return;
   }
-  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Pago", "Forma Pagto"]];
+  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Pago", "Forma Pagto"]];
   alunosAtuais.forEach((a) => {
-    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
   });
   baixarCSV(`pedido-${slugify(timeAtual.nome)}.csv`, linhas);
 });

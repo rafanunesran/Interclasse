@@ -124,7 +124,8 @@ A caixa **🔎 Buscar**, no topo do painel (logo acima do menu de abas, junto do
 cliente), acha um pedido sem precisar abrir time por time.
 
 - **Onde procura:** no **time** (nome, cliente, modelo e representante) e, dentro dele, em
-  cada camiseta — **nome do estudante**, **apelido** (nome na camiseta) e **número**.
+  cada camiseta — **nome do estudante**, **apelido** (nome na camiseta) e **número**. A
+  palavra `goleiro` junta todos os [goleiros](#goleiro-camiseta-de-cor-especial) de uma vez.
 - **Onde vale:** na lista de times da aba **Inicial** e no **Kanban** — as telas de pedidos.
   As abas **Financeiro**, **Produção** e **Pagamentos** e as exportações continuam seguindo
   só o seletor **Cliente**, para os totais não mudarem por causa de uma busca.
@@ -167,6 +168,37 @@ nomes e sem receber pagamento:
 
 Para destravar, é só devolver o pedido ao status em que ele estava — nada se perde no
 caminho: a lista, os pagamentos e o histórico continuam como estavam.
+
+## Goleiro (camiseta de cor especial)
+
+O goleiro joga com uma camiseta de **cor diferente**, para ser identificado em quadra. Na
+lista isso é uma marca na camiseta — e ela acompanha o pedido até a impressão.
+
+- **Quem marca:** o **Super Admin**, na lista de qualquer time (aba Inicial), e **quem
+  administra a lista do time** com a senha, na página do pedido. Nos dois lugares é a
+  coluna **Goleiro**: um clique na caixa marca ou desmarca, e já fica salvo.
+- **Ao cadastrar:** o formulário da página do time tem a opção *🧤 É goleiro (camiseta de
+  cor especial)* — dá para marcar na hora ou depois, na lista.
+- **Quando pode mudar:** o representante marca enquanto a lista aceita nomes (Aberto,
+  Fechado ou Pagamento em andamento, com os cadastros gerais abertos); o Super Admin
+  marca **sempre**, mesmo com o pedido já fechado. Quem só está olhando a lista, sem a
+  senha, vê a marca 🧤 mas não altera nada.
+- **Onde aparece:** contagem de goleiros no resumo da página do time, no card do time e no
+  resumo da aba Pagamentos; marca 🧤 nas listas da aba Produção; e a busca do topo do
+  painel encontra todos de uma vez com a palavra `goleiro`.
+
+**Na impressão, a cor diferente vira arquivo diferente** — não dá para misturar as duas
+cores no mesmo arquivo:
+
+- **CSV de produção** (aba Inicial e Configurações): sai o arquivo de sempre, com o mesmo
+  nome e o mesmo formato, e — **só quando houver goleiro** — um segundo arquivo
+  `...-goleiros.csv` com eles. Sem nenhum goleiro na lista, nada muda em relação a antes.
+- **Aba Produção (levas):** o goleiro vira uma variação do modelo, `<arte> — goleiro`, e
+  ganha o seu próprio CSV no *Baixar CSVs por modelo*.
+- **CSVs de conferência:** coluna `Goleiro` (Sim/Nao) em todos eles.
+
+> A marca fica no campo `goleiro` da camiseta. Camisetas cadastradas antes desta versão
+> entram como "não goleiro", sem nada a corrigir.
 
 ## Aba Financeiro (Super Admin)
 
@@ -218,8 +250,10 @@ São dois formatos, com finalidades diferentes.
   nome do estudante), **B: número**, **C: tamanho**.
 - Separador **vírgula**, UTF-8 **sem BOM** — o BOM grudaria no primeiro nome do arquivo.
 - Arquivos: `producao-<time>.csv` (por time) e `producao-interclasse-geral.csv` (todos).
+- Havendo [goleiro](#goleiro-camiseta-de-cor-especial) na lista, os goleiros saem num
+  arquivo irmão (`producao-<time>-goleiros.csv`), porque a camiseta deles é de outra cor.
 - A aba **Produção** usa exatamente este formato, mas com um arquivo **por modelo de camiseta**:
-  `producao-<leva>-<modelo>.csv`. Lá o que entra é o que você escolheu, pago ou não — ver
+  `producao-<leva>-<modelo>.csv` — e o goleiro entra como o modelo `<arte> — goleiro`. Lá o que entra é o que você escolheu, pago ou não — ver
   [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo).
 
 ```csv
@@ -232,10 +266,10 @@ BRUNO,7,G
 
 ### CSV de conferência (a lista completa)
 
-Continua igual ao de antes, para conferir o pedido e os pagamentos.
+Para conferir o pedido e os pagamentos.
 
 - Colunas: `Cliente`, `Time`, `Nome do Estudante`, `Tamanho`, `Numero`,
-  `Nome na Camiseta`, `Pago`, `Forma Pagto`.
+  `Nome na Camiseta`, `Goleiro`, `Pago`, `Forma Pagto`.
 - Separador `;` e codificação UTF-8 com BOM — abre corretamente no Excel, sem problemas de
   acentuação.
 - É o que o representante baixa na página do time, e o que o Super Admin baixa nos botões
