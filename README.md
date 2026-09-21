@@ -66,7 +66,7 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 3. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã"), uma senha própria para ele e o cliente a que ele pertence.
 4. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`) — que lista os clientes — ou direto pelo link do cliente (`SEU-SITE/index.html?cliente=ID-DO-CLIENTE`).
 5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
-6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Faltou alguém na lista? O botão **+ Adicionar camiseta** no card do time resolve na hora, mesmo com o pedido fechado. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
 
 ## Contato do representante (WhatsApp)
 
@@ -141,6 +141,26 @@ cliente), acha um pedido sem precisar abrir time por time.
 
 > A busca **soma** com o seletor **Cliente**: com um cliente escolhido, ela procura só
 > dentro dos pedidos dele.
+
+## Adicionar uma camiseta pelo Super Admin
+
+O cadastro normal é feito pelo representante, na página do time, com a senha. Mas quase
+sempre aparece **o nome que faltou** — e quase sempre depois de o pedido fechar. Para isso,
+o card de cada time (aba **Inicial**) tem o botão **+ Adicionar camiseta**.
+
+- Abre um formulário curto: **nome** e **tamanho** obrigatórios; número, nome na camiseta e
+  a marca de [goleiro](#goleiro-camiseta-de-cor-especial) são opcionais. Deixando o *nome na
+  camiseta* em branco, vai estampado o nome do estudante.
+- **Funciona em qualquer status** — inclusive com o pedido fechado, suspenso ou bloqueado,
+  que é justamente quando o esquecido aparece. Se o pedido já estiver em produção
+  (Impressão em diante), o formulário avisa: a camiseta nova entra como pendente e **não
+  está nos CSVs já exportados**.
+- Se o **número** já for de outra pessoa do time, aparece um aviso na hora da digitação
+  (dizendo de quem é) — mas não trava o cadastro, igual à conferência da página do time.
+- Depois de salvar, o formulário **continua aberto e limpo**, para cadastrar um atrás do
+  outro; o tamanho volta para *Selecione...* de propósito, para ninguém repetir sem querer
+  o tamanho do anterior. Fecha no **×**, no **Esc** ou clicando fora.
+- A camiseta entra como **pendente**; o pagamento se marca na coluna *Pagamento* da lista.
 
 ## Status do pedido
 

@@ -750,6 +750,15 @@ function renderizarTimesAdmin() {
 
     const botoes = document.createElement("div");
 
+    // Acrescentar um nome que faltou, sem precisar da senha do time nem
+    // reabrir o pedido. Abre o formulário rápido (modal).
+    const btnAdicionar = document.createElement("button");
+    btnAdicionar.className = "primario";
+    btnAdicionar.textContent = "+ Adicionar camiseta";
+    btnAdicionar.title = "Cadastrar uma camiseta na lista deste time";
+    btnAdicionar.onclick = () => abrirNovaCamiseta(timeId);
+    botoes.appendChild(btnAdicionar);
+
     const btnExpandir = document.createElement("button");
     btnExpandir.className = "secundario";
     btnExpandir.textContent = soResultados
@@ -2837,6 +2846,160 @@ async function excluirTime(timeId, time) {
     );
   }
 }
+
+// ============================================================
+// ADICIONAR CAMISETA (Super Admin)
+// ============================================================
+// O caminho curto para o nome que faltou: o representante cadastra pela
+// página do time, com a senha, mas quem organiza precisa conseguir incluir
+// alguém na hora — inclusive com o pedido já fechado, que é justamente
+// quando aparece o esquecido. O formulário fica aberto depois de salvar,
+// para cadastrar um atrás do outro.
+
+let novaCamisetaTimeId = null;
+
+const elModalNovaCamiseta = document.getElementById("modalNovaCamiseta");
+const elFormNovaCamiseta = document.getElementById("formNovaCamiseta");
+const elNovaCamisetaTime = document.getElementById("novaCamisetaTime");
+const elNovaCamisetaAviso = document.getElementById("novaCamisetaAviso");
+const elNovaCamisetaNome = document.getElementById("novaCamisetaNome");
+const elNovaCamisetaTamanho = document.getElementById("novaCamisetaTamanho");
+const elNovaCamisetaNumero = document.getElementById("novaCamisetaNumero");
+const elNovaCamisetaCostas = document.getElementById("novaCamisetaCostas");
+const elNovaCamisetaGoleiro = document.getElementById("novaCamisetaGoleiro");
+const elMsgNovaCamiseta = document.getElementById("msgNovaCamiseta");
+const elNovaCamisetaDuplicado = document.getElementById("novaCamisetaDuplicado");
+
+function abrirNovaCamiseta(timeId) {
+  const estado = estadoTimes[timeId];
+  if (!estado || !elModalNovaCamiseta) return;
+
+  novaCamisetaTimeId = timeId;
+  const time = estado.time;
+
+  if (elNovaCamisetaTime) {
+    elNovaCamisetaTime.innerHTML =
+      `Time <strong>${escapeHtmlAdmin(time.nome)}</strong> &middot; ${escapeHtmlAdmin(nomeClienteDoTime(time))}`;
+  }
+
+  // O pedido já andou? A camiseta nova entra fora do que já foi exportado —
+  // melhor dizer isso antes de cadastrar do que descobrir na gráfica.
+  if (elNovaCamisetaAviso) {
+    const statusId = statusPedidoDe(time);
+    let aviso = "";
+    if (pedidoEmProducao(time)) {
+      aviso = `⚠️ Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
+        "a camiseta nova entra como pendente e não está nos CSVs já exportados. " +
+        "Confirme o pagamento e exporte de novo (ou leve na próxima leva).";
+    } else if (statusId !== "aberto") {
+      aviso = `Este pedido está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong> — ` +
+        "o representante não consegue mais cadastrar por conta própria, mas você sim.";
+    }
+    elNovaCamisetaAviso.innerHTML = aviso;
+    elNovaCamisetaAviso.classList.toggle("oculto", !aviso);
+  }
+
+  preencherSelectTamanhos(elNovaCamisetaTamanho);
+  limparNovaCamiseta();
+  if (elMsgNovaCamiseta) esconderMensagem(elMsgNovaCamiseta);
+
+  elModalNovaCamiseta.classList.remove("oculto");
+  if (elNovaCamisetaNome) elNovaCamisetaNome.focus();
+}
+
+// Número repetido dentro do time é problema conhecido (a página do time já
+// avisa na conferência): melhor apontar enquanto se digita do que depois.
+function conferirNumeroRepetido() {
+  if (!elNovaCamisetaDuplicado) return;
+  const estado = estadoTimes[novaCamisetaTimeId];
+  const numero = elNovaCamisetaNumero ? elNovaCamisetaNumero.value.trim() : "";
+  const donos = !numero || !estado
+    ? []
+    : estado.alunos.filter((a) => String(a.numero || "") === numero).map((a) => a.nome);
+
+  elNovaCamisetaDuplicado.textContent = donos.length
+    ? `⚠️ O número ${numero} já é de ${donos.join(", ")} neste time.`
+    : "";
+  elNovaCamisetaDuplicado.classList.toggle("oculto", donos.length === 0);
+}
+
+if (elNovaCamisetaNumero) {
+  elNovaCamisetaNumero.addEventListener("input", conferirNumeroRepetido);
+}
+
+function limparNovaCamiseta() {
+  if (elNovaCamisetaNome) elNovaCamisetaNome.value = "";
+  if (elNovaCamisetaNumero) elNovaCamisetaNumero.value = "";
+  if (elNovaCamisetaCostas) elNovaCamisetaCostas.value = "";
+  if (elNovaCamisetaGoleiro) elNovaCamisetaGoleiro.checked = false;
+  // O tamanho também volta ao "Selecione...": cadastrar o próximo com o
+  // tamanho do anterior por descuido é erro caro (camiseta errada).
+  if (elNovaCamisetaTamanho) elNovaCamisetaTamanho.value = "";
+  conferirNumeroRepetido();
+}
+
+function fecharNovaCamiseta() {
+  novaCamisetaTimeId = null;
+  if (elModalNovaCamiseta) elModalNovaCamiseta.classList.add("oculto");
+}
+
+if (elFormNovaCamiseta) {
+  elFormNovaCamiseta.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const timeId = novaCamisetaTimeId;
+    if (!timeId || !estadoTimes[timeId]) return;
+
+    const nome = elNovaCamisetaNome.value.trim();
+    const tamanho = elNovaCamisetaTamanho.value;
+    if (!nome || !tamanho) {
+      mostrarMensagem(elMsgNovaCamiseta, "Preencha o nome e o tamanho.", "erro");
+      return;
+    }
+
+    const botao = elFormNovaCamiseta.querySelector("button[type=submit]");
+    botao.disabled = true;
+    try {
+      // Mesmo formato do cadastro feito na página do time (js/time.js) —
+      // inclusive `excluido: false`, sem o qual a camiseta não apareceria
+      // na lista (a consulta filtra por esse campo).
+      await db.collection(COL_TIMES).doc(timeId).collection("alunos").add({
+        nome,
+        tamanho,
+        numero: elNovaCamisetaNumero.value.trim(),
+        // Em branco, o que vai estampado é o nome do estudante.
+        nomeCamiseta: elNovaCamisetaCostas.value.trim() || nome,
+        goleiro: !!(elNovaCamisetaGoleiro && elNovaCamisetaGoleiro.checked),
+        excluido: false,
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Deixa a lista do time aberta para a camiseta nova aparecer ao fechar.
+      estadoTimes[timeId].expandido = true;
+      mostrarMensagem(elMsgNovaCamiseta, `✅ ${nome} entrou na lista. Pode cadastrar o próximo.`, "aviso");
+      limparNovaCamiseta();
+      elNovaCamisetaNome.focus();
+    } catch (erro) {
+      console.error(erro);
+      mostrarMensagem(elMsgNovaCamiseta, "Erro ao adicionar a camiseta. Tente novamente.", "erro");
+    } finally {
+      botao.disabled = false;
+    }
+  });
+}
+
+const elFecharNovaCamiseta = document.getElementById("fecharNovaCamiseta");
+if (elFecharNovaCamiseta) elFecharNovaCamiseta.addEventListener("click", fecharNovaCamiseta);
+if (elModalNovaCamiseta) {
+  // Clique no fundo escuro fecha; dentro do formulário, não.
+  elModalNovaCamiseta.addEventListener("click", (ev) => {
+    if (ev.target === elModalNovaCamiseta) fecharNovaCamiseta();
+  });
+}
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && elModalNovaCamiseta && !elModalNovaCamiseta.classList.contains("oculto")) {
+    fecharNovaCamiseta();
+  }
+});
 
 // Célula "Goleiro" da lista do Super Admin: caixa de marcar que grava na hora.
 // O goleiro veste uma camiseta de cor diferente, então a marca acompanha a
