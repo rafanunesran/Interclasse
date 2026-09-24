@@ -44,7 +44,11 @@ async function carregarInicio() {
       carregarClientes(),
       db.collection(COL_TIMES).orderBy("nome").get()
     ]);
-    const times = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Pedidos finalizados estão arquivados: não aparecem mais aqui (o link
+    // direto do time continua abrindo, só para consulta).
+    const times = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((t) => !pedidoFinalizado(t));
 
     elCarregando.classList.add("oculto");
 

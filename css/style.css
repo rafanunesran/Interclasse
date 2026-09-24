@@ -126,6 +126,7 @@ tr.duplicado td { background: #fef3c7; }
 .badge.pendente { background: #e5e7eb; color: #374151; }
 .badge.suspenso { background: #ffedd5; color: #9a3412; }
 .badge.bloqueado { background: #fee2e2; color: #7f1d1d; }
+.badge.finalizado { background: #e0e7ff; color: #3730a3; }
 .badge.interno { background: #ede9fe; color: #5b21b6; }
 /* Goleiro: camiseta de cor especial, marcada na lista. */
 .badge.goleiro { background: #cffafe; color: #155e75; }
@@ -1066,6 +1067,28 @@ tr.linha-ajuste td { background: #fef2f2; }
   padding: 5px 6px;
   font-size: 0.78rem;
 }
+/* Coluna "Finalizado": só recebe cards (arquivo), não lista cada pedido. */
+.kanban-coluna.kanban-coluna-arquivo {
+  background: #eef2ff;
+  border-style: dashed;
+}
+
+/* Arquivo de pedidos finalizados (aba Inicial do Super Admin). */
+.arquivados-admin {
+  margin-top: 20px;
+  border: 1px dashed var(--cinza-borda);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--cinza-bg);
+}
+.arquivados-admin > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.arquivados-admin[open] > summary { margin-bottom: 8px; }
+.arquivados-admin .card { opacity: 0.92; }
+
 .kanban-vazio {
   color: #9ca3af;
   text-align: center;

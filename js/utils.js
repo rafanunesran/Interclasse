@@ -680,6 +680,10 @@ const STATUS_PEDIDO = [
   { id: "costura", label: "Costura" },
   { id: "logistica", label: "Logística" },
   { id: "entregue", label: "Entregue ao representante" },
+  // Última etapa: o pedido acabou de vez e vai para o ARQUIVO — sai da lista
+  // principal e do Kanban do painel e da tela inicial, mas continua existindo
+  // (e contando no Financeiro). Para desarquivar, basta trocar o status.
+  { id: "finalizado", label: "Finalizado" },
   // Status especiais (fora da linha do tempo): param tudo para os usuários —
   // sem cadastrar/editar nomes e sem receber pagamento. Só o admin muda.
   // "Suspenso" é a pausa temporária (o pedido volta de onde parou);
@@ -710,6 +714,11 @@ function indiceStatus(id) {
 function labelStatus(id) {
   const s = STATUS_PEDIDO.find((x) => x.id === id);
   return s ? s.label : id;
+}
+
+// Pedido finalizado: arquivado (fora das listas do dia a dia).
+function pedidoFinalizado(time) {
+  return statusPedidoDe(time) === "finalizado";
 }
 
 // O time está aberta para o representante editar quando o status é "aberto".
@@ -759,6 +768,7 @@ function pedidoEmProducao(time) {
 function classeBadgeStatus(statusId) {
   if (statusId === "aberto") return "aberto";
   if (statusId === "entregue") return "pago";
+  if (statusId === "finalizado") return "finalizado";
   if (statusId === "suspenso") return "suspenso";
   if (statusId === "bloqueado") return "bloqueado";
   return "fechado";

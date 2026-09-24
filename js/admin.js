@@ -26,6 +26,9 @@ let clienteFiltro = "";
 // estudante e no apelido (nome na camiseta). Ver buscaTermos().
 let buscaFiltro = "";
 
+// Seção "Arquivados" (pedidos finalizados) da aba Inicial aberta ou recolhida.
+let arquivadosAbertos = false;
+
 const elPainel = document.getElementById("painelAdmin");
 const elEmailLogado = document.getElementById("emailLogado");
 const elFormCriarTime = document.getElementById("formCriarTime");
@@ -629,8 +632,40 @@ function renderizarTimesAdmin() {
     return;
   }
 
-  ids.forEach((timeId) => {
+  // Pedidos finalizados vão para o "arquivo": uma seção recolhível no fim da
+  // lista, para não misturar com os pedidos em andamento.
+  const idsAtivos = ids.filter((id) => !pedidoFinalizado(estadoTimes[id].time));
+  const idsArquivados = ids.filter((id) => pedidoFinalizado(estadoTimes[id].time));
+
+  if (idsAtivos.length === 0) {
+    const vazio = document.createElement("p");
+    vazio.textContent = termosBusca.length
+      ? "Nenhum pedido em andamento bateu com a busca — veja os arquivados abaixo."
+      : "Nenhum pedido em andamento — todos estão arquivados.";
+    elListaTimesAdmin.appendChild(vazio);
+  }
+
+  let elArquivados = null;
+  if (idsArquivados.length > 0) {
+    elArquivados = document.createElement("details");
+    elArquivados.className = "arquivados-admin";
+    // Com busca ativa o arquivo já abre, para o resultado não ficar escondido.
+    elArquivados.open = arquivadosAbertos || termosBusca.length > 0;
+    elArquivados.addEventListener("toggle", () => {
+      if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
+    });
+    const resumo = document.createElement("summary");
+    resumo.innerHTML = `📦 Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span>`;
+    elArquivados.appendChild(resumo);
+    const ajuda = document.createElement("p");
+    ajuda.className = "pix-ajuda";
+    ajuda.textContent = "Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.";
+    elArquivados.appendChild(ajuda);
+  }
+
+  idsAtivos.concat(idsArquivados).forEach((timeId) => {
     const { time, alunos, expandido } = estadoTimes[timeId];
+    const destino = pedidoFinalizado(time) ? elArquivados : elListaTimesAdmin;
 
     // O que a busca achou dentro deste pedido. Com camisetas achadas, o card
     // já abre mostrando só elas (e o botão passa a oferecer a lista completa).
@@ -646,7 +681,7 @@ function renderizarTimesAdmin() {
     // ----- Modo edição (nome e senha do time) -----
     if (estadoTimes[timeId].editando) {
       card.appendChild(criarFormEdicaoTime(timeId, time));
-      elListaTimesAdmin.appendChild(card);
+      destino.appendChild(card);
       return;
     }
 
@@ -953,8 +988,10 @@ function renderizarTimesAdmin() {
       card.appendChild(tabela);
     }
 
-    elListaTimesAdmin.appendChild(card);
+    destino.appendChild(card);
   });
+
+  if (elArquivados) elListaTimesAdmin.appendChild(elArquivados);
 
   atualizarResumoBusca(ids.length, camisetasAchadas);
 
@@ -1110,6 +1147,21 @@ function renderizarKanban() {
       kanbanArrastandoId = null;
       renderizarKanban();
     });
+
+    // Finalizados são o arquivo: a coluna só recebe cards (arraste um pedido
+    // para cá para arquivá-lo) e mostra quantos há, sem listar cada um.
+    if (etapa.id === "finalizado") {
+      coluna.classList.add("kanban-coluna-arquivo");
+      const aviso = document.createElement("p");
+      aviso.className = "kanban-vazio";
+      aviso.textContent = timesDaColuna.length > 0
+        ? `📦 ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
+        : "📦 Solte aqui para arquivar";
+      listaCards.appendChild(aviso);
+      coluna.appendChild(listaCards);
+      board.appendChild(coluna);
+      return;
+    }
 
     timesDaColuna
       .sort((a, b) =>
