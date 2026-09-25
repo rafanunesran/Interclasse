@@ -249,9 +249,9 @@ function textoDoTimeParaBusca(time) {
 }
 
 // O que, na camiseta, entra na busca (o número ajuda a achar pelo dorsal, e a
-// palavra "goleiro" junta todos os goleiros de uma vez).
+// palavra "goleiro" junta todos os goleiros de uma vez; "prof", os professores).
 function textoDoAlunoParaBusca(aluno) {
-  return [aluno.nome, aluno.nomeCamiseta, aluno.numero, ehGoleiro(aluno) ? "goleiro" : ""]
+  return [aluno.nome, aluno.nomeCamiseta, aluno.numero, ehGoleiro(aluno) ? "goleiro" : "", ehProf(aluno) ? "prof professor" : ""]
     .filter(Boolean).join(" ");
 }
 
@@ -701,6 +701,10 @@ function renderizarTimesAdmin() {
     const linhaGoleiros = nGoleiros > 0
       ? ` &middot; <span class="badge goleiro" title="Camiseta de cor especial">🧤 ${nGoleiros} goleiro(s)</span>`
       : "";
+    const nProfs = alunos.filter(ehProf).length;
+    const linhaProfs = nProfs > 0
+      ? ` &middot; <span class="badge prof" title="Camisetas de professor">🎓 ${nProfs} prof</span>`
+      : "";
 
     // Da Impressão em diante, o que conta é o que entra na produção.
     const emProducao = pedidoEmProducao(time);
@@ -717,7 +721,7 @@ function renderizarTimesAdmin() {
       }</p>
       ${linhaRepresentanteHtml(time)}
       <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
-      <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)${linhaGoleiros}</p>
+      <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)${linhaGoleiros}${linhaProfs}</p>
       ${linhaProducao}
       ${avisoAjustes}
     `;
@@ -854,7 +858,7 @@ function renderizarTimesAdmin() {
       const tabela = document.createElement("table");
       tabela.innerHTML = `
         <thead>
-          <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Pagamento</th><th>Ações</th></tr>
+          <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Prof</th><th>Pagamento</th><th>Ações</th></tr>
         </thead>
         <tbody></tbody>
       `;
@@ -887,6 +891,7 @@ function renderizarTimesAdmin() {
           <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
           <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
           <td class="cel-goleiro"></td>
+          <td class="cel-prof"></td>
           <td class="cel-pagamento"></td>
           <td class="acoes-linha"></td>
         `;
@@ -894,6 +899,8 @@ function renderizarTimesAdmin() {
         // Goleiro: camiseta de cor especial. O Super Admin marca e desmarca
         // num clique, mesmo com a lista já fechada para o representante.
         preencherCelulaGoleiroAdmin(tr.querySelector(".cel-goleiro"), timeId, aluno);
+        // Prof: camiseta de professor, marca só para organização.
+        preencherCelulaProfAdmin(tr.querySelector(".cel-prof"), timeId, aluno);
 
         // Coluna de pagamento: badge + seletor de status.
         const tdPag = tr.querySelector(".cel-pagamento");
@@ -1304,19 +1311,23 @@ function renderizarResumoPagamentos() {
   const el = document.getElementById("resumoPagamentos");
   if (!el) return;
 
-  let total = 0, pagos = 0, aguardando = 0, goleiros = 0;
+  let total = 0, pagos = 0, aguardando = 0, goleiros = 0, profs = 0;
   timesFiltrados().forEach(([, { alunos }]) => {
     alunos.forEach((a) => {
       total++;
       if (a.pago) pagos++;
       else if (a.pagamentoDeclarado) aguardando++;
       if (ehGoleiro(a)) goleiros++;
+      if (ehProf(a)) profs++;
     });
   });
   const pendentes = total - pagos - aguardando;
   // Quantas camisetas saem na cor de goleiro (só aparece quando há alguma).
   const marcaGoleiros = goleiros > 0
     ? `<span class="badge goleiro" title="Camiseta de cor especial">🧤 Goleiros: ${goleiros}</span>`
+    : "";
+  const marcaProfs = profs > 0
+    ? `<span class="badge prof" title="Camisetas de professor">🎓 Prof: ${profs}</span>`
     : "";
 
   el.innerHTML = `
@@ -1326,6 +1337,7 @@ function renderizarResumoPagamentos() {
       <span class="badge aguardando">Aguardando: ${aguardando}</span>
       <span class="badge pendente">Pendentes: ${pendentes}</span>
       ${marcaGoleiros}
+      ${marcaProfs}
     </div>
   `;
 
@@ -2923,6 +2935,7 @@ const elNovaCamisetaTamanho = document.getElementById("novaCamisetaTamanho");
 const elNovaCamisetaNumero = document.getElementById("novaCamisetaNumero");
 const elNovaCamisetaCostas = document.getElementById("novaCamisetaCostas");
 const elNovaCamisetaGoleiro = document.getElementById("novaCamisetaGoleiro");
+const elNovaCamisetaProf = document.getElementById("novaCamisetaProf");
 const elMsgNovaCamiseta = document.getElementById("msgNovaCamiseta");
 const elNovaCamisetaDuplicado = document.getElementById("novaCamisetaDuplicado");
 
@@ -2988,6 +3001,7 @@ function limparNovaCamiseta() {
   if (elNovaCamisetaNumero) elNovaCamisetaNumero.value = "";
   if (elNovaCamisetaCostas) elNovaCamisetaCostas.value = "";
   if (elNovaCamisetaGoleiro) elNovaCamisetaGoleiro.checked = false;
+  if (elNovaCamisetaProf) elNovaCamisetaProf.checked = false;
   // O tamanho também volta ao "Selecione...": cadastrar o próximo com o
   // tamanho do anterior por descuido é erro caro (camiseta errada).
   if (elNovaCamisetaTamanho) elNovaCamisetaTamanho.value = "";
@@ -3025,6 +3039,7 @@ if (elFormNovaCamiseta) {
         // Em branco, o que vai estampado é o nome do estudante.
         nomeCamiseta: elNovaCamisetaCostas.value.trim() || nome,
         goleiro: !!(elNovaCamisetaGoleiro && elNovaCamisetaGoleiro.checked),
+        prof: !!(elNovaCamisetaProf && elNovaCamisetaProf.checked),
         excluido: false,
         criadoEm: firebase.firestore.FieldValue.serverTimestamp()
       });
@@ -3077,6 +3092,25 @@ function preencherCelulaGoleiroAdmin(td, timeId, aluno) {
   }));
 }
 
+// Célula "Prof" da lista do Super Admin: marca de camiseta de professor, só
+// para organização (não muda nada na produção). Grava na hora.
+function preencherCelulaProfAdmin(td, timeId, aluno) {
+  if (!td) return;
+  td.innerHTML = "";
+
+  td.appendChild(criarCheckProf(aluno, (valor, chk) => {
+    chk.disabled = true;
+    db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
+      .update({ prof: valor })
+      .catch((erro) => {
+        console.error(erro);
+        alert("Não foi possível salvar a marca de prof. Tente novamente.");
+        renderizarTimesAdmin();
+      })
+      .finally(() => { chk.disabled = false; });
+  }));
+}
+
 // Edição inline de um aluno no Super Admin (permite corrigir a linha mesmo
 // com o pedido fechado). Ao salvar, resolve o pedido de ajuste, se houver.
 function editarAlunoAdmin(tr, timeId, aluno) {
@@ -3110,6 +3144,10 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   const rotuloGoleiro = criarCheckGoleiro(aluno);
   tdGoleiro.appendChild(rotuloGoleiro);
 
+  const tdProf = document.createElement("td");
+  const rotuloProf = criarCheckProf(aluno);
+  tdProf.appendChild(rotuloProf);
+
   const tdAcoes = document.createElement("td");
   tdAcoes.className = "acoes-linha";
 
@@ -3130,7 +3168,8 @@ function editarAlunoAdmin(tr, timeId, aluno) {
         tamanho: selectTamanho.value,
         numero: inputNumero.value.trim(),
         nomeCamiseta: novoCostas,
-        goleiro: rotuloGoleiro.chk.checked
+        goleiro: rotuloGoleiro.chk.checked,
+        prof: rotuloProf.chk.checked
       };
       if (aluno.ajusteSolicitado) {
         // Corrigir a linha resolve o ajuste e registra no histórico.
@@ -3163,6 +3202,7 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   tr.appendChild(tdNumero);
   tr.appendChild(tdCostas);
   tr.appendChild(tdGoleiro);
+  tr.appendChild(tdProf);
   tr.appendChild(tdPagamento);
   tr.appendChild(tdAcoes);
 }
@@ -3529,10 +3569,10 @@ function exportarTime(time, alunos) {
     alert("Esse time não tem alunos cadastrados.");
     return;
   }
-  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Pago", "Forma Pagto"]];
+  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto"]];
   const cliente = nomeClienteDoTime(time);
   alunos.forEach((a) =>
-    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
+    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
   );
   baixarCSV(`pedido-${slugify(time.nome)}.csv`, linhas);
 }
@@ -3564,11 +3604,11 @@ elBtnExportarTudo.addEventListener("click", () => {
 // CSV geral de conferência: tudo, com time e situação de pagamento.
 if (elBtnExportarConferencia) {
   elBtnExportarConferencia.addEventListener("click", () => {
-    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Pago", "Forma Pagto"]];
+    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto"]];
     let total = 0;
     timesFiltrados().forEach(([, { time, alunos }]) => {
       alunos.forEach((a) => {
-        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
         total++;
       });
     });

@@ -437,27 +437,38 @@ function badgeGoleiroHtml(aluno) {
 // sem ela, a caixa só fica ali para ser lida ao salvar a linha inteira (é o
 // caso da edição). O rótulo devolvido expõe a caixa em `.chk`.
 function criarCheckGoleiro(aluno, aoMudar) {
+  return criarCheckMarca(aluno, {
+    classe: "check-goleiro",
+    titulo: "Goleiro — camiseta de cor especial",
+    icone: "🧤",
+    palavra: "goleiro",
+    marcado: ehGoleiro(aluno)
+  }, aoMudar);
+}
+
+// Caixa de marcar genérica das colunas de marca da lista (Goleiro, Prof).
+function criarCheckMarca(aluno, cfg, aoMudar) {
   const rotulo = document.createElement("label");
-  rotulo.className = "check-goleiro";
-  rotulo.title = "Goleiro — camiseta de cor especial";
+  rotulo.className = cfg.classe;
+  rotulo.title = cfg.titulo;
 
   const chk = document.createElement("input");
   chk.type = "checkbox";
-  chk.checked = ehGoleiro(aluno);
+  chk.checked = !!cfg.marcado;
   chk.setAttribute("aria-label",
-    "Marcar " + ((aluno && aluno.nome) || "esta camiseta") + " como goleiro");
+    "Marcar " + ((aluno && aluno.nome) || "esta camiseta") + " como " + cfg.palavra);
 
   // Ícone e palavra são separados de propósito: no celular a palavra some
-  // (CSS) para a coluna não alargar a tabela, e a luva continua identificando.
+  // (CSS) para a coluna não alargar a tabela, e o ícone continua identificando.
   const icone = document.createElement("span");
-  icone.className = "check-goleiro-icone";
-  icone.textContent = "🧤";
+  icone.className = cfg.classe + "-icone";
+  icone.textContent = cfg.icone;
   const texto = document.createElement("span");
-  texto.className = "check-goleiro-texto";
+  texto.className = cfg.classe + "-texto";
 
   const pintar = () => {
     icone.hidden = !chk.checked;
-    texto.textContent = chk.checked ? "goleiro" : "marcar";
+    texto.textContent = chk.checked ? cfg.palavra : "marcar";
   };
   pintar();
 
@@ -471,6 +482,33 @@ function criarCheckGoleiro(aluno, aoMudar) {
   rotulo.appendChild(texto);
   rotulo.chk = chk;
   return rotulo;
+}
+
+// ============================================================
+// PROF — camiseta de professor
+// ============================================================
+// Marca só de organização (o campo `prof` do aluno): ajuda a separar e
+// entregar as camisetas dos professores. Não muda nada na produção — a
+// camiseta sai no mesmo CSV e na mesma leva das demais.
+
+function ehProf(aluno) {
+  return !!(aluno && aluno.prof);
+}
+
+function badgeProfHtml(aluno) {
+  return ehProf(aluno)
+    ? '<span class="badge prof" title="Camiseta de professor">🎓 Prof</span>'
+    : "";
+}
+
+function criarCheckProf(aluno, aoMudar) {
+  return criarCheckMarca(aluno, {
+    classe: "check-prof",
+    titulo: "Camiseta de professor (só para organização)",
+    icone: "🎓",
+    palavra: "prof",
+    marcado: ehProf(aluno)
+  }, aoMudar);
 }
 
 // Separa os goleiros do resto da lista.

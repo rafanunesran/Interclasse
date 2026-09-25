@@ -168,7 +168,9 @@ function itemAtual(item) {
     pago: !!item.pago,
     pagamentoForma: item.pagamentoForma || "",
     // Camiseta de cor especial: manda o goleiro para um CSV próprio.
-    goleiro: !!item.goleiro
+    goleiro: !!item.goleiro,
+    // Camiseta de professor: marca só para organização.
+    prof: !!item.prof
   };
   if (item.origem === "avulso") return base;
 
@@ -189,6 +191,7 @@ function itemAtual(item) {
   base.numero = aluno.numero || "";
   base.tamanho = aluno.tamanho || "";
   base.goleiro = ehGoleiro(aluno);
+  base.prof = ehProf(aluno);
   base.pago = !!aluno.pago;
   base.pagamentoForma = aluno.pagamentoForma || "";
   base.timeNome = (estado.time && estado.time.nome) || item.timeNome || "";
@@ -424,7 +427,7 @@ function criarBlocoModelo(leva, grupo) {
         : "");
 
     tr.innerHTML = `
-      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${avisos}
+      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${badgeProfHtml(atual)}${avisos}
           ${!atual.avulso && atual.nome && atual.nomeCamiseta
             ? `<br><small class="pix-ajuda">${escapeHtmlAdmin(atual.nome)}</small>` : ""}</td>
       <td>${escapeHtmlAdmin(atual.numero || "-")}</td>
@@ -944,7 +947,7 @@ function renderizarSelecaoProducao() {
 
       tr.innerHTML = `
         <td class="cel-marcar"></td>
-        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}</td>
+        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}${badgeProfHtml(aluno)}</td>
         <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
         <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
         <td>${escapeHtmlAdmin(aluno.tamanho || "-")}</td>
@@ -1113,6 +1116,7 @@ async function enviarSelecaoParaProducao() {
             numero: aluno.numero || "",
             tamanho: aluno.tamanho || "",
             goleiro: ehGoleiro(aluno),
+            prof: ehProf(aluno),
             criadoEmMs: Date.now()
           },
           { merge: true }

@@ -130,6 +130,8 @@ tr.duplicado td { background: #fef3c7; }
 .badge.interno { background: #ede9fe; color: #5b21b6; }
 /* Goleiro: camiseta de cor especial, marcada na lista. */
 .badge.goleiro { background: #cffafe; color: #155e75; }
+/* Prof: camiseta de professor, marca só de organização. */
+.badge.prof { background: #ede9fe; color: #5b21b6; }
 
 /* Barra de acompanhamento do pedido (etapas). */
 .barra-status {
@@ -1187,8 +1189,9 @@ body.com-carrinho { padding-bottom: 96px; }
 }
 .check-carrinho input { margin: 0; }
 
-/* Caixa de marcar o goleiro, na coluna própria das listas (time e admin). */
-.check-goleiro {
+/* Caixas de marcar goleiro e prof, nas colunas próprias das listas (time e admin). */
+.check-goleiro,
+.check-prof {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1197,13 +1200,16 @@ body.com-carrinho { padding-bottom: 96px; }
   white-space: nowrap;
   cursor: pointer;
 }
-.check-goleiro input { margin: 0; width: auto; }
-.check-goleiro-icone[hidden] { display: none; }
+.check-goleiro input,
+.check-prof input { margin: 0; width: auto; }
+.check-goleiro-icone[hidden],
+.check-prof-icone[hidden] { display: none; }
 
 /* No celular só a caixa (e a luva de quem está marcado) ficam: a palavra
    sairia alargando a tabela, que já é larga. O title/aria-label continuam. */
 @media (max-width: 640px) {
-  .check-goleiro-texto { display: none; }
+  .check-goleiro-texto,
+  .check-prof-texto { display: none; }
 }
 .linha-no-carrinho > td { background: #eff6ff; }
 
