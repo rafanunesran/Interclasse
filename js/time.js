@@ -541,6 +541,7 @@ function renderizarTabela() {
       <td>${escapeHtml(aluno.numero || "-")}</td>
       <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
       <td class="cel-goleiro"></td>
+      <td class="cel-prof"></td>
       <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
       <td class="cel-carrinho"></td>
       <td class="acoes-linha"></td>
@@ -549,6 +550,8 @@ function renderizarTabela() {
     // Goleiro: quem entrou com a senha do time marca e desmarca aqui mesmo,
     // num clique. Para quem só está olhando a lista, fica a marca (ou "-").
     preencherCelulaGoleiro(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
+    // Prof: camiseta de professor, marca só para organização.
+    preencherCelulaProf(tr.querySelector(".cel-prof"), aluno, podeEditar);
 
     // Carrinho: marque quantas quiser e pague todas de uma vez lá embaixo.
     const tdCarrinho = tr.querySelector(".cel-carrinho");
@@ -667,6 +670,30 @@ function marcarGoleiro(aluno, valor) {
     });
 }
 
+// Célula "Prof" da lista: mesma lógica do goleiro, mas a marca serve só para
+// organizar (quais camisetas são de professor) — não mexe na produção.
+function preencherCelulaProf(td, aluno, podeEditar) {
+  if (!td) return;
+  td.innerHTML = "";
+
+  if (!podeEditar) {
+    td.innerHTML = ehProf(aluno) ? badgeProfHtml(aluno) : '<span class="pix-ajuda">-</span>';
+    return;
+  }
+
+  td.appendChild(criarCheckProf(aluno, (valor, chk) => {
+    chk.disabled = true;
+    db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
+      .update({ prof: !!valor })
+      .catch((erro) => {
+        console.error(erro);
+        alert("Não foi possível salvar a marca de prof. Tente novamente.");
+        renderizarTabela();
+      })
+      .finally(() => { chk.disabled = false; });
+  }));
+}
+
 function renderizarResumo() {
   const contagem = {};
   TODOS_TAMANHOS.forEach((t) => (contagem[t] = 0));
@@ -691,6 +718,13 @@ function renderizarResumo() {
     const span = document.createElement("span");
     span.innerHTML = `<strong>🧤 Goleiros: ${nGoleiros}</strong>`;
     span.title = "Camiseta de cor especial";
+    elResumo.appendChild(span);
+  }
+  const nProfs = alunosAtuais.filter(ehProf).length;
+  if (nProfs > 0) {
+    const span = document.createElement("span");
+    span.innerHTML = `<strong>🎓 Prof: ${nProfs}</strong>`;
+    span.title = "Camisetas de professor";
     elResumo.appendChild(span);
   }
   TODOS_TAMANHOS.forEach((t) => {
@@ -726,6 +760,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
   const nomeCamiseta = document.getElementById("nomeCostas").value.trim();
   const elGoleiro = document.getElementById("goleiroAluno");
   const goleiro = !!(elGoleiro && elGoleiro.checked);
+  const elProf = document.getElementById("profAluno");
+  const prof = !!(elProf && elProf.checked);
 
   if (!nome || !tamanho || !nomeCamiseta) {
     alert("Preencha nome, tamanho e nome para a camiseta.");
@@ -743,6 +779,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
       nomeCamiseta,
       // Camiseta de cor especial: o goleiro sai separado na produção.
       goleiro,
+      // Camiseta de professor: marca só para organização.
+      prof,
       excluido: false,
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -789,6 +827,10 @@ function editarLinha(tr, aluno) {
   const rotuloGoleiro = criarCheckGoleiro(aluno);
   tdGoleiro.appendChild(rotuloGoleiro);
 
+  const tdProf = document.createElement("td");
+  const rotuloProf = criarCheckProf(aluno);
+  tdProf.appendChild(rotuloProf);
+
   const tdAcoes = document.createElement("td");
   tdAcoes.className = "acoes-linha";
 
@@ -808,7 +850,8 @@ function editarLinha(tr, aluno) {
         tamanho: selectTamanho.value,
         numero: inputNumero.value.trim(),
         nomeCamiseta: novoNomeCamiseta,
-        goleiro: rotuloGoleiro.chk.checked
+        goleiro: rotuloGoleiro.chk.checked,
+        prof: rotuloProf.chk.checked
       });
     } catch (erro) {
       console.error(erro);
@@ -832,6 +875,7 @@ function editarLinha(tr, aluno) {
   tr.appendChild(tdNumero);
   tr.appendChild(tdCostas);
   tr.appendChild(tdGoleiro);
+  tr.appendChild(tdProf);
   tr.appendChild(tdPagamento);
   tr.appendChild(tdCarrinho);
   tr.appendChild(tdAcoes);
@@ -1286,9 +1330,9 @@ elBtnExportar.addEventListener("click", () => {
     alert("Não há alunos cadastrados para exportar.");
     return;
   }
-  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Pago", "Forma Pagto"]];
+  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto"]];
   alunosAtuais.forEach((a) => {
-    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
   });
   baixarCSV(`pedido-${slugify(timeAtual.nome)}.csv`, linhas);
 });

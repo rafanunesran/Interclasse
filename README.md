@@ -229,11 +229,26 @@ cores no mesmo arquivo:
 > A marca fica no campo `goleiro` da camiseta. Camisetas cadastradas antes desta versão
 > entram como "não goleiro", sem nada a corrigir.
 
+## Prof (camiseta de professor)
+
+Marca **só para organização**: indica quais camisetas são de professor, para separar e
+entregar. Não muda nada na impressão — a camiseta sai no mesmo CSV de produção e na mesma
+leva das demais.
+
+- **Quem marca:** igual ao goleiro — o **Super Admin** (sempre) e quem administra a lista do
+  time com a senha (enquanto a lista aceita nomes), na coluna **Prof**. Também dá para marcar
+  ao cadastrar (*🎓 É camiseta de professor*).
+- **Onde aparece:** contagem 🎓 no resumo da página do time, no card do time e no resumo da
+  aba Pagamentos; marca 🎓 nas listas da aba Produção; coluna `Prof` (Sim/Nao) nos CSVs de
+  conferência; a busca do topo do painel encontra todos com a palavra `prof`.
+
+> A marca fica no campo `prof` da camiseta. Camisetas antigas entram como "não prof".
+
 ## Aba Financeiro (Super Admin)
 
 A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
-- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos, taxas do Mercado Pago e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time. Os cards **Custos previstos** e **Lucro realizado** abrem um detalhe ao clique: o primeiro quebra o custo em impressão e costureira; o segundo mostra a conta inteira — receita recebida, os **custos realizados** (impressão + costureira das camisetas já pagas) e as taxas do Mercado Pago. Na tabela por time, a coluna *Custo prev.* também abre o detalhe daquele time.
+- **Visão geral** — previsto, recebido e a receber; percentual recebido; custos, taxas do Mercado Pago e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time. Os cards **Custos previstos** e **Lucro realizado** abrem um detalhe ao clique: o primeiro quebra o custo em impressão e costureira; o segundo mostra a conta inteira — receita recebida, os **custos realizados** (impressão + costureira das camisetas já pagas) e as taxas do Mercado Pago e o custo das **camisetas internas** (que não têm receita, mas são produzidas). Na tabela por time, a coluna *Custo prev.* também abre o detalhe daquele time.
 - **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia, taxa do Mercado Pago e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho, forma, taxa e líquido).
 - **Evolução** — hoje, ontem, últimos 7 dias (com a variação em relação aos 7 anteriores), gráfico de entradas por dia, fechamento por semana e a projeção de quando o valor em aberto termina de entrar, no ritmo atual.
 - **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por time e as maiores pendências individuais.
