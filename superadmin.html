@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260926b" />
+<link rel="stylesheet" href="css/style.css?v=20260927a" />
 </head>
 <body>
 
@@ -51,9 +51,17 @@
       </nav>
     </div>
 
-    <!-- ABA: INICIAL (criar times + lista de times) -->
+    <!-- ABA: INICIAL (lista de times; ao abrir um time, as abas dele) -->
     <section id="aba-inicial" class="secao-aba">
-      <div class="card">
+      <div class="cabecalho-secao so-lista">
+        <div>
+          <h2>Times</h2>
+          <p class="pix-ajuda">Clique num time para abrir o pedido: lista, configuração e arquivos de produção.</p>
+        </div>
+        <button type="button" id="btnNovoTime" class="primario">+ Novo time</button>
+      </div>
+
+      <div class="card oculto so-lista" id="cardCriarTime">
         <h2>Criar novo time</h2>
         <form id="formCriarTime">
           <label for="nomeNovoTime">Nome do time</label>
@@ -73,11 +81,11 @@
           <p class="pix-ajuda">Com DDD. No card do pedido, o nome e o número viram links que abrem a conversa no WhatsApp.</p>
 
           <button type="submit" class="primario">Criar time</button>
+          <button type="button" id="btnCancelarNovoTime" class="secundario">Cancelar</button>
         </form>
         <p id="msgCriarTime" class="oculto"></p>
       </div>
 
-      <h2>Times</h2>
       <div id="listaTimesAdmin"></div>
     </section>
 
@@ -116,7 +124,7 @@
       <div class="card">
         <h2>Levas de produção</h2>
         <p>Uma <strong>leva</strong> é o que vai para a impressão de uma vez. Você monta a leva escolhendo camiseta por camiseta — de times e de clientes diferentes, pagas ou não — e ainda pode acrescentar unidades <strong>avulsas</strong> (professores, reposição, amostra) que não estão em nenhum pedido. É assim que se adianta um pedaço de um pedido junto com outro.</p>
-        <p>Cada camiseta carrega o seu <strong>modelo</strong> (a arte que será impressa). Na exportação, a leva sai <strong>dividida por modelo</strong>: um CSV de produção para cada arte, no padrão do programa de impressão. O modelo de um time vem do nome dele e pode ser mudado em <strong>Editar time</strong> — dois times com a mesma arte saem num arquivo só.</p>
+        <p>Cada camiseta carrega o seu <strong>modelo</strong> (a arte que será impressa). Na exportação, a leva sai <strong>dividida por modelo</strong>: um CSV de produção para cada arte, no padrão do programa de impressão. O modelo de um time vem do nome dele e pode ser mudado na <strong>Configuração</strong> do time — dois times com a mesma arte saem num arquivo só.</p>
         <form id="formNovaLeva">
           <label for="nomeNovaLeva">Nome da leva</label>
           <input type="text" id="nomeNovaLeva" placeholder="Ex: Leva 1 — professores + 3º Ano A" required />
@@ -145,7 +153,7 @@
       <div class="card">
         <h2>Layout da folha de impressão</h2>
         <p>Aqui você marca, em cima do <strong>molde de corte</strong> de cada peça, onde ficam o <strong>brasão</strong> e as caixas do <strong>nome</strong> e do <strong>número</strong>. A caixa é o <strong>limite</strong>: nome ou número comprido encolhe para caber e nunca sai dela. O layout geral vale para todos os times; em <strong>Editando</strong>, escolha um time para fazer um ajuste só dele.</p>
-        <p class="pix-ajuda">A arte de cada peça (PNG 600 dpi), o brasão e a fonte são enviados no card de cada time (aba Inicial → 🎨 Arquivos de produção). Os moldes de corte ficam na aba <strong>Tamanhos</strong>. A folha é gerada na aba <strong>Produção</strong>, botão <strong>Folhas EPS</strong>.</p>
+        <p class="pix-ajuda">A arte de cada peça (PNG 600 dpi), o brasão e a fonte são enviados em cada time (aba Inicial → abra o time → <strong>Arquivos de produção</strong>). Os moldes de corte ficam na aba <strong>Tamanhos</strong>. A folha é gerada na aba <strong>Produção</strong>, botão <strong>Folhas EPS</strong>.</p>
         <div id="editorLayout"></div>
       </div>
     </section>
@@ -198,7 +206,7 @@
           <input type="text" id="pixCidade" maxlength="15" placeholder="Ex: SAO PAULO" />
 
           <h3>Preço por grupo de tamanho (geral)</h3>
-          <p class="pix-ajuda">Para cobrar um valor diferente em um time específico, use <strong>"Preço da camiseta neste time"</strong> no card dele, na aba <strong>Inicial</strong>.</p>
+          <p class="pix-ajuda">Para cobrar um valor diferente em um time específico, abra o time na aba <strong>Inicial</strong> → <strong>Configuração</strong> → <strong>Tabela especial de preço</strong>.</p>
           <div id="precosPorGrupo"></div>
 
           <h3>Confirmação automática (Mercado Pago)</h3>
@@ -224,7 +232,7 @@
 
       <div class="card">
         <h2>Status de pagamento</h2>
-        <p>O status de cada aluno (Pendente / Aguardando / Pago) fica na lista de cada time, na aba <strong>Inicial</strong> (botão "Ver lista"). Lá você marca manualmente pagamentos em dinheiro e confirma os PIX.</p>
+        <p>O status de cada aluno (Pendente / Aguardando / Pago) fica na lista de cada time, na aba <strong>Inicial</strong> (abra o time → aba <strong>Lista</strong>). Lá você marca manualmente pagamentos em dinheiro e confirma os PIX.</p>
         <div id="resumoPagamentos"></div>
       </div>
     </section>
@@ -325,14 +333,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260926b"></script>
+<script src="js/utils.js?v=20260927a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260926b"></script>
-<script src="js/producao.js?v=20260926b"></script>
-<script src="js/eps.js?v=20260926b"></script>
-<script src="js/png-stream.js?v=20260926b"></script>
-<script src="js/previa-eps.js?v=20260926b"></script>
-<script src="js/moldes.js?v=20260926b"></script>
-<script src="js/artes.js?v=20260926b"></script>
+<script src="js/admin.js?v=20260927a"></script>
+<script src="js/producao.js?v=20260927a"></script>
+<script src="js/eps.js?v=20260927a"></script>
+<script src="js/png-stream.js?v=20260927a"></script>
+<script src="js/previa-eps.js?v=20260927a"></script>
+<script src="js/moldes.js?v=20260927a"></script>
+<script src="js/artes.js?v=20260927a"></script>
 </body>
 </html>

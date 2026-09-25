@@ -412,7 +412,7 @@ function nomeNaCamiseta(aluno) {
 
 // Modelo de camiseta de um time: é a arte que vai ser impressa. Por padrão é o
 // próprio nome do time (cada time tem a sua arte), mas dá para dar um nome de
-// modelo no "Editar time" — assim dois times que usam a MESMA arte saem juntos
+// modelo na Configuração do time — assim dois times que usam a MESMA arte saem juntos
 // num arquivo só, e um time cuja arte é diferente sai separado.
 const MODELO_PADRAO = "Sem modelo";
 

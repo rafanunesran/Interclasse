@@ -492,7 +492,7 @@ async function excluirCliente(cliente, qtdTimes) {
   if (qtdTimes > 0) {
     alert(
       `"${cliente.nome}" ainda tem ${qtdTimes} time(s).\n\n` +
-      "Mude o cliente desses times (botão \"Editar time\", na aba Inicial) antes de excluir."
+      "Mude o cliente desses times (aba Inicial → abra o time → Configuração) antes de excluir."
     );
     return;
   }
@@ -506,6 +506,30 @@ async function excluirCliente(cliente, qtdTimes) {
 }
 
 // ---------------- Criar time ----------------
+// O formulário fica recolhido; o botão "+ Novo time" (topo da aba Inicial) abre.
+
+const elCardCriarTime = document.getElementById("cardCriarTime");
+const elBtnNovoTime = document.getElementById("btnNovoTime");
+const elBtnCancelarNovoTime = document.getElementById("btnCancelarNovoTime");
+
+function mostrarFormNovoTime(mostrar) {
+  if (!elCardCriarTime) return;
+  elCardCriarTime.classList.toggle("oculto", !mostrar);
+  if (elBtnNovoTime) elBtnNovoTime.classList.toggle("oculto", mostrar);
+  if (mostrar) {
+    esconderMensagem(elMsgCriarTime);
+    const nome = document.getElementById("nomeNovoTime");
+    if (nome) nome.focus();
+  }
+}
+
+if (elBtnNovoTime) elBtnNovoTime.addEventListener("click", () => mostrarFormNovoTime(true));
+if (elBtnCancelarNovoTime) {
+  elBtnCancelarNovoTime.addEventListener("click", () => {
+    elFormCriarTime.reset();
+    mostrarFormNovoTime(false);
+  });
+}
 
 elFormCriarTime.addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -539,12 +563,12 @@ elFormCriarTime.addEventListener("submit", async (ev) => {
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    const cliente = elClienteNovoTime && elClienteNovoTime.value
-      ? ` (cliente: ${nomeDoCliente(clientesOrdenados(), elClienteNovoTime.value)})`
-      : "";
     elFormCriarTime.reset();
     renderizarSeletoresDeCliente();
-    mostrarMensagem(elMsgCriarTime, `Time "${nome}" criado${cliente}. Link: time.html?id=${idFinal}`, "aviso");
+    mostrarFormNovoTime(false);
+    // Abre o time novo já na Configuração: é de lá que sai o link e a senha
+    // para mandar ao representante.
+    abrirTimeAdmin(idFinal, "config");
   } catch (erro) {
     console.error(erro);
     mostrarMensagem(elMsgCriarTime, "Erro ao criar time.", "erro");
@@ -571,6 +595,7 @@ function escutarTimes() {
         Object.keys(estadoTimes).forEach((id) => {
           if (!idsAtuais.has(id)) delete estadoTimes[id];
         });
+        timesCarregados = true;
         aplicarFechamentoAutomatico();
         renderizarTimesAdmin();
       },
@@ -609,404 +634,86 @@ function escutarAlunosDaTime(timeId) {
     });
 }
 
-function renderizarTimesAdmin() {
-  elListaTimesAdmin.innerHTML = "";
+// ============================================================
+// ABA INICIAL: lista de times e o time aberto (com abas próprias)
+// ============================================================
+// A lista mostra só o essencial de cada pedido — o nome do time e quem o
+// representa. Ao clicar, o time abre com três abas:
+//   • Lista — as camisetas, com editar, registrar pagamento e adicionar;
+//   • Configuração — representante (contato e senha), data limite e a
+//     tabela especial de preço;
+//   • Arquivos de produção — os arquivos da folha EPS, a prévia da arte
+//     (sem simulação e no mockup) e as imagens da página do pedido.
+// O time aberto fica no endereço (#time=ID&aba=...), então recarregar a
+// página ou usar o "voltar" do navegador funciona como esperado.
 
-  const termosBusca = buscaTermos();
-  // Quantas camisetas a busca achou no total (mostrado no resumo do topo).
-  let camisetasAchadas = 0;
+const ABAS_TIME_ADMIN = [
+  { id: "lista", label: "Lista" },
+  { id: "config", label: "Configuração" },
+  { id: "arquivos", label: "Arquivos de produção" }
+];
 
-  const ids = timesDosPedidos()
-    .map(([id]) => id)
-    .sort((a, b) => estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR"));
+let timeAbertoAdmin = "";     // time aberto na aba Inicial ("" = lista de times)
+let abaTimeAdmin = "lista";   // aba do time aberto
+let timesCarregados = false;  // já chegou a primeira leitura dos times?
+let renderTimesPendente = false;
+const rascunhoConfigTime = {}; // timeId -> campos da Configuração ainda não salvos
 
-  if (ids.length === 0) {
-    elListaTimesAdmin.innerHTML = termosBusca.length
-      ? `<p>Nenhum pedido encontrado para <strong>${escapeHtmlAdmin(buscaFiltro.trim())}</strong>. A busca procura no nome do time, no nome do estudante e no apelido da camiseta${clienteFiltro ? ", dentro do cliente escolhido no topo" : ""}.</p>`
-      : clienteFiltro
-        ? "<p>Nenhum time para o cliente escolhido. Troque o cliente no seletor do topo ou crie um time para ele.</p>"
-        : "<p>Nenhum time cadastrado ainda.</p>";
-    atualizarResumoBusca(0, 0);
-    renderizarResumoPagamentos();
-    renderizarKanban();
-    renderizarFinanceiro();
-    renderizarClientesAdmin();
-    if (typeof renderizarProducao === "function") renderizarProducao();
-    return;
-  }
+function lerEnderecoAdmin() {
+  const p = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  timeAbertoAdmin = p.get("time") || "";
+  const aba = p.get("aba") || "lista";
+  abaTimeAdmin = ABAS_TIME_ADMIN.some((a) => a.id === aba) ? aba : "lista";
+}
 
-  // Pedidos finalizados vão para o "arquivo": uma seção recolhível no fim da
-  // lista, para não misturar com os pedidos em andamento.
-  const idsAtivos = ids.filter((id) => !pedidoFinalizado(estadoTimes[id].time));
-  const idsArquivados = ids.filter((id) => pedidoFinalizado(estadoTimes[id].time));
+function enderecoDoTime(timeId, aba) {
+  return "#time=" + encodeURIComponent(timeId) + (aba && aba !== "lista" ? "&aba=" + aba : "");
+}
 
-  if (idsAtivos.length === 0) {
-    const vazio = document.createElement("p");
-    vazio.textContent = termosBusca.length
-      ? "Nenhum pedido em andamento bateu com a busca — veja os arquivados abaixo."
-      : "Nenhum pedido em andamento — todos estão arquivados.";
-    elListaTimesAdmin.appendChild(vazio);
-  }
+// Abre um time (vai para a aba Inicial, se estiver em outra).
+function abrirTimeAdmin(timeId, aba) {
+  const abaInicial = document.querySelector('.aba[data-aba="inicial"]');
+  if (abaInicial && !abaInicial.classList.contains("ativa")) abaInicial.click();
+  const destino = enderecoDoTime(timeId, aba);
+  if (window.location.hash === destino) return;
+  window.location.hash = destino; // hashchange redesenha
+}
 
-  let elArquivados = null;
-  if (idsArquivados.length > 0) {
-    elArquivados = document.createElement("details");
-    elArquivados.className = "arquivados-admin";
-    // Com busca ativa o arquivo já abre, para o resultado não ficar escondido.
-    elArquivados.open = arquivadosAbertos || termosBusca.length > 0;
-    elArquivados.addEventListener("toggle", () => {
-      if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
-    });
-    const resumo = document.createElement("summary");
-    resumo.innerHTML = `📦 Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span>`;
-    elArquivados.appendChild(resumo);
-    const ajuda = document.createElement("p");
-    ajuda.className = "pix-ajuda";
-    ajuda.textContent = "Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.";
-    elArquivados.appendChild(ajuda);
-  }
+// Troca a aba do time aberto sem empilhar histórico (o "voltar" sai do time).
+function trocarAbaTimeAdmin(aba) {
+  window.location.replace(enderecoDoTime(timeAbertoAdmin, aba));
+}
 
-  idsAtivos.concat(idsArquivados).forEach((timeId) => {
-    const { time, alunos, expandido } = estadoTimes[timeId];
-    const destino = pedidoFinalizado(time) ? elArquivados : elListaTimesAdmin;
+function voltarParaListaAdmin() {
+  if (!window.location.hash) return;
+  history.pushState("", document.title, window.location.pathname + window.location.search);
+  lerEnderecoAdmin();
+  renderizarTimesAdmin();
+}
 
-    // O que a busca achou dentro deste pedido. Com camisetas achadas, o card
-    // já abre mostrando só elas (e o botão passa a oferecer a lista completa).
-    const achado = resultadoBusca(time, alunos, termosBusca);
-    const idsAchados = new Set(achado.alunos.map((a) => a.id));
-    camisetasAchadas += achado.alunos.length;
-    const soResultados = idsAchados.size > 0 && !expandido;
-    const mostrarLista = expandido || soResultados;
+lerEnderecoAdmin();
+window.addEventListener("hashchange", () => {
+  const antes = timeAbertoAdmin;
+  lerEnderecoAdmin();
+  renderizarTimesAdmin();
+  if (antes !== timeAbertoAdmin) window.scrollTo({ top: 0 });
+});
 
-    const card = document.createElement("div");
-    card.className = "card";
+// Campo de texto com o cursor dentro do time aberto: redesenhar agora
+// apagaria o que está sendo digitado. Espera o campo perder o foco.
+function digitandoNoTimeAberto() {
+  const a = document.activeElement;
+  if (!timeAbertoAdmin || !a || !elListaTimesAdmin.contains(a)) return false;
+  if (a.tagName === "TEXTAREA") return true;
+  return a.tagName === "INPUT" && !["checkbox", "radio", "button", "submit", "file", "color"].includes(a.type);
+}
 
-    // ----- Modo edição (nome e senha do time) -----
-    if (estadoTimes[timeId].editando) {
-      card.appendChild(criarFormEdicaoTime(timeId, time));
-      destino.appendChild(card);
-      return;
-    }
+elListaTimesAdmin.addEventListener("focusout", () => {
+  if (renderTimesPendente) setTimeout(renderizarTimesAdmin, 0);
+});
 
-    const statusId = statusPedidoDe(time);
-    const classeBadge = classeBadgeStatus(statusId);
-    const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
-
-    const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
-    const avisoAjustes = nAjustes > 0
-      ? `<p class="aviso-ajustes"><span class="marca-ajuste">!</span> ${nAjustes} ajuste(s) solicitado(s) — abra a lista para ver e corrigir.</p>`
-      : "";
-
-    const nPagos = alunos.filter((a) => a.pago).length;
-    const nGoleiros = alunos.filter(ehGoleiro).length;
-    const linhaGoleiros = nGoleiros > 0
-      ? ` &middot; <span class="badge goleiro" title="Camiseta de cor especial">🧤 ${nGoleiros} goleiro(s)</span>`
-      : "";
-    const nProfs = alunos.filter(ehProf).length;
-    const linhaProfs = nProfs > 0
-      ? ` &middot; <span class="badge prof" title="Camisetas de professor">🎓 ${nProfs} prof</span>`
-      : "";
-
-    // Da Impressão em diante, o que conta é o que entra na produção.
-    const emProducao = pedidoEmProducao(time);
-    const linhaProducao = emProducao
-      ? `<p class="linha-producao"><strong>${nPagos} em produção</strong> &middot; ${alunos.length - nPagos} fora da produção (não paga(s))</p>`
-      : "";
-
-    card.innerHTML = `
-      <h2>${escapeHtmlAdmin(time.nome)} ${status}</h2>
-      <p class="linha-cliente">Cliente: <strong>${escapeHtmlAdmin(nomeClienteDoTime(time))}</strong>${
-        time.modeloCamiseta
-          ? ` &middot; Modelo: <strong>${escapeHtmlAdmin(time.modeloCamiseta)}</strong>`
-          : ""
-      }</p>
-      ${linhaRepresentanteHtml(time)}
-      <p>Senha do time: <code>${escapeHtmlAdmin(time.senha)}</code> &middot; Link: <code>time.html?id=${timeId}</code></p>
-      <p>${alunos.length} camiseta(s) &middot; ${nPagos} paga(s), ${alunos.length - nPagos} pendente(s)${linhaGoleiros}${linhaProfs}</p>
-      ${linhaProducao}
-      ${avisoAjustes}
-    `;
-
-    // "Adicionar contato" leva direto para o formulário de edição do time.
-    const btnAddContato = card.querySelector("[data-add-contato]");
-    if (btnAddContato) {
-      btnAddContato.onclick = () => {
-        estadoTimes[timeId].editando = true;
-        renderizarTimesAdmin();
-      };
-    }
-
-    // Barra de acompanhamento das etapas do pedido.
-    const barra = document.createElement("div");
-    renderizarBarraStatus(barra, statusId);
-    card.appendChild(barra);
-
-    // Seletor de status (só o Super Admin muda o status).
-    const linhaStatus = document.createElement("div");
-    linhaStatus.className = "linha-status-admin";
-    const lblStatus = document.createElement("label");
-    lblStatus.textContent = "Status do pedido:";
-    const selStatus = document.createElement("select");
-    selStatus.className = "select-status";
-    STATUS_PEDIDO.forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.id;
-      o.textContent = s.label;
-      selStatus.appendChild(o);
-    });
-    selStatus.value = statusId;
-    selStatus.onchange = () => atualizarStatusPedido(timeId, selStatus.value);
-    linhaStatus.appendChild(lblStatus);
-    linhaStatus.appendChild(selStatus);
-    card.appendChild(linhaStatus);
-
-    // Data limite para pagamento (o Super Admin também vê e edita).
-    const linhaData = document.createElement("div");
-    linhaData.className = "linha-status-admin";
-    const lblData = document.createElement("label");
-    lblData.textContent = "Data limite p/ pagamento:";
-    const inputData = document.createElement("input");
-    inputData.type = "date";
-    inputData.className = "input-data-limite";
-    inputData.value = time.dataLimite || "";
-    inputData.onchange = () => {
-      db.collection(COL_TIMES).doc(timeId).update({
-        dataLimite: inputData.value || firebase.firestore.FieldValue.delete()
-      });
-    };
-    linhaData.appendChild(lblData);
-    linhaData.appendChild(inputData);
-    if (!time.dataLimite) {
-      const semData = document.createElement("small");
-      semData.className = "pix-ajuda";
-      semData.textContent = "(sem data — fica aberto até você fechar)";
-      linhaData.appendChild(semData);
-    }
-    card.appendChild(linhaData);
-
-    // Preço personalizado deste time (sobrepõe a tabela geral, grupo a grupo).
-    card.appendChild(criarBlocoPrecosTime(timeId));
-
-    // Imagens da camiseta — simulação e arte (Google Drive via Apps Script).
-    card.appendChild(criarBlocoImagemTime(timeId, time));
-    // Arquivos da folha EPS: arte de cada peça (PNG 600 dpi), brasão e fonte.
-    if (typeof criarBlocoProducaoTime === "function") card.appendChild(criarBlocoProducaoTime(timeId, time));
-
-    const botoes = document.createElement("div");
-
-    // Acrescentar um nome que faltou, sem precisar da senha do time nem
-    // reabrir o pedido. Abre o formulário rápido (modal).
-    const btnAdicionar = document.createElement("button");
-    btnAdicionar.className = "primario";
-    btnAdicionar.textContent = "+ Adicionar camiseta";
-    btnAdicionar.title = "Cadastrar uma camiseta na lista deste time";
-    btnAdicionar.onclick = () => abrirNovaCamiseta(timeId);
-    botoes.appendChild(btnAdicionar);
-
-    const btnExpandir = document.createElement("button");
-    btnExpandir.className = "secundario";
-    btnExpandir.textContent = soResultados
-      ? "Ver lista completa"
-      : expandido ? "Ocultar lista" : "Ver lista";
-    btnExpandir.onclick = () => {
-      // Com a lista aberta só nos resultados da busca, o botão abre o time
-      // inteiro em vez de fechar o que a busca mostrou.
-      estadoTimes[timeId].expandido = soResultados ? true : !estadoTimes[timeId].expandido;
-      renderizarTimesAdmin();
-    };
-    botoes.appendChild(btnExpandir);
-
-    const btnExportar = document.createElement("button");
-    btnExportar.className = "secundario";
-    btnExportar.textContent = "CSV de produção";
-    btnExportar.title = "Só as camisetas pagas, no padrão do programa de impressão";
-    btnExportar.onclick = () => exportarProducaoTime(time, alunos);
-    botoes.appendChild(btnExportar);
-
-    const btnConferencia = document.createElement("button");
-    btnConferencia.className = "secundario";
-    btnConferencia.textContent = "CSV de conferência";
-    btnConferencia.title = "Lista completa do time, com pagamento";
-    btnConferencia.onclick = () => exportarTime(time, alunos);
-    botoes.appendChild(btnConferencia);
-
-    const btnEditar = document.createElement("button");
-    btnEditar.className = "secundario";
-    btnEditar.textContent = "Editar time";
-    btnEditar.onclick = () => {
-      estadoTimes[timeId].editando = true;
-      renderizarTimesAdmin();
-    };
-    botoes.appendChild(btnEditar);
-
-    const btnExcluir = document.createElement("button");
-    btnExcluir.className = "perigo";
-    btnExcluir.textContent = "Excluir time";
-    btnExcluir.onclick = () => excluirTime(timeId, time);
-    botoes.appendChild(btnExcluir);
-
-    card.appendChild(botoes);
-
-    if (mostrarLista) {
-      // Aviso de que a lista está recortada pela busca (com a saída pelo botão).
-      if (soResultados) {
-        const nota = document.createElement("p");
-        nota.className = "busca-nota";
-        nota.innerHTML =
-          `🔎 Mostrando <strong>${idsAchados.size}</strong> de ${alunos.length} camiseta(s) — ` +
-          `as que combinam com a busca. Use <strong>Ver lista completa</strong> para ver o time inteiro.`;
-        card.appendChild(nota);
-      }
-
-      const tabela = document.createElement("table");
-      tabela.innerHTML = `
-        <thead>
-          <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Prof</th><th>Pagamento</th><th>Ações</th></tr>
-        </thead>
-        <tbody></tbody>
-      `;
-      const tbody = tabela.querySelector("tbody");
-
-      const alunosDaTabela = soResultados ? achado.alunos : alunos;
-
-      alunosDaTabela.forEach((aluno) => {
-        const tr = document.createElement("tr");
-        if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
-        // Realce de quem a busca achou (útil na lista completa do time).
-        if (idsAchados.has(aluno.id)) tr.classList.add("linha-busca");
-        // Nas etapas de produção, quem não pagou fica visivelmente de fora.
-        if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno)) {
-          tr.classList.add("linha-fora-producao");
-        }
-
-        const marca = aluno.ajusteSolicitado
-          ? '<span class="marca-ajuste" title="Ajuste solicitado">!</span> '
-          : "";
-        // Proposta guiada (de → para). Para ajustes antigos (só texto), mostra o motivo.
-        const proposta = propostaAjusteHtml(aluno);
-        const motivo = (aluno.ajusteSolicitado && !aluno.ajusteProposto && aluno.ajusteMotivo)
-          ? `<br><small class="motivo-ajuste">Ajuste pedido: ${escapeHtmlAdmin(aluno.ajusteMotivo)}</small>`
-          : "";
-
-        tr.innerHTML = `
-          <td>${marca}${escapeHtmlAdmin(aluno.nome)}${proposta}${motivo}${historicoAjusteHtml(aluno)}</td>
-          <td>${escapeHtmlAdmin(aluno.tamanho)}</td>
-          <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
-          <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
-          <td class="cel-goleiro"></td>
-          <td class="cel-prof"></td>
-          <td class="cel-pagamento"></td>
-          <td class="acoes-linha"></td>
-        `;
-
-        // Goleiro: camiseta de cor especial. O Super Admin marca e desmarca
-        // num clique, mesmo com a lista já fechada para o representante.
-        preencherCelulaGoleiroAdmin(tr.querySelector(".cel-goleiro"), timeId, aluno);
-        // Prof: camiseta de professor, marca só para organização.
-        preencherCelulaProfAdmin(tr.querySelector(".cel-prof"), timeId, aluno);
-
-        // Coluna de pagamento: badge + seletor de status.
-        const tdPag = tr.querySelector(".cel-pagamento");
-        tdPag.innerHTML = badgePagamentoHtml(aluno) + badgeProducaoHtml(time, aluno);
-        const selPag = document.createElement("select");
-        selPag.className = "select-pagamento";
-        selPag.innerHTML =
-          '<option value="pendente">Pendente</option>' +
-          '<option value="pix">Pago (PIX)</option>' +
-          '<option value="dinheiro">Pago (dinheiro)</option>' +
-          '<option value="interno">Interno (só custo)</option>';
-        selPag.value = aluno.pago ? (aluno.pagamentoForma || "pix") : "pendente";
-        selPag.onchange = () => atualizarPagamento(timeId, aluno.id, selPag.value);
-        tdPag.appendChild(selPag);
-        if (aluno.pagamentoDeclarado && !aluno.pago) {
-          const nota = document.createElement("small");
-          nota.className = "motivo-ajuste";
-          nota.textContent = "Pagante marcou PIX — confirme.";
-          tdPag.appendChild(nota);
-        }
-
-        const tdAcoes = tr.querySelector(".acoes-linha");
-
-        const btnEditar = document.createElement("button");
-        btnEditar.className = "secundario";
-        btnEditar.textContent = "Editar";
-        btnEditar.onclick = () => editarAlunoAdmin(tr, timeId, aluno);
-        tdAcoes.appendChild(btnEditar);
-
-        if (aluno.ajusteSolicitado) {
-          // Aplicar: grava a correção sugerida e resolve (só o "OK" do usuário).
-          if (aluno.ajusteProposto) {
-            const btnAplicar = document.createElement("button");
-            btnAplicar.className = "sucesso";
-            btnAplicar.textContent = "Aplicar ajuste";
-            btnAplicar.title = "Aplicar a correção sugerida e resolver";
-            btnAplicar.onclick = () => aplicarAjuste(timeId, aluno);
-            tdAcoes.appendChild(btnAplicar);
-          }
-
-          const btnResolver = document.createElement("button");
-          btnResolver.className = "secundario";
-          btnResolver.textContent = aluno.ajusteProposto ? "Dispensar" : "Resolver";
-          btnResolver.title = "Marcar como resolvido sem aplicar a sugestão";
-          btnResolver.onclick = () => {
-            db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
-              ajusteSolicitado: false,
-              ajusteProposto: firebase.firestore.FieldValue.delete(),
-              ajusteContato: firebase.firestore.FieldValue.delete(),
-              ajusteResolvidoEm: firebase.firestore.FieldValue.serverTimestamp(),
-              ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now(), motivo: "Dispensado" })
-            });
-          };
-          tdAcoes.appendChild(btnResolver);
-        }
-
-        // Avisar no WhatsApp: aparece quando há contato e o ajuste já foi resolvido.
-        if (aluno.ajusteContato && !aluno.ajusteSolicitado) {
-          const btnWa = document.createElement("button");
-          btnWa.className = "sucesso";
-          btnWa.textContent = "Avisar no WhatsApp";
-          btnWa.title = "Enviar aviso de ajuste aprovado e pagamento liberado";
-          btnWa.onclick = () => {
-            const texto =
-              `Olá! ✅ O ajuste da camiseta de ${aluno.nome} (time ${time.nome}) foi aprovado e aplicado. ` +
-              `O pedido já está disponível para pagamento. 👕`;
-            const url = linkWhatsapp(aluno.ajusteContato, texto);
-            if (!url) {
-              alert("O contato informado não é um telefone válido para o WhatsApp.");
-              return;
-            }
-            window.open(url, "_blank");
-            // Marca como avisado e remove o contato para o botão sumir.
-            db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
-              ajusteContato: firebase.firestore.FieldValue.delete(),
-              ajusteAvisadoEm: firebase.firestore.FieldValue.serverTimestamp()
-            });
-          };
-          tdAcoes.appendChild(btnWa);
-        }
-
-        const btnExcluir = document.createElement("button");
-        btnExcluir.className = "perigo";
-        btnExcluir.textContent = "Excluir";
-        btnExcluir.onclick = () => {
-          if (confirm(`Remover "${aluno.nome}"?`)) {
-            db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({ excluido: true });
-          }
-        };
-        tdAcoes.appendChild(btnExcluir);
-        tbody.appendChild(tr);
-      });
-
-      card.appendChild(tabela);
-    }
-
-    destino.appendChild(card);
-  });
-
-  if (elArquivados) elListaTimesAdmin.appendChild(elArquivados);
-
-  atualizarResumoBusca(ids.length, camisetasAchadas);
-
+// Telas que dependem da mesma lista de times (redesenhadas junto).
+function renderizarTelasDosTimes() {
   renderizarResumoPagamentos();
   renderizarKanban();
   renderizarFinanceiro();
@@ -1018,38 +725,725 @@ function renderizarTimesAdmin() {
   if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
 }
 
-// Linha do representante no card do pedido: nome e número clicáveis, cada um
-// abrindo o WhatsApp com a mensagem já escrita. É o caminho curto para falar
-// com quem responde pelo time, sem procurar o telefone em outro lugar.
-function linhaRepresentanteHtml(time) {
+function renderizarTimesAdmin() {
+  if (digitandoNoTimeAberto()) {
+    renderTimesPendente = true;
+    renderizarTelasDosTimes();
+    return;
+  }
+  renderTimesPendente = false;
+
+  const secao = document.getElementById("aba-inicial");
+  if (secao) secao.classList.toggle("com-time-aberto", !!timeAbertoAdmin);
+
+  // A busca do topo conta os pedidos e as camisetas encontradas.
+  const termos = buscaTermos();
+  const achados = timesDosPedidos();
+  const nCamisetas = achados.reduce((s, [, e]) => s + resultadoBusca(e.time, e.alunos, termos).alunos.length, 0);
+  atualizarResumoBusca(achados.length, nCamisetas);
+
+  elListaTimesAdmin.innerHTML = "";
+  if (timeAbertoAdmin) renderizarTimeAberto(timeAbertoAdmin);
+  else renderizarListaTimes();
+
+  renderizarTelasDosTimes();
+}
+
+// ---------------- Lista de times (só o nome e o representante) ----------------
+
+function renderizarListaTimes() {
+  const termosBusca = buscaTermos();
+  const ids = timesDosPedidos()
+    .map(([id]) => id)
+    .sort((a, b) => estadoTimes[a].time.nome.localeCompare(estadoTimes[b].time.nome, "pt-BR"));
+
+  if (!timesCarregados) {
+    elListaTimesAdmin.innerHTML = '<p class="pix-ajuda">Carregando os times…</p>';
+    return;
+  }
+
+  if (ids.length === 0) {
+    elListaTimesAdmin.innerHTML = termosBusca.length
+      ? `<div class="vazio-lista"><p>Nenhum pedido encontrado para <strong>${escapeHtmlAdmin(buscaFiltro.trim())}</strong>.</p><p class="pix-ajuda">A busca procura no nome do time, no nome do estudante e no apelido da camiseta${clienteFiltro ? ", dentro do cliente escolhido no topo" : ""}.</p></div>`
+      : clienteFiltro
+        ? '<div class="vazio-lista"><p>Nenhum time para o cliente escolhido.</p><p class="pix-ajuda">Troque o cliente no seletor do topo ou crie um time com <strong>+ Novo time</strong>.</p></div>'
+        : '<div class="vazio-lista"><p>Nenhum time cadastrado ainda.</p><p class="pix-ajuda">Comece pelo botão <strong>+ Novo time</strong>.</p></div>';
+    return;
+  }
+
+  // Pedidos finalizados vão para o "arquivo": uma seção recolhível no fim.
+  const idsAtivos = ids.filter((id) => !pedidoFinalizado(estadoTimes[id].time));
+  const idsArquivados = ids.filter((id) => pedidoFinalizado(estadoTimes[id].time));
+
+  if (idsAtivos.length === 0) {
+    const vazio = document.createElement("p");
+    vazio.className = "pix-ajuda";
+    vazio.textContent = termosBusca.length
+      ? "Nenhum pedido em andamento bateu com a busca — veja os arquivados abaixo."
+      : "Nenhum pedido em andamento — todos estão arquivados.";
+    elListaTimesAdmin.appendChild(vazio);
+  }
+
+  // Sem cliente escolhido no topo, os times vêm agrupados por cliente.
+  const agrupar = !clienteFiltro && clientesOrdenados().length > 0;
+  if (agrupar) {
+    const grupos = {};
+    idsAtivos.forEach((id) => {
+      const nome = nomeClienteDoTime(estadoTimes[id].time);
+      (grupos[nome] = grupos[nome] || []).push(id);
+    });
+    Object.keys(grupos)
+      .sort((a, b) => (a === SEM_CLIENTE_NOME) - (b === SEM_CLIENTE_NOME) || a.localeCompare(b, "pt-BR"))
+      .forEach((nome) => {
+        const titulo = document.createElement("h3");
+        titulo.className = "grupo-times-titulo";
+        titulo.innerHTML = `${escapeHtmlAdmin(nome)} <span class="grupo-times-qtd">${grupos[nome].length}</span>`;
+        elListaTimesAdmin.appendChild(titulo);
+        elListaTimesAdmin.appendChild(criarListaDeLinhas(grupos[nome], termosBusca));
+      });
+  } else if (idsAtivos.length > 0) {
+    elListaTimesAdmin.appendChild(criarListaDeLinhas(idsAtivos, termosBusca));
+  }
+
+  if (idsArquivados.length > 0) {
+    const elArquivados = document.createElement("details");
+    elArquivados.className = "arquivados-admin";
+    // Com busca ativa o arquivo já abre, para o resultado não ficar escondido.
+    elArquivados.open = arquivadosAbertos || termosBusca.length > 0;
+    elArquivados.addEventListener("toggle", () => {
+      if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
+    });
+    elArquivados.innerHTML =
+      `<summary>📦 Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
+      '<p class="pix-ajuda">Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.</p>';
+    elArquivados.appendChild(criarListaDeLinhas(idsArquivados, termosBusca));
+    elListaTimesAdmin.appendChild(elArquivados);
+  }
+}
+
+function criarListaDeLinhas(ids, termosBusca) {
+  const lista = document.createElement("div");
+  lista.className = "lista-times-admin";
+  ids.forEach((id) => lista.appendChild(criarLinhaTime(id, termosBusca)));
+  return lista;
+}
+
+// Uma linha da lista: o nome do time e o representante (com o WhatsApp).
+// O status e os avisos entram pequenos, à direita, só como sinalização.
+function criarLinhaTime(timeId, termosBusca) {
+  const { time, alunos } = estadoTimes[timeId];
+  const statusId = statusPedidoDe(time);
+  const achado = resultadoBusca(time, alunos, termosBusca);
+  const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
+  const nConfirmar = alunos.filter((a) => a.pagamentoDeclarado && !a.pago).length;
+
+  const linha = document.createElement("div");
+  linha.className = "linha-time";
+  linha.tabIndex = 0;
+  linha.setAttribute("role", "button");
+  linha.setAttribute("aria-label", "Abrir o time " + time.nome);
+
+  const capa = time.imagemUrl || time.arteUrl;
+  const avatar = capa
+    ? `<img src="${escAttr(capa)}" alt="" loading="lazy" />`
+    : `<span>${escapeHtmlAdmin((time.nome || "?").trim().charAt(0).toUpperCase())}</span>`;
+
+  const sinais = [];
+  if (achado.alunos.length > 0) sinais.push(`<span class="sinal sinal-busca">🔎 ${achado.alunos.length}</span>`);
+  if (nAjustes > 0) sinais.push(`<span class="sinal sinal-ajuste" title="Ajustes solicitados">! ${nAjustes}</span>`);
+  if (nConfirmar > 0) sinais.push(`<span class="sinal sinal-pix" title="PIX avisado, a confirmar">PIX ${nConfirmar}</span>`);
+
+  linha.innerHTML = `
+    <span class="linha-time-avatar">${avatar}</span>
+    <span class="linha-time-texto">
+      <span class="linha-time-nome">${escapeHtmlAdmin(time.nome)}</span>
+      <span class="linha-time-rep">${representanteCurtoHtml(time)}</span>
+    </span>
+    <span class="linha-time-sinais">
+      ${sinais.join("")}
+      <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span>
+      <span class="linha-time-seta" aria-hidden="true">›</span>
+    </span>`;
+
+  // O link do WhatsApp abre a conversa, não o time.
+  linha.querySelectorAll("a").forEach((a) => a.addEventListener("click", (ev) => ev.stopPropagation()));
+  const abrir = () => abrirTimeAdmin(timeId);
+  linha.addEventListener("click", abrir);
+  linha.addEventListener("keydown", (ev) => {
+    if (ev.target === linha && (ev.key === "Enter" || ev.key === " ")) {
+      ev.preventDefault();
+      abrir();
+    }
+  });
+  return linha;
+}
+
+// Representante em uma linha: nome e WhatsApp (link), ou o aviso de que falta.
+function representanteCurtoHtml(time) {
   const { nome, telefone } = contatoDoTime(time);
-
-  if (!nome && !telefone) {
-    return '<p class="linha-representante linha-sem-contato">Representante: ' +
-      '<button type="button" class="link-inline" data-add-contato>+ adicionar contato</button></p>';
-  }
-
+  if (!nome && !telefone) return '<span class="sem-rep">Sem representante</span>';
   const url = linkRepresentante(time);
-  const rotuloNome = nome || "Representante";
-  const rotuloFone = telefone ? formatarTelefone(telefone) : "";
+  const texto = escapeHtmlAdmin(nome || "Representante") +
+    (telefone ? ` · ${escapeHtmlAdmin(formatarTelefone(telefone))}` : "");
+  return url
+    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">💬 ${texto}</a>`
+    : `<span title="Sem um WhatsApp válido (informe com DDD)">👤 ${texto}</span>`;
+}
 
-  // Sem um telefone que o WhatsApp aceite, mostramos o texto sem link (um
-  // link quebrado seria pior do que nenhum) e explicamos no title.
-  if (!url) {
-    const aviso = telefone
-      ? ` title="Este número não abre o WhatsApp: informe com DDD, ex. (11) 91234-5678"`
-      : ` title="Sem telefone cadastrado para este representante"`;
-    return `<p class="linha-representante"${aviso}>Representante: ` +
-      `<strong>${escapeHtmlAdmin(rotuloNome)}</strong>` +
-      (rotuloFone ? ` &middot; ${escapeHtmlAdmin(rotuloFone)}` : "") +
-      ` <span class="pix-ajuda">(sem WhatsApp)</span></p>`;
+// ---------------- Time aberto ----------------
+
+function renderizarTimeAberto(timeId) {
+  const estado = estadoTimes[timeId];
+  const voltar = document.createElement("button");
+  voltar.type = "button";
+  voltar.className = "botao-voltar";
+  voltar.textContent = "← Todos os times";
+  voltar.onclick = voltarParaListaAdmin;
+
+  if (!estado) {
+    const aviso = document.createElement("div");
+    aviso.className = "card";
+    aviso.innerHTML = timesCarregados
+      ? "<h2>Time não encontrado</h2><p>Esse time não existe mais (ou foi excluído).</p>"
+      : '<p class="pix-ajuda">Carregando o time…</p>';
+    elListaTimesAdmin.appendChild(voltar);
+    elListaTimesAdmin.appendChild(aviso);
+    return;
   }
 
-  const abrir = `href="${escapeHtmlAdmin(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar com ${escapeHtmlAdmin(rotuloNome)} no WhatsApp"`;
-  return `<p class="linha-representante">Representante: ` +
-    `<a ${abrir}>💬 ${escapeHtmlAdmin(rotuloNome)}</a>` +
-    (rotuloFone ? ` &middot; <a ${abrir}>${escapeHtmlAdmin(rotuloFone)}</a>` : "") +
-    `</p>`;
+  const { time, alunos } = estado;
+  const statusId = statusPedidoDe(time);
+
+  // Topo: voltar, e o atalho para a página que o cliente vê.
+  const topo = document.createElement("div");
+  topo.className = "detalhe-topo";
+  topo.appendChild(voltar);
+  const verPagina = document.createElement("a");
+  verPagina.className = "botao-link";
+  verPagina.href = "time.html?id=" + encodeURIComponent(timeId);
+  verPagina.target = "_blank";
+  verPagina.rel = "noopener";
+  verPagina.textContent = "Ver a página do pedido ↗";
+  topo.appendChild(verPagina);
+  elListaTimesAdmin.appendChild(topo);
+
+  // Cabeçalho: nome, cliente, representante e o status (sempre à mão).
+  const cab = document.createElement("div");
+  cab.className = "card detalhe-cabecalho";
+  cab.innerHTML = `
+    <div class="detalhe-titulo">
+      <p class="detalhe-cliente">${escapeHtmlAdmin(nomeClienteDoTime(time))}${
+        time.modeloCamiseta ? ` · Modelo: ${escapeHtmlAdmin(time.modeloCamiseta)}` : ""}</p>
+      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span></h2>
+      <p class="linha-time-rep">${representanteCurtoHtml(time)}</p>
+    </div>`;
+
+  const linhaStatus = document.createElement("label");
+  linhaStatus.className = "detalhe-status";
+  linhaStatus.textContent = "Status do pedido";
+  const selStatus = document.createElement("select");
+  selStatus.className = "select-status";
+  STATUS_PEDIDO.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.id;
+    o.textContent = s.label;
+    selStatus.appendChild(o);
+  });
+  selStatus.value = statusId;
+  selStatus.onchange = () => atualizarStatusPedido(timeId, selStatus.value);
+  linhaStatus.appendChild(selStatus);
+  cab.appendChild(linhaStatus);
+
+  const barra = document.createElement("div");
+  renderizarBarraStatus(barra, statusId);
+  cab.appendChild(barra);
+  cab.querySelectorAll("a").forEach((a) => a.addEventListener("click", (ev) => ev.stopPropagation()));
+  elListaTimesAdmin.appendChild(cab);
+
+  // Abas do time.
+  const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
+  const faltaProducao = typeof pendenciasProducao === "function" ? pendenciasProducao(time) : [];
+  const contadores = {
+    lista: `<span class="subaba-qtd">${alunos.length}</span>${nAjustes ? ` <span class="marca-ajuste">!</span>` : ""}`,
+    config: rascunhoConfigTime[timeId] ? ' <span class="subaba-ponto" title="Alterações não salvas">●</span>' : "",
+    arquivos: faltaProducao.length ? ' <span class="subaba-ponto pendente" title="Faltam arquivos">●</span>' : ' <span class="subaba-ok">✓</span>'
+  };
+  const nav = document.createElement("nav");
+  nav.className = "subabas-time";
+  nav.setAttribute("role", "tablist");
+  ABAS_TIME_ADMIN.forEach((aba) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "subaba-time" + (aba.id === abaTimeAdmin ? " ativa" : "");
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", aba.id === abaTimeAdmin ? "true" : "false");
+    b.innerHTML = `${escapeHtmlAdmin(aba.label)} ${contadores[aba.id] || ""}`;
+    b.onclick = () => trocarAbaTimeAdmin(aba.id);
+    nav.appendChild(b);
+  });
+  elListaTimesAdmin.appendChild(nav);
+
+  if (abaTimeAdmin === "config") renderizarConfigTime(timeId);
+  else if (abaTimeAdmin === "arquivos") renderizarArquivosTime(timeId);
+  else renderizarListaDoTime(timeId);
+}
+
+// ---------------- Aba Lista ----------------
+
+function renderizarListaDoTime(timeId) {
+  const { time, alunos, expandido } = estadoTimes[timeId];
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const nPagos = alunos.filter((a) => a.pago).length;
+  const nConfirmar = alunos.filter((a) => a.pagamentoDeclarado && !a.pago).length;
+  const nGoleiros = alunos.filter(ehGoleiro).length;
+  const nProfs = alunos.filter(ehProf).length;
+  const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
+
+  const numeros = [
+    `<span class="numero-chip"><strong>${alunos.length}</strong> camiseta(s)</span>`,
+    `<span class="numero-chip ok"><strong>${nPagos}</strong> paga(s)</span>`,
+    `<span class="numero-chip"><strong>${alunos.length - nPagos}</strong> pendente(s)</span>`
+  ];
+  if (nConfirmar) numeros.push(`<span class="numero-chip alerta"><strong>${nConfirmar}</strong> PIX a confirmar</span>`);
+  if (nGoleiros) numeros.push(`<span class="numero-chip">🧤 <strong>${nGoleiros}</strong> goleiro(s)</span>`);
+  if (nProfs) numeros.push(`<span class="numero-chip">🎓 <strong>${nProfs}</strong> prof</span>`);
+  if (nAjustes) numeros.push(`<span class="numero-chip alerta"><span class="marca-ajuste">!</span> <strong>${nAjustes}</strong> ajuste(s)</span>`);
+
+  const cab = document.createElement("div");
+  cab.className = "lista-cabecalho";
+  cab.innerHTML = `<div class="numeros-chips">${numeros.join("")}</div>`;
+
+  const acoes = document.createElement("div");
+  acoes.className = "lista-acoes";
+  const btnAdicionar = document.createElement("button");
+  btnAdicionar.className = "primario";
+  btnAdicionar.textContent = "+ Adicionar camiseta";
+  btnAdicionar.title = "Cadastrar uma camiseta na lista deste time";
+  btnAdicionar.onclick = () => abrirNovaCamiseta(timeId);
+  acoes.appendChild(btnAdicionar);
+
+  const btnExportar = document.createElement("button");
+  btnExportar.className = "secundario";
+  btnExportar.textContent = "CSV de produção";
+  btnExportar.title = "Só as camisetas pagas, no padrão do programa de impressão";
+  btnExportar.onclick = () => exportarProducaoTime(time, alunos);
+  acoes.appendChild(btnExportar);
+
+  const btnConferencia = document.createElement("button");
+  btnConferencia.className = "secundario";
+  btnConferencia.textContent = "CSV de conferência";
+  btnConferencia.title = "Lista completa do time, com pagamento";
+  btnConferencia.onclick = () => exportarTime(time, alunos);
+  acoes.appendChild(btnConferencia);
+  cab.appendChild(acoes);
+  card.appendChild(cab);
+
+  // Da Impressão em diante, o que conta é o que entra na produção.
+  if (pedidoEmProducao(time)) {
+    const p = document.createElement("p");
+    p.className = "linha-producao";
+    p.innerHTML = `<strong>${nPagos} em produção</strong> &middot; ${alunos.length - nPagos} fora da produção (não paga(s))`;
+    card.appendChild(p);
+  }
+
+  if (alunos.length === 0) {
+    const vazio = document.createElement("div");
+    vazio.className = "vazio-lista";
+    vazio.innerHTML = "<p>Nenhuma camiseta na lista ainda.</p>" +
+      '<p class="pix-ajuda">Use <strong>+ Adicionar camiseta</strong> ou envie ao representante o link e a senha (aba <strong>Configuração</strong>).</p>';
+    card.appendChild(vazio);
+    elListaTimesAdmin.appendChild(card);
+    return;
+  }
+
+  // O que a busca do topo achou neste time: por padrão, só essas camisetas.
+  const achado = resultadoBusca(time, alunos, buscaTermos());
+  const idsAchados = new Set(achado.alunos.map((a) => a.id));
+  const soResultados = idsAchados.size > 0 && !expandido;
+  if (idsAchados.size > 0) {
+    const nota = document.createElement("p");
+    nota.className = "busca-nota";
+    nota.innerHTML = soResultados
+      ? `🔎 Mostrando <strong>${idsAchados.size}</strong> de ${alunos.length} camiseta(s) — as que combinam com a busca. `
+      : `🔎 ${idsAchados.size} camiseta(s) combinam com a busca (em destaque). `;
+    const alternar = document.createElement("button");
+    alternar.type = "button";
+    alternar.className = "link-inline";
+    alternar.textContent = soResultados ? "Ver lista completa" : "Mostrar só os resultados";
+    alternar.onclick = () => {
+      estadoTimes[timeId].expandido = soResultados;
+      renderizarTimesAdmin();
+    };
+    nota.appendChild(alternar);
+    card.appendChild(nota);
+  }
+
+  const tabela = document.createElement("table");
+  tabela.className = "tabela-responsiva";
+  tabela.innerHTML = `
+    <thead>
+      <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Prof</th><th>Pagamento</th><th>Ações</th></tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = tabela.querySelector("tbody");
+  const alunosDaTabela = soResultados ? achado.alunos : alunos;
+  alunosDaTabela.forEach((aluno) => tbody.appendChild(criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados)));
+
+  const rolagem = document.createElement("div");
+  rolagem.className = "tabela-rolagem";
+  rolagem.appendChild(tabela);
+  card.appendChild(rolagem);
+  elListaTimesAdmin.appendChild(card);
+}
+
+// Uma linha da lista do time no Super Admin.
+function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
+  const tr = document.createElement("tr");
+  if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
+  // Realce de quem a busca achou (útil na lista completa do time).
+  if (idsAchados.has(aluno.id)) tr.classList.add("linha-busca");
+  // Nas etapas de produção, quem não pagou fica visivelmente de fora.
+  if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno)) {
+    tr.classList.add("linha-fora-producao");
+  }
+
+  const marca = aluno.ajusteSolicitado
+    ? '<span class="marca-ajuste" title="Ajuste solicitado">!</span> '
+    : "";
+  // Proposta guiada (de → para). Para ajustes antigos (só texto), mostra o motivo.
+  const proposta = propostaAjusteHtml(aluno);
+  const motivo = (aluno.ajusteSolicitado && !aluno.ajusteProposto && aluno.ajusteMotivo)
+    ? `<br><small class="motivo-ajuste">Ajuste pedido: ${escapeHtmlAdmin(aluno.ajusteMotivo)}</small>`
+    : "";
+
+  tr.innerHTML = `
+    <td data-label="Nome">${marca}${escapeHtmlAdmin(aluno.nome)}${proposta}${motivo}${historicoAjusteHtml(aluno)}</td>
+    <td data-label="Tamanho">${escapeHtmlAdmin(aluno.tamanho)}</td>
+    <td data-label="Número">${escapeHtmlAdmin(aluno.numero || "-")}</td>
+    <td data-label="Nome na camiseta">${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
+    <td data-label="Goleiro" class="cel-goleiro"></td>
+    <td data-label="Prof" class="cel-prof"></td>
+    <td data-label="Pagamento" class="cel-pagamento"></td>
+    <td data-label="" class="acoes-linha"></td>
+  `;
+
+  // Goleiro: camiseta de cor especial. O Super Admin marca e desmarca
+  // num clique, mesmo com a lista já fechada para o representante.
+  preencherCelulaGoleiroAdmin(tr.querySelector(".cel-goleiro"), timeId, aluno);
+  // Prof: camiseta de professor, marca só para organização.
+  preencherCelulaProfAdmin(tr.querySelector(".cel-prof"), timeId, aluno);
+
+  // Coluna de pagamento: badge + seletor para registrar o pagamento.
+  const tdPag = tr.querySelector(".cel-pagamento");
+  tdPag.innerHTML = badgePagamentoHtml(aluno) + badgeProducaoHtml(time, aluno);
+  const selPag = document.createElement("select");
+  selPag.className = "select-pagamento";
+  selPag.setAttribute("aria-label", "Registrar pagamento de " + aluno.nome);
+  selPag.innerHTML =
+    '<option value="pendente">Pendente</option>' +
+    '<option value="pix">Pago (PIX)</option>' +
+    '<option value="dinheiro">Pago (dinheiro)</option>' +
+    '<option value="interno">Interno (só custo)</option>';
+  selPag.value = aluno.pago ? (aluno.pagamentoForma || "pix") : "pendente";
+  selPag.onchange = () => atualizarPagamento(timeId, aluno.id, selPag.value);
+  tdPag.appendChild(selPag);
+  if (aluno.pagamentoDeclarado && !aluno.pago) {
+    const nota = document.createElement("small");
+    nota.className = "motivo-ajuste";
+    nota.textContent = "Pagante marcou PIX — confirme.";
+    tdPag.appendChild(nota);
+  }
+
+  const tdAcoes = tr.querySelector(".acoes-linha");
+
+  const btnEditar = document.createElement("button");
+  btnEditar.className = "secundario";
+  btnEditar.textContent = "Editar";
+  btnEditar.onclick = () => editarAlunoAdmin(tr, timeId, aluno);
+  tdAcoes.appendChild(btnEditar);
+
+  if (aluno.ajusteSolicitado) {
+    // Aplicar: grava a correção sugerida e resolve (só o "OK" do usuário).
+    if (aluno.ajusteProposto) {
+      const btnAplicar = document.createElement("button");
+      btnAplicar.className = "sucesso";
+      btnAplicar.textContent = "Aplicar ajuste";
+      btnAplicar.title = "Aplicar a correção sugerida e resolver";
+      btnAplicar.onclick = () => aplicarAjuste(timeId, aluno);
+      tdAcoes.appendChild(btnAplicar);
+    }
+
+    const btnResolver = document.createElement("button");
+    btnResolver.className = "secundario";
+    btnResolver.textContent = aluno.ajusteProposto ? "Dispensar" : "Resolver";
+    btnResolver.title = "Marcar como resolvido sem aplicar a sugestão";
+    btnResolver.onclick = () => {
+      db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
+        ajusteSolicitado: false,
+        ajusteProposto: firebase.firestore.FieldValue.delete(),
+        ajusteContato: firebase.firestore.FieldValue.delete(),
+        ajusteResolvidoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        ajusteHistorico: firebase.firestore.FieldValue.arrayUnion({ tipo: "resolvido", em: Date.now(), motivo: "Dispensado" })
+      });
+    };
+    tdAcoes.appendChild(btnResolver);
+  }
+
+  // Avisar no WhatsApp: aparece quando há contato e o ajuste já foi resolvido.
+  if (aluno.ajusteContato && !aluno.ajusteSolicitado) {
+    const btnWa = document.createElement("button");
+    btnWa.className = "sucesso";
+    btnWa.textContent = "Avisar no WhatsApp";
+    btnWa.title = "Enviar aviso de ajuste aprovado e pagamento liberado";
+    btnWa.onclick = () => {
+      const texto =
+        `Olá! ✅ O ajuste da camiseta de ${aluno.nome} (time ${time.nome}) foi aprovado e aplicado. ` +
+        `O pedido já está disponível para pagamento. 👕`;
+      const url = linkWhatsapp(aluno.ajusteContato, texto);
+      if (!url) {
+        alert("O contato informado não é um telefone válido para o WhatsApp.");
+        return;
+      }
+      window.open(url, "_blank");
+      // Marca como avisado e remove o contato para o botão sumir.
+      db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({
+        ajusteContato: firebase.firestore.FieldValue.delete(),
+        ajusteAvisadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    };
+    tdAcoes.appendChild(btnWa);
+  }
+
+  const btnExcluir = document.createElement("button");
+  btnExcluir.className = "perigo";
+  btnExcluir.textContent = "Excluir";
+  btnExcluir.onclick = () => {
+    if (confirm(`Remover "${aluno.nome}"?`)) {
+      db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id).update({ excluido: true });
+    }
+  };
+  tdAcoes.appendChild(btnExcluir);
+  return tr;
+}
+
+// ---------------- Aba Configuração ----------------
+// Representante (contato e senha), data limite, dados do time e a tabela
+// especial de preço. Os campos guardam um rascunho enquanto se digita, para
+// uma atualização que chega do Firestore não apagar o que ainda não foi salvo.
+
+const CAMPOS_CONFIG_TIME = ["nome", "clienteId", "modeloCamiseta", "representanteNome", "representanteTelefone", "senha", "dataLimite"];
+
+function valorConfigTime(timeId, campo) {
+  const r = rascunhoConfigTime[timeId];
+  if (r && r[campo] !== undefined) return r[campo];
+  const t = estadoTimes[timeId].time;
+  if (campo === "clienteId") return clienteIdDoTime(t);
+  if (campo === "representanteNome") return contatoDoTime(t).nome;
+  if (campo === "representanteTelefone") return contatoDoTime(t).telefone;
+  return t[campo] || "";
+}
+
+// Endereço completo da página do pedido (para mandar ao representante).
+function urlPaginaDoTime(timeId) {
+  try {
+    return new URL("time.html?id=" + encodeURIComponent(timeId), window.location.href).href;
+  } catch (e) {
+    return "time.html?id=" + encodeURIComponent(timeId);
+  }
+}
+
+function renderizarConfigTime(timeId) {
+  const { time } = estadoTimes[timeId];
+  const v = (campo) => escAttr(valorConfigTime(timeId, campo));
+  const temRascunho = !!rascunhoConfigTime[timeId];
+
+  const card = document.createElement("div");
+  card.className = "card config-time";
+  card.innerHTML = `
+    <form class="form-config-time" novalidate>
+      <fieldset>
+        <legend>Representante</legend>
+        <p class="pix-ajuda">Quem responde pelo pedido. Na página do pedido, ele entra pela ⚙️ (canto superior direito) com a senha abaixo para cadastrar nomes e definir a data limite.</p>
+        <div class="grade-2">
+          <label>Nome<input type="text" data-campo="representanteNome" value="${v("representanteNome")}" placeholder="Ex: Ana Souza" /></label>
+          <label>WhatsApp<input type="tel" inputmode="tel" data-campo="representanteTelefone" value="${v("representanteTelefone")}" placeholder="Ex: (11) 91234-5678" /></label>
+        </div>
+        <label>Senha do time<input type="text" data-campo="senha" value="${v("senha")}" autocomplete="off" required /></label>
+        <div class="config-atalhos">
+          <button type="button" class="secundario" data-acao="copiar">Copiar link do pedido</button>
+          <button type="button" class="sucesso" data-acao="enviar">Enviar link e senha no WhatsApp</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pagamento</legend>
+        <label>Data limite para pagamento<input type="date" data-campo="dataLimite" value="${v("dataLimite")}" /></label>
+        <p class="pix-ajuda">Ao passar a data, o pedido <strong>Aberto</strong> fecha sozinho. Em branco, fica aberto até você mudar o status.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Time</legend>
+        <label>Nome do time<input type="text" data-campo="nome" value="${v("nome")}" required /></label>
+        <div class="grade-2">
+          <label>Cliente<select data-campo="clienteId"><option value="">Sem cliente</option>${
+            clientesOrdenados().map((c) => `<option value="${escAttr(c.id)}">${escapeHtmlAdmin(c.nome || c.id)}</option>`).join("")
+          }</select></label>
+          <label>Modelo da camiseta (arte)<input type="text" data-campo="modeloCamiseta" value="${v("modeloCamiseta")}" placeholder="Em branco = &quot;${escAttr(time.nome)}&quot;" /></label>
+        </div>
+        <p class="pix-ajuda">O modelo separa os CSVs da aba Produção por arte: repita o mesmo nome em times que usam a mesma arte.</p>
+      </fieldset>
+
+      <div class="config-salvar${temRascunho ? " com-rascunho" : ""}">
+        <span class="pix-ajuda">${temRascunho ? "Alterações ainda não salvas." : "Tudo salvo."}</span>
+        <span>
+          ${temRascunho ? '<button type="button" class="secundario" data-acao="descartar">Descartar</button>' : ""}
+          <button type="submit" class="primario">Salvar configuração</button>
+        </span>
+      </div>
+      <p class="msg-config oculto"></p>
+    </form>`;
+
+  const form = card.querySelector("form");
+  const sel = form.querySelector('[data-campo="clienteId"]');
+  sel.value = valorConfigTime(timeId, "clienteId");
+
+  const msg = form.querySelector(".msg-config");
+  const marcarRascunho = () => {
+    const box = form.querySelector(".config-salvar");
+    box.classList.add("com-rascunho");
+    box.querySelector(".pix-ajuda").textContent = "Alterações ainda não salvas.";
+  };
+  form.querySelectorAll("[data-campo]").forEach((el) => {
+    const evento = el.tagName === "SELECT" || el.type === "date" ? "change" : "input";
+    el.addEventListener(evento, () => {
+      rascunhoConfigTime[timeId] = rascunhoConfigTime[timeId] || {};
+      rascunhoConfigTime[timeId][el.dataset.campo] = el.value;
+      marcarRascunho();
+    });
+  });
+
+  form.querySelector('[data-acao="copiar"]').onclick = async (ev) => {
+    const url = urlPaginaDoTime(timeId);
+    try {
+      await navigator.clipboard.writeText(url);
+      ev.target.textContent = "Link copiado ✓";
+    } catch (e) {
+      prompt("Copie o link do pedido:", url);
+    }
+  };
+  form.querySelector('[data-acao="enviar"]').onclick = () => {
+    const nome = valorConfigTime(timeId, "representanteNome");
+    const tel = valorConfigTime(timeId, "representanteTelefone");
+    const texto =
+      `Olá${nome ? ", " + nome.split(" ")[0] : ""}! Aqui está o pedido de camisetas do time ${valorConfigTime(timeId, "nome")}:\n` +
+      `${urlPaginaDoTime(timeId)}\n\n` +
+      `Para cadastrar os nomes, toque na engrenagem ⚙️ no canto da página e use a senha: ${valorConfigTime(timeId, "senha")}`;
+    const url = linkWhatsapp(tel, texto);
+    if (!url) {
+      alert("Informe um WhatsApp válido (com DDD) para o representante.");
+      return;
+    }
+    window.open(url, "_blank");
+  };
+  const btnDescartar = form.querySelector('[data-acao="descartar"]');
+  if (btnDescartar) {
+    btnDescartar.onclick = () => {
+      delete rascunhoConfigTime[timeId];
+      renderizarTimesAdmin();
+    };
+  }
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const dados = {};
+    CAMPOS_CONFIG_TIME.forEach((c) => (dados[c] = String(valorConfigTime(timeId, c) || "").trim()));
+    if (!dados.nome || !dados.senha) {
+      mostrarMensagem(msg, "Preencha o nome e a senha do time.", "erro");
+      return;
+    }
+    const botao = form.querySelector('button[type="submit"]');
+    botao.disabled = true;
+    try {
+      await db.collection(COL_TIMES).doc(timeId).update({
+        nome: dados.nome,
+        senha: dados.senha,
+        clienteId: dados.clienteId,
+        representanteNome: dados.representanteNome,
+        representanteTelefone: dados.representanteTelefone,
+        modeloCamiseta: dados.modeloCamiseta || firebase.firestore.FieldValue.delete(),
+        dataLimite: dados.dataLimite || firebase.firestore.FieldValue.delete()
+      });
+      delete rascunhoConfigTime[timeId];
+      renderizarTimesAdmin();
+      const novo = elListaTimesAdmin.querySelector(".msg-config");
+      if (novo) mostrarMensagem(novo, "Configuração salva.", "aviso");
+    } catch (erro) {
+      console.error(erro);
+      botao.disabled = false;
+      mostrarMensagem(msg, "Erro ao salvar. Tente novamente.", "erro");
+    }
+  });
+  elListaTimesAdmin.appendChild(card);
+
+  // Tabela especial de preço (sobrepõe a tabela geral, grupo a grupo).
+  const cardPrecos = document.createElement("div");
+  cardPrecos.className = "card";
+  cardPrecos.innerHTML = '<h3 class="titulo-bloco">Tabela especial de preço</h3>';
+  const blocoPrecos = criarBlocoPrecosTime(timeId);
+  blocoPrecos.open = true;
+  blocoPrecos.classList.add("fixo");
+  cardPrecos.appendChild(blocoPrecos);
+  elListaTimesAdmin.appendChild(cardPrecos);
+
+  // Zona de perigo.
+  const cardPerigo = document.createElement("div");
+  cardPerigo.className = "card zona-perigo";
+  cardPerigo.innerHTML = '<h3 class="titulo-bloco">Excluir time</h3><p class="pix-ajuda">Apaga o time e todas as camisetas cadastradas nele. Não dá para desfazer.</p>';
+  const btnExcluir = document.createElement("button");
+  btnExcluir.className = "perigo";
+  btnExcluir.textContent = "Excluir este time";
+  btnExcluir.onclick = () => excluirTime(timeId, time);
+  cardPerigo.appendChild(btnExcluir);
+  elListaTimesAdmin.appendChild(cardPerigo);
+}
+
+// ---------------- Aba Arquivos de produção ----------------
+
+function renderizarArquivosTime(timeId) {
+  const { time } = estadoTimes[timeId];
+
+  // Arquivos da folha EPS: arte de cada peça (PNG 600 dpi), brasão e fonte.
+  if (typeof criarBlocoProducaoTime === "function") {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = '<h3 class="titulo-bloco">Arquivos para impressão</h3>' +
+      '<p class="pix-ajuda">A arte de cada peça em PNG 600 dpi (feita para o molde do tamanho base), o brasão em EPS e a fonte do nome e do número.</p>';
+    const bloco = criarBlocoProducaoTime(timeId, time);
+    bloco.open = true;
+    bloco.classList.add("fixo");
+    card.appendChild(bloco);
+    elListaTimesAdmin.appendChild(card);
+  }
+
+  // Prévia montada com os arquivos acima: a arte plana e no mockup.
+  if (typeof criarPreviaArteTime === "function") {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = '<h3 class="titulo-bloco">Prévia da arte</h3>';
+    card.appendChild(criarPreviaArteTime(timeId, time));
+    elListaTimesAdmin.appendChild(card);
+  }
+
+  // Imagens que o cliente vê na loja e na página do pedido.
+  const cardImagens = document.createElement("div");
+  cardImagens.className = "card";
+  cardImagens.innerHTML = '<h3 class="titulo-bloco">Imagens da página do pedido</h3>' +
+    '<p class="pix-ajuda">É o que o cliente vê na loja e no topo da página do pedido: a simulação na camiseta (mockup) e a arte sem simulação.</p>';
+  cardImagens.appendChild(criarBlocoImagemTime(timeId, time));
+  elListaTimesAdmin.appendChild(cardImagens);
 }
 
 // Atualiza o status do pedido de um time (usado no seletor da aba Inicial
@@ -1218,9 +1612,13 @@ function criarCardKanban(timeId, statusId) {
   const nPagos = alunos.filter((a) => a.pago).length;
   const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
 
-  const nome = document.createElement("div");
+  const nome = document.createElement("button");
+  nome.type = "button";
   nome.className = "kanban-card-nome";
   nome.textContent = time.nome;
+  nome.title = "Abrir o time";
+  nome.onclick = () => abrirTimeAdmin(timeId);
+  nome.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   card.appendChild(nome);
 
   // Sem filtro de cliente o quadro mistura todo mundo, então o card diz de quem é.
@@ -1398,7 +1796,7 @@ function renderizarResumoPrecosTimes() {
         <tbody>${linhas}</tbody>
       </table>
     </div>
-    <p class="pix-ajuda">Em destaque, os preços próprios do time; em cinza, os da tabela geral. Para mudar, use "Preço da camiseta neste time" no card do time (aba Inicial).</p>
+    <p class="pix-ajuda">Em destaque, os preços próprios do time; em cinza, os da tabela geral. Para mudar, abra o time (aba Inicial) → Configuração → Tabela especial de preço.</p>
   `;
 }
 
@@ -2750,140 +3148,6 @@ if (elModalCusto) {
   });
 }
 
-// Monta o formulário inline de edição do nome e da senha do time.
-function criarFormEdicaoTime(timeId, time) {
-  const wrap = document.createElement("div");
-
-  const h2 = document.createElement("h2");
-  h2.textContent = "Editar time";
-  wrap.appendChild(h2);
-
-  const lblNome = document.createElement("label");
-  lblNome.textContent = "Nome do time";
-  const inNome = document.createElement("input");
-  inNome.type = "text";
-  inNome.value = time.nome;
-
-  const lblSenha = document.createElement("label");
-  lblSenha.textContent = "Senha do time";
-  const inSenha = document.createElement("input");
-  inSenha.type = "text";
-  inSenha.value = time.senha;
-
-  // Modelo (arte) da camiseta deste time. Vazio = o nome do time. É o que
-  // divide os CSVs da aba Produção: dois times com o MESMO modelo saem juntos
-  // num arquivo só; modelos diferentes saem em arquivos separados.
-  const lblModelo = document.createElement("label");
-  lblModelo.textContent = "Modelo da camiseta (arte)";
-  const inModelo = document.createElement("input");
-  inModelo.type = "text";
-  inModelo.placeholder = `Em branco = "${time.nome}"`;
-  inModelo.value = time.modeloCamiseta || "";
-
-  const ajudaModelo = document.createElement("p");
-  ajudaModelo.className = "pix-ajuda";
-  ajudaModelo.textContent =
-    "Usado na aba Produção para separar os CSVs por arte. Deixe em branco para usar o nome do time; repita o mesmo nome em times que usam a mesma arte.";
-
-  // Cliente dono do pedido: é por aqui que um time muda de cliente.
-  const lblCliente = document.createElement("label");
-  lblCliente.textContent = "Cliente";
-  const selCliente = document.createElement("select");
-  selCliente.innerHTML =
-    '<option value="">Sem cliente</option>' +
-    clientesOrdenados()
-      .map((c) => `<option value="${c.id}">${escapeHtmlAdmin(c.nome || c.id)}</option>`)
-      .join("");
-  selCliente.value = clienteIdDoTime(time);
-
-  // Contato do representante: com ele, o card do pedido passa a ter o nome e
-  // o número clicáveis, abrindo o WhatsApp.
-  const contato = contatoDoTime(time);
-
-  const lblRepNome = document.createElement("label");
-  lblRepNome.textContent = "Representante (nome)";
-  const inRepNome = document.createElement("input");
-  inRepNome.type = "text";
-  inRepNome.placeholder = "Ex: Ana Souza";
-  inRepNome.value = contato.nome;
-
-  const lblRepFone = document.createElement("label");
-  lblRepFone.textContent = "WhatsApp do representante";
-  const inRepFone = document.createElement("input");
-  inRepFone.type = "tel";
-  inRepFone.inputMode = "tel";
-  inRepFone.placeholder = "Ex: (11) 91234-5678";
-  inRepFone.value = contato.telefone;
-
-  const ajudaRep = document.createElement("small");
-  ajudaRep.className = "pix-ajuda";
-  ajudaRep.textContent =
-    "Com DDD. No card do pedido, o nome e o número viram links que abrem a " +
-    "conversa no WhatsApp já com uma mensagem escrita.";
-
-  wrap.appendChild(lblNome);
-  wrap.appendChild(inNome);
-  wrap.appendChild(lblSenha);
-  wrap.appendChild(inSenha);
-  wrap.appendChild(lblModelo);
-  wrap.appendChild(inModelo);
-  wrap.appendChild(ajudaModelo);
-  wrap.appendChild(lblCliente);
-  wrap.appendChild(selCliente);
-  wrap.appendChild(lblRepNome);
-  wrap.appendChild(inRepNome);
-  wrap.appendChild(lblRepFone);
-  wrap.appendChild(inRepFone);
-  wrap.appendChild(ajudaRep);
-
-  const acoes = document.createElement("div");
-
-  const btnSalvar = document.createElement("button");
-  btnSalvar.className = "sucesso";
-  btnSalvar.textContent = "Salvar";
-  btnSalvar.onclick = async () => {
-    const novoNome = inNome.value.trim();
-    const novaSenha = inSenha.value.trim();
-    if (!novoNome || !novaSenha) {
-      alert("Preencha o nome e a senha do time.");
-      return;
-    }
-    btnSalvar.disabled = true;
-    try {
-      const novoModelo = inModelo.value.trim();
-      await db.collection(COL_TIMES).doc(timeId).update({
-        nome: novoNome,
-        senha: novaSenha,
-        clienteId: selCliente.value,
-        representanteNome: inRepNome.value.trim(),
-        representanteTelefone: inRepFone.value.trim(),
-        modeloCamiseta: novoModelo || firebase.firestore.FieldValue.delete()
-      });
-      if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
-      // O onSnapshot re-renderiza com os dados novos; garantimos o re-render.
-      renderizarTimesAdmin();
-    } catch (erro) {
-      console.error(erro);
-      alert("Erro ao salvar o time. Tente novamente.");
-      btnSalvar.disabled = false;
-    }
-  };
-
-  const btnCancelar = document.createElement("button");
-  btnCancelar.className = "secundario";
-  btnCancelar.textContent = "Cancelar";
-  btnCancelar.onclick = () => {
-    if (estadoTimes[timeId]) estadoTimes[timeId].editando = false;
-    renderizarTimesAdmin();
-  };
-
-  acoes.appendChild(btnSalvar);
-  acoes.appendChild(btnCancelar);
-  wrap.appendChild(acoes);
-
-  return wrap;
-}
-
 // Exclui o time de verdade: apaga os alunos (subcoleção) e depois o time.
 async function excluirTime(timeId, time) {
   const qtd = (estadoTimes[timeId] && estadoTimes[timeId].alunos.length) || 0;
@@ -2911,7 +3175,10 @@ async function excluirTime(timeId, time) {
     }
     delete precosTimeAbertos[timeId];
     delete precosTimeSalvos[timeId];
-    // O onSnapshot dos times remove o card automaticamente.
+    delete rascunhoConfigTime[timeId];
+    // O onSnapshot dos times remove o time da lista; se ele estava aberto,
+    // volta para a lista.
+    if (timeAbertoAdmin === timeId) voltarParaListaAdmin();
   } catch (erro) {
     console.error(erro);
     alert(
@@ -3202,6 +3469,10 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   tdAcoes.appendChild(btnCancelar);
 
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
+  [[tdNome, "Nome"], [tdTamanho, "Tamanho"], [tdNumero, "Número"], [tdCostas, "Nome na camiseta"],
+    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdPagamento, ""], [tdAcoes, ""]]
+    .forEach(([td, rotulo]) => (td.dataset.label = rotulo));
+  tr.classList.add("linha-editando");
 
   tr.appendChild(tdNome);
   tr.appendChild(tdTamanho);
@@ -3243,7 +3514,7 @@ const IMAGENS_TIME = [
 // continua valendo o preço geral (aba Pagamentos). Os valores ficam em
 // config/geral -> precosPorTime[timeId], documento que só o admin grava.
 
-// Bloco recolhível, no card do time, com um campo de preço por grupo.
+// Bloco da tabela especial de preço (aba Configuração do time), com um campo por grupo.
 function criarBlocoPrecosTime(timeId) {
   const bloco = document.createElement("details");
   bloco.className = "precos-time";

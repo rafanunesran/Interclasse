@@ -17,8 +17,21 @@ const elNomeTime = document.getElementById("nomeTime");
 const elClienteTime = document.getElementById("clienteTime");
 const elBadgeStatus = document.getElementById("badgeStatus");
 const elMsgSenha = document.getElementById("msgSenha");
-const elCardSenha = document.getElementById("formSenha");
+const elModalSenha = document.getElementById("modalSenha");
 const elFormSenha = document.getElementById("formSenhaForm");
+const elBtnEngrenagem = document.getElementById("btnEngrenagem");
+const elBadgeRep = document.getElementById("badgeRep");
+const elSemImagem = document.getElementById("semImagem");
+const elPedidoNumeros = document.getElementById("pedidoNumeros");
+const elBtnIrLista = document.getElementById("btnIrLista");
+const elBuscaLista = document.getElementById("buscaLista");
+const elListaVazia = document.getElementById("listaVazia");
+const elTabelaGrupos = document.getElementById("tabelaGrupos");
+const elCadastroFechado = document.getElementById("cadastroFechado");
+const elDataLimiteTravada = document.getElementById("dataLimiteTravada");
+const elBtnSairRep = document.getElementById("btnSairRep");
+const elMsgCadastro = document.getElementById("msgCadastro");
+const elLinkVoltarLoja = document.getElementById("linkVoltarLoja");
 const elBlocoCadastro = document.getElementById("blocoCadastro");
 const elFormAluno = document.getElementById("formAluno");
 const elTabelaCorpo = document.querySelector("#tabelaAlunos tbody");
@@ -117,8 +130,13 @@ async function mostrarCliente() {
       elClienteTime.classList.add("oculto");
       return;
     }
-    elClienteTime.textContent = "Cliente: " + nome;
+    elClienteTime.textContent = nome;
     elClienteTime.classList.remove("oculto");
+    // "Voltar" leva para a loja já filtrada neste cliente.
+    if (elLinkVoltarLoja) {
+      elLinkVoltarLoja.href = "index.html?cliente=" + encodeURIComponent(clienteId);
+      elLinkVoltarLoja.textContent = "← Times de " + nome;
+    }
   } catch (e) {
     console.warn("Não foi possível carregar o cliente deste time.", e);
     elClienteTime.classList.add("oculto");
@@ -180,6 +198,7 @@ function renderizarGaleria() {
   assinaturaGaleria = assinatura;
 
   elGaleria.classList.toggle("oculto", itens.length === 0);
+  if (elSemImagem) elSemImagem.classList.toggle("oculto", itens.length > 0);
   elGaleriaTrilho.innerHTML = "";
 
   itens.forEach((item, indice) => {
@@ -252,13 +271,14 @@ function atualizarBadge() {
 
   // Valor da camiseta neste time (o geral ou o preço próprio dele).
   mostrarPrecosDaTime();
+  renderizarGrupos();
 
   // Info da data limite.
   if (elInfoDataLimite) {
     if (timeAtual.dataLimite) {
       const d = new Date(timeAtual.dataLimite + "T00:00:00");
       const txt = isNaN(d.getTime()) ? timeAtual.dataLimite : d.toLocaleDateString("pt-BR");
-      elInfoDataLimite.textContent = "Data limite para pagamento: " + txt;
+      elInfoDataLimite.textContent = "📅 Pagamento até " + txt;
       elInfoDataLimite.classList.remove("oculto");
     } else {
       elInfoDataLimite.classList.add("oculto");
@@ -279,8 +299,44 @@ function mostrarPrecosDaTime() {
     elInfoPrecos.classList.add("oculto");
     return;
   }
-  elInfoPrecos.textContent = "Valor da camiseta — " + partes.join(" · ");
+  // Um preço só vira destaque; vários viram um chip por grupo de tamanho.
+  const valores = GRUPOS_TAMANHO.filter((g) => precos[g.grupo] != null).map((g) => precos[g.grupo]);
+  const unico = valores.every((v) => v === valores[0]);
+  elInfoPrecos.innerHTML = unico
+    ? `<span class="preco-destaque">${formatarReais(valores[0])}</span> <span class="pix-ajuda">por camiseta</span>`
+    : GRUPOS_TAMANHO
+      .filter((g) => precos[g.grupo] != null)
+      .map((g) => `<span class="preco-chip">${escapeHtml(g.grupo)} <strong>${formatarReais(precos[g.grupo])}</strong></span>`)
+      .join("");
   elInfoPrecos.classList.remove("oculto");
+}
+
+// Aba "Tamanhos e preços": um bloco por grupo, com os tamanhos, o preço neste
+// time e a tabela de medidas (quando o grupo tem imagem).
+function renderizarGrupos() {
+  if (!elTabelaGrupos) return;
+  const precos = precosDoTime(configGeral, timeId);
+  elTabelaGrupos.innerHTML = "";
+  GRUPOS_TAMANHO.forEach((g) => {
+    const bloco = document.createElement("div");
+    bloco.className = "grupo-pedido";
+    bloco.innerHTML = `
+      <div class="grupo-pedido-topo">
+        <h3>${escapeHtml(g.grupo)}</h3>
+        <span class="grupo-pedido-preco">${precos[g.grupo] != null ? formatarReais(precos[g.grupo]) : "—"}</span>
+      </div>
+      <div class="chips-tamanho-pedido">${g.tamanhos.map((t) => `<span>${escapeHtml(t)}</span>`).join("")}</div>`;
+    if (g.imagemUrl) {
+      const img = document.createElement("img");
+      img.className = "grupo-pedido-medidas";
+      img.src = g.imagemUrl;
+      img.alt = "Medidas — " + g.grupo;
+      img.loading = "lazy";
+      tornarImagemAmpliavel(img, "Medidas — " + g.grupo, false, [{ url: g.imagemUrl, legenda: "Medidas — " + g.grupo, comMarca: false }], 0);
+      bloco.appendChild(img);
+    }
+    elTabelaGrupos.appendChild(bloco);
+  });
 }
 
 function atualizarVisibilidade() {
@@ -292,14 +348,34 @@ function atualizarVisibilidade() {
   const aceitaCadastro = pedidoAceitaCadastro(timeAtual); // aberto/fechado/pagamento
   const podeEditar = desbloqueado && aceitaCadastro && cadastrosGlobaisAbertos;
 
-  elCardSenha.classList.toggle("oculto", desbloqueado);
+  // Engrenagem e abas do representante.
+  if (elBtnEngrenagem) elBtnEngrenagem.classList.toggle("ativa", desbloqueado);
+  if (elBadgeRep) elBadgeRep.classList.toggle("oculto", !desbloqueado);
+  mostrarAbaPedidoBotao("cadastro", desbloqueado);
+  mostrarAbaPedidoBotao("config", desbloqueado);
+  if (!desbloqueado && (abaPedidoAtual === "cadastro" || abaPedidoAtual === "config")) {
+    trocarAbaPedido("lista");
+  }
+
   elBlocoCadastro.classList.toggle("oculto", !podeEditar);
+  if (elCadastroFechado) {
+    elCadastroFechado.classList.toggle("oculto", podeEditar || !desbloqueado);
+    elCadastroFechado.textContent = !cadastrosGlobaisAbertos && aceitaCadastro
+      ? "Os cadastros estão temporariamente fechados pela organização. Tente mais tarde."
+      : "A lista não aceita novos nomes nesta etapa do pedido. Se faltou alguém, fale com a organização.";
+  }
   // Data limite: o representante define enquanto o pedido está aberto.
   if (elBlocoDataLimite) {
     elBlocoDataLimite.classList.toggle("oculto", !(desbloqueado && aberto));
     if (elDataLimite && document.activeElement !== elDataLimite) {
       elDataLimite.value = timeAtual.dataLimite || "";
     }
+  }
+  if (elDataLimiteTravada) elDataLimiteTravada.classList.toggle("oculto", !desbloqueado || aberto);
+  if (elBtnIrLista) {
+    elBtnIrLista.textContent = pedidoAceitaPagamento(timeAtual) && !travado
+      ? "Ver a lista e pagar"
+      : "Ver a lista";
   }
   // Da Impressão em diante: o que não foi pago fica pendente e não é produzido.
   if (elMensagemProducao) {
@@ -327,7 +403,85 @@ function atualizarVisibilidade() {
   renderizarTabela(); // re-render para mostrar/esconder botões de ação
 }
 
-// ---------------- Senha ----------------
+// ---------------- Abas do pedido ----------------
+
+let abaPedidoAtual = "lista";
+
+function mostrarAbaPedidoBotao(aba, mostrar) {
+  const b = document.querySelector(`[data-aba-pedido="${aba}"]`);
+  if (b) b.classList.toggle("oculto", !mostrar);
+}
+
+function trocarAbaPedido(aba) {
+  abaPedidoAtual = aba;
+  document.querySelectorAll("[data-aba-pedido]").forEach((b) => {
+    const ativa = b.dataset.abaPedido === aba;
+    b.classList.toggle("ativa", ativa);
+    b.setAttribute("aria-selected", ativa ? "true" : "false");
+  });
+  document.querySelectorAll(".secao-pedido").forEach((sec) => {
+    sec.classList.toggle("oculto", sec.id !== "abaPedido-" + aba);
+  });
+}
+
+document.querySelectorAll("[data-aba-pedido]").forEach((b) => {
+  b.addEventListener("click", () => trocarAbaPedido(b.dataset.abaPedido));
+});
+
+if (elBtnIrLista) {
+  elBtnIrLista.addEventListener("click", () => {
+    trocarAbaPedido("lista");
+    const alvo = document.querySelector(".abas-pedido");
+    if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+if (elBuscaLista) elBuscaLista.addEventListener("input", () => renderizarTabela());
+
+// ---------------- Senha (engrenagem do topo) ----------------
+
+function abrirModalSenha() {
+  if (!elModalSenha || !timeAtual) return;
+  // Já é representante: a engrenagem leva direto às configurações.
+  if (desbloqueado) {
+    trocarAbaPedido("config");
+    const alvo = document.querySelector(".abas-pedido");
+    if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  esconderMensagem(elMsgSenha);
+  elModalSenha.classList.remove("oculto");
+  const campo = document.getElementById("senhaTime");
+  if (campo) {
+    campo.value = "";
+    campo.focus();
+  }
+}
+
+function fecharModalSenha() {
+  if (elModalSenha) elModalSenha.classList.add("oculto");
+}
+
+if (elBtnEngrenagem) elBtnEngrenagem.addEventListener("click", abrirModalSenha);
+const elFecharModalSenha = document.getElementById("fecharModalSenha");
+if (elFecharModalSenha) elFecharModalSenha.addEventListener("click", fecharModalSenha);
+if (elModalSenha) {
+  elModalSenha.addEventListener("click", (ev) => {
+    if (ev.target === elModalSenha) fecharModalSenha();
+  });
+}
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && elModalSenha && !elModalSenha.classList.contains("oculto")) fecharModalSenha();
+});
+
+if (elBtnSairRep) {
+  elBtnSairRep.addEventListener("click", () => {
+    desbloqueado = false;
+    sessionStorage.removeItem("desbloqueado-" + timeId);
+    trocarAbaPedido("lista");
+    atualizarVisibilidade();
+  });
+}
 
 elFormSenha.addEventListener("submit", (ev) => {
   ev.preventDefault();
@@ -337,10 +491,13 @@ elFormSenha.addEventListener("submit", (ev) => {
   if (valor === timeAtual.senha) {
     desbloqueado = true;
     sessionStorage.setItem("desbloqueado-" + timeId, "1");
+    fecharModalSenha();
     atualizarVisibilidade();
-    // Leva o representante direto para a tela de cadastro.
-    if (!elBlocoCadastro.classList.contains("oculto")) {
-      elBlocoCadastro.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Leva o representante direto para o cadastro (ou para as configurações,
+    // quando a lista já não aceita nomes).
+    const podeCadastrar = !elBlocoCadastro.classList.contains("oculto");
+    trocarAbaPedido(podeCadastrar ? "cadastro" : "config");
+    if (podeCadastrar) {
       const inputNome = document.getElementById("nomeAluno");
       if (inputNome) inputNome.focus();
     }
@@ -520,8 +677,24 @@ function renderizarTabela() {
   // times são conferidos por conferirCarrinho(), no banco.
   sincronizarCarrinhoDoTime();
 
+  // Busca da lista: ajuda a achar o próprio nome numa lista comprida.
+  const termos = normalizarTexto(elBuscaLista ? elBuscaLista.value : "").split(/\s+/).filter(Boolean);
+  const visiveis = termos.length === 0
+    ? alunosAtuais
+    : alunosAtuais.filter((a) => {
+      const alvo = normalizarTexto([a.nome, a.nomeCamiseta, a.numero].filter(Boolean).join(" "));
+      return termos.every((t) => alvo.includes(t));
+    });
+  if (elListaVazia) {
+    elListaVazia.classList.toggle("oculto", visiveis.length > 0 || !alunosCarregados);
+    elListaVazia.textContent = alunosAtuais.length === 0
+      ? "Nenhuma camiseta na lista ainda."
+      : "Nenhum nome da lista combina com a busca.";
+  }
+  if (elBuscaLista) elBuscaLista.classList.toggle("oculto", alunosAtuais.length < 8);
+
   elTabelaCorpo.innerHTML = "";
-  alunosAtuais.forEach((aluno) => {
+  visiveis.forEach((aluno) => {
     const tr = document.createElement("tr");
     if (aluno.numero && duplicados.includes(String(aluno.numero))) {
       tr.classList.add("duplicado");
@@ -536,15 +709,15 @@ function renderizarTabela() {
       : "";
 
     tr.innerHTML = `
-      <td>${marca}${escapeHtml(aluno.nome)}${propostaAjusteHtml(aluno)}${historicoAjusteHtml(aluno)}</td>
-      <td>${escapeHtml(aluno.tamanho)}</td>
-      <td>${escapeHtml(aluno.numero || "-")}</td>
-      <td>${escapeHtml(aluno.nomeCamiseta || "-")}</td>
-      <td class="cel-goleiro"></td>
-      <td class="cel-prof"></td>
-      <td>${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
-      <td class="cel-carrinho"></td>
-      <td class="acoes-linha"></td>
+      <td data-label="Nome" class="cel-nome">${marca}${escapeHtml(aluno.nome)}${propostaAjusteHtml(aluno)}${historicoAjusteHtml(aluno)}</td>
+      <td data-label="Tamanho">${escapeHtml(aluno.tamanho)}</td>
+      <td data-label="Número">${escapeHtml(aluno.numero || "-")}</td>
+      <td data-label="Nome na camiseta">${escapeHtml(aluno.nomeCamiseta || "-")}</td>
+      <td data-label="Goleiro" class="cel-goleiro"></td>
+      <td data-label="Prof" class="cel-prof"></td>
+      <td data-label="Pagamento">${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
+      <td data-label="Carrinho" class="cel-carrinho"></td>
+      <td data-label="" class="acoes-linha"></td>
     `;
 
     // Goleiro: quem entrou com a senha do time marca e desmarca aqui mesmo,
@@ -701,6 +874,18 @@ function renderizarResumo() {
     if (contagem[a.tamanho] !== undefined) contagem[a.tamanho]++;
   });
 
+  // Números do topo da página: quantas camisetas e quantas já pagas.
+  if (elPedidoNumeros) {
+    const nPagas = alunosAtuais.filter((a) => a.pago).length;
+    elPedidoNumeros.innerHTML = alunosAtuais.length === 0
+      ? ""
+      : `<span class="numero-chip"><strong>${alunosAtuais.length}</strong> camiseta(s)</span>` +
+        `<span class="numero-chip ok"><strong>${nPagas}</strong> paga(s)</span>` +
+        (alunosAtuais.length - nPagas > 0
+          ? `<span class="numero-chip"><strong>${alunosAtuais.length - nPagas}</strong> a pagar</span>`
+          : "");
+  }
+
   elResumo.innerHTML = `<span><strong>Total: ${alunosAtuais.length}</strong></span>`;
   if (pedidoEmProducao(timeAtual)) {
     const { produzir, pendentes } = separarProducao(alunosAtuais);
@@ -785,6 +970,7 @@ elFormAluno.addEventListener("submit", async (ev) => {
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
     elFormAluno.reset();
+    if (elMsgCadastro) mostrarMensagem(elMsgCadastro, `✅ ${nome} entrou na lista. Pode cadastrar o próximo.`, "aviso");
     document.getElementById("nomeAluno").focus();
   } catch (erro) {
     console.error(erro);
@@ -869,6 +1055,10 @@ function editarLinha(tr, aluno) {
 
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
   const tdCarrinho = document.createElement("td");  // coluna do carrinho (vazia na edição)
+  [[tdNome, "Nome"], [tdTamanho, "Tamanho"], [tdNumero, "Número"], [tdCostas, "Nome na camiseta"],
+    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdPagamento, ""], [tdCarrinho, ""], [tdAcoes, ""]]
+    .forEach(([td, rotulo]) => (td.dataset.label = rotulo));
+  tr.classList.add("linha-editando");
 
   tr.appendChild(tdNome);
   tr.appendChild(tdTamanho);

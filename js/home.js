@@ -1,23 +1,29 @@
 // ============================================================
-// PÁGINA INICIAL: escolhe o cliente e lista os times dele
+// PÁGINA INICIAL: a "loja" com os times
 // ============================================================
-// Com clientes cadastrados, a tela abre na lista de clientes e cada um leva
-// para os seus próprios times (`index.html?cliente=ID`) — assim os pedidos de
-// um cliente não se misturam com os de outro. Sem nenhum cliente cadastrado,
-// a página continua como antes: a lista de todos os times, direto.
+// Todos os pedidos em andamento aparecem numa vitrine, cada time como um
+// produto (a imagem da camiseta, o preço e a situação do pedido). Dá para
+// filtrar por escola/cliente e buscar pelo nome. O filtro fica no endereço
+// (`index.html?cliente=ID`), então o link de um cliente abre só os times dele.
 
 const paramsInicio = new URLSearchParams(window.location.search);
-const clienteDaUrl = paramsInicio.get("cliente") || "";
+let clienteEscolhido = paramsInicio.get("cliente") || "";
 
 const elLista = document.getElementById("listaTimes");
 const elCarregando = document.getElementById("carregando");
 const elTituloLista = document.getElementById("tituloLista");
 const elSubtituloLista = document.getElementById("subtituloLista");
-const elVoltarClientes = document.getElementById("voltarClientes");
+const elBuscaLoja = document.getElementById("buscaLoja");
+const elFiltroClientes = document.getElementById("filtroClientesLoja");
+const elResumoLoja = document.getElementById("resumoLoja");
 const elBarraCarrinho = document.getElementById("barraCarrinho");
 const elCarrinhoResumo = document.getElementById("carrinhoResumo");
 const elBtnPagarCarrinho = document.getElementById("btnPagarCarrinho");
 const elBtnEsvaziarCarrinho = document.getElementById("btnEsvaziarCarrinho");
+
+let clientesLoja = [];
+let timesLoja = [];
+let configLoja = {};
 
 async function carregarInicio() {
   try {
@@ -31,7 +37,8 @@ async function carregarInicio() {
     }
 
     try {
-      aplicarConfigGeral(await carregarConfigGeral());
+      configLoja = await carregarConfigGeral();
+      aplicarConfigGeral(configLoja);
     } catch (e) {
       console.warn("Não foi possível aplicar as configurações gerais.", e);
     }
@@ -46,19 +53,20 @@ async function carregarInicio() {
     ]);
     // Pedidos finalizados estão arquivados: não aparecem mais aqui (o link
     // direto do time continua abrindo, só para consulta).
-    const times = snap.docs
+    timesLoja = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((t) => !pedidoFinalizado(t));
+    clientesLoja = clientes;
 
     elCarregando.classList.add("oculto");
 
-    // Sem clientes cadastrados: tudo junto, como sempre foi.
-    if (clientes.length === 0) return mostrarTimes(times);
-
-    // Um cliente escolhido na URL: só os times dele.
-    if (clienteDaUrl) return mostrarTimesDoCliente(clientes, times);
-
-    return mostrarClientes(clientes, times);
+    // Cliente da URL que não existe (ou foi removido): mostra todos.
+    if (clienteEscolhido && clienteEscolhido !== SEM_CLIENTE &&
+        !clientesLoja.some((c) => c.id === clienteEscolhido)) {
+      clienteEscolhido = "";
+    }
+    renderizarFiltros();
+    renderizarLoja();
   } catch (erro) {
     console.error(erro);
     elCarregando.classList.remove("oculto");
@@ -67,113 +75,147 @@ async function carregarInicio() {
   }
 }
 
-// ---------------- Lista de clientes (cada um com os seus times) ----------------
+// ---------------- Filtros ----------------
 
-function mostrarClientes(clientes, times) {
-  if (elTituloLista) elTituloLista.textContent = "Clientes";
-  if (elSubtituloLista) elSubtituloLista.textContent = "Toque no seu cliente para ver os times dele.";
-  if (elVoltarClientes) elVoltarClientes.classList.add("oculto");
+// Chips "Todos" + um por escola/cliente com time em andamento.
+function renderizarFiltros() {
+  if (!elFiltroClientes) return;
+  const comTimes = clientesLoja.filter((c) => timesLoja.some((t) => clienteIdDoTime(t) === c.id));
+  const temSemCliente = timesLoja.some((t) => !clienteIdDoTime(t));
+  const opcoes = [{ id: "", nome: "Todos" }]
+    .concat(comTimes.map((c) => ({ id: c.id, nome: c.nome || c.id })));
+  if (temSemCliente && comTimes.length > 0) opcoes.push({ id: SEM_CLIENTE, nome: "Outros" });
 
-  // Times ainda sem cliente entram num card à parte, para não sumirem da tela.
-  const semCliente = times.filter((t) => !clienteIdDoTime(t));
-  const cartoes = clientes.map((c) => ({
-    id: c.id,
-    nome: c.nome || c.id,
-    qtd: times.filter((t) => clienteIdDoTime(t) === c.id).length
-  }));
-  if (semCliente.length > 0) {
-    cartoes.push({ id: SEM_CLIENTE, nome: SEM_CLIENTE_NOME, qtd: semCliente.length });
-  }
-
-  elLista.innerHTML = "";
-  cartoes.forEach((c) => {
-    const item = document.createElement("a");
-    item.className = "time-card cliente-card";
-    item.href = "index.html?cliente=" + encodeURIComponent(c.id);
-    item.innerHTML = `
-      <span class="time-card-topo">
-        <span class="time-card-nome">${escaparHtml(c.nome)}</span>
-        <span class="badge">${c.qtd} time(s)</span>
-      </span>
-      <span class="time-card-acao">Ver times →</span>
-    `;
-    elLista.appendChild(item);
+  // Com um cliente só (ou nenhum), o filtro não ajuda em nada.
+  elFiltroClientes.classList.toggle("oculto", opcoes.length <= 2);
+  elFiltroClientes.innerHTML = "";
+  opcoes.forEach((o) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip-filtro" + (o.id === clienteEscolhido ? " ativo" : "");
+    b.textContent = o.nome;
+    b.setAttribute("aria-pressed", o.id === clienteEscolhido ? "true" : "false");
+    b.onclick = () => {
+      clienteEscolhido = o.id;
+      // O filtro vai para o endereço: dá para compartilhar o link já filtrado.
+      const url = new URL(window.location.href);
+      if (o.id) url.searchParams.set("cliente", o.id);
+      else url.searchParams.delete("cliente");
+      window.history.replaceState({}, "", url.toString());
+      renderizarFiltros();
+      renderizarLoja();
+    };
+    elFiltroClientes.appendChild(b);
   });
 }
 
-// ---------------- Times de um cliente ----------------
+if (elBuscaLoja) elBuscaLoja.addEventListener("input", () => renderizarLoja());
 
-function mostrarTimesDoCliente(clientes, times) {
-  const cliente = clientes.find((c) => c.id === clienteDaUrl);
-  const semCliente = clienteDaUrl === SEM_CLIENTE;
+function nomeClienteLoja(time) {
+  const id = clienteIdDoTime(time);
+  if (!id) return "";
+  const c = clientesLoja.find((x) => x.id === id);
+  return c ? c.nome || "" : "";
+}
 
-  if (!cliente && !semCliente) {
-    if (elTituloLista) elTituloLista.textContent = "Cliente não encontrado";
-    if (elSubtituloLista) elSubtituloLista.textContent = "";
-    mostrarVoltar();
-    elLista.innerHTML = "<p>Esse cliente não existe (ou foi removido). Volte e escolha outro.</p>";
-    return;
+function timesVisiveis() {
+  const termos = normalizarTexto(elBuscaLoja ? elBuscaLoja.value : "").split(/\s+/).filter(Boolean);
+  return timesLoja.filter((t) => {
+    if (clienteEscolhido && !timeDoCliente(t, clienteEscolhido)) return false;
+    if (!termos.length) return true;
+    const alvo = normalizarTexto(t.nome + " " + nomeClienteLoja(t));
+    return termos.every((x) => alvo.includes(x));
+  });
+}
+
+// ---------------- Vitrine ----------------
+
+function renderizarLoja() {
+  const cliente = clientesLoja.find((c) => c.id === clienteEscolhido);
+  if (elTituloLista) {
+    elTituloLista.textContent = cliente
+      ? cliente.nome
+      : clienteEscolhido === SEM_CLIENTE ? "Outros times" : "Escolha o seu time";
+  }
+  if (elSubtituloLista) {
+    elSubtituloLista.textContent = cliente
+      ? "Escolha o seu time para ver a lista de camisetas e pagar."
+      : "Encontre o pedido da sua turma, confira a lista e pague as camisetas.";
   }
 
-  const nome = semCliente ? SEM_CLIENTE_NOME : cliente.nome;
-  if (elTituloLista) elTituloLista.textContent = nome;
-  if (elSubtituloLista) elSubtituloLista.textContent = "Toque no seu time para cadastrar a lista de camisetas.";
-  mostrarVoltar();
+  const times = timesVisiveis();
+  const buscando = !!(elBuscaLoja && elBuscaLoja.value.trim());
+  if (elResumoLoja) {
+    elResumoLoja.classList.toggle("oculto", timesLoja.length === 0);
+    elResumoLoja.textContent = `${times.length} time(s)` + (buscando ? " encontrados" : "");
+  }
 
-  const doCliente = times.filter((t) =>
-    semCliente ? !clienteIdDoTime(t) : clienteIdDoTime(t) === clienteDaUrl
-  );
-  mostrarTimes(doCliente, `Nenhum time cadastrado para ${nome} ainda.`);
-}
-
-function mostrarVoltar() {
-  if (elVoltarClientes) elVoltarClientes.classList.remove("oculto");
-}
-
-// ---------------- Cards de time ----------------
-
-function mostrarTimes(times, vazioTexto) {
   if (times.length === 0) {
-    elLista.innerHTML = `<p>${escaparHtml(
-      vazioTexto || "Nenhum time cadastrado ainda. Peça para a coordenação criar os times no painel administrativo."
-    )}</p>`;
+    elLista.innerHTML = `<div class="vazio-lista"><p>${
+      timesLoja.length === 0
+        ? "Nenhum time cadastrado ainda."
+        : buscando ? "Nenhum time encontrado com essa busca." : "Nenhum time para esta escola ainda."
+    }</p><p class="pix-ajuda">${
+      timesLoja.length === 0
+        ? "Peça para a coordenação criar os times no painel administrativo."
+        : "Confira o nome ou escolha outra escola."
+    }</p></div>`;
     return;
   }
 
   elLista.innerHTML = "";
-  times.forEach((time) => {
-    const item = document.createElement("a");
-    item.className = "time-card";
-    item.href = "time.html?id=" + encodeURIComponent(time.id);
+  times.forEach((time) => elLista.appendChild(criarCardProduto(time)));
+}
 
-    const statusId = statusPedidoDe(time);
-    const classeBadge = classeBadgeStatus(statusId);
-    const status = `<span class="badge ${classeBadge}">${labelStatus(statusId)}</span>`;
+// Preço exibido no card: o valor único ou "a partir de" o menor.
+function precoDoCard(timeId) {
+  const valores = Object.values(precosDoTime(configLoja, timeId)).filter((v) => v > 0);
+  if (valores.length === 0) return "";
+  const menor = Math.min(...valores);
+  const unico = valores.every((v) => v === menor);
+  return (unico ? "" : "a partir de ") + formatarReais(menor);
+}
 
-    const acao = statusId === "aberto" ? "Cadastrar lista →" : "Ver detalhes";
+// Cor de fundo estável por time, para os cards sem imagem não ficarem iguais.
+function corDoTime(texto) {
+  let h = 0;
+  for (const ch of String(texto)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h}, 55%, 88%)`;
+}
 
-    const marcaOverlay = time.marcaDagua === true
-      ? '<span class="marca-overlay" aria-hidden="true"></span>'
-      : "";
-    // No card mostramos a simulação; se o time só tiver a arte, ela serve de capa.
-    const capaUrl = time.imagemUrl || time.arteUrl;
-    const imagem = capaUrl
-      ? `<span class="wrap-imagem wrap-imagem-card">
-           <img class="time-card-img img-na-marca" src="${encodeURI(capaUrl)}" alt="Camiseta de ${escaparHtml(time.nome)}" />
-           ${marcaOverlay}
-         </span>`
-      : "";
+function criarCardProduto(time) {
+  const item = document.createElement("a");
+  item.className = "produto-card";
+  item.href = "time.html?id=" + encodeURIComponent(time.id);
 
-    item.innerHTML = `
-      ${imagem}
-      <span class="time-card-topo">
-        <span class="time-card-nome">${escaparHtml(time.nome)}</span>
-        ${status}
-      </span>
-      <span class="time-card-acao">${acao}</span>
-    `;
-    elLista.appendChild(item);
-  });
+  const statusId = statusPedidoDe(time);
+  const status = `<span class="badge ${classeBadgeStatus(statusId)}">${escaparHtml(labelStatus(statusId))}</span>`;
+  const acao = pedidoAceitaPagamento(time) && !pedidoTravado(time)
+    ? "Ver lista e pagar"
+    : statusId === "aberto" ? "Ver lista" : "Acompanhar pedido";
+
+  const marcaOverlay = time.marcaDagua === true
+    ? '<span class="marca-overlay" aria-hidden="true"></span>'
+    : "";
+  // No card mostramos a simulação; se o time só tiver a arte, ela serve de capa.
+  const capaUrl = time.imagemUrl || time.arteUrl;
+  const imagem = capaUrl
+    ? `<span class="wrap-imagem"><img class="img-na-marca" src="${escaparHtml(capaUrl).replace(/"/g, "&quot;")}" alt="Camiseta de ${escaparHtml(time.nome)}" loading="lazy" />${marcaOverlay}</span>`
+    : `<span class="produto-sem-imagem" style="background:${corDoTime(time.nome)}" aria-hidden="true">👕</span>`;
+
+  const cliente = nomeClienteLoja(time);
+  const preco = precoDoCard(time.id);
+
+  item.innerHTML = `
+    <span class="produto-img">${imagem}<span class="produto-status">${status}</span></span>
+    <span class="produto-corpo">
+      ${cliente ? `<span class="produto-cliente">${escaparHtml(cliente)}</span>` : ""}
+      <span class="produto-nome">${escaparHtml(time.nome)}</span>
+      ${preco ? `<span class="produto-preco">${escaparHtml(preco)}</span>` : ""}
+      <span class="produto-cta">${escaparHtml(acao)} →</span>
+    </span>
+  `;
+  return item;
 }
 
 // ---------------- Carrinho (barra do rodapé) ----------------

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Time — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260926b" />
+<link rel="stylesheet" href="css/style.css?v=20260927a" />
 </head>
 <body>
 
@@ -15,19 +15,42 @@
   </nav>
 </header>
 
-<main>
-  <div class="card">
-    <h2 id="nomeTime">Carregando...</h2>
-    <p id="clienteTime" class="linha-cliente oculto"></p>
-    <span id="badgeStatus" class="badge"></span>
-    <p id="infoDataLimite" class="pix-ajuda oculto"></p>
-    <p id="infoPrecos" class="pix-ajuda oculto"></p>
-    <!-- Galeria: simulação, arte e as medidas de cada grupo, deslizando para o lado. -->
-    <div id="galeriaImagens" class="carrossel oculto">
-      <button type="button" id="galeriaAntes" class="carrossel-seta carrossel-antes" aria-label="Imagem anterior">‹</button>
-      <div id="galeriaTrilho" class="carrossel-trilho"></div>
-      <button type="button" id="galeriaDepois" class="carrossel-seta carrossel-depois" aria-label="Próxima imagem">›</button>
+<main class="pagina-pedido">
+  <p class="migalha"><a href="index.html" id="linkVoltarLoja">← Todos os times</a></p>
+
+  <section class="card pedido-hero">
+    <!-- Acesso do representante: a senha fica atrás da engrenagem, no canto. -->
+    <button type="button" id="btnEngrenagem" class="btn-engrenagem" aria-label="Acesso do representante" title="Acesso do representante">
+      <span aria-hidden="true">⚙️</span>
+    </button>
+
+    <div class="pedido-hero-grid">
+      <div class="pedido-hero-midia">
+        <!-- Galeria: simulação, arte e as medidas de cada grupo, deslizando para o lado. -->
+        <div id="galeriaImagens" class="carrossel oculto">
+          <button type="button" id="galeriaAntes" class="carrossel-seta carrossel-antes" aria-label="Imagem anterior">‹</button>
+          <div id="galeriaTrilho" class="carrossel-trilho"></div>
+          <button type="button" id="galeriaDepois" class="carrossel-seta carrossel-depois" aria-label="Próxima imagem">›</button>
+        </div>
+        <div id="semImagem" class="pedido-sem-imagem oculto" aria-hidden="true">👕</div>
+      </div>
+
+      <div class="pedido-hero-info">
+        <p id="clienteTime" class="pedido-cliente oculto"></p>
+        <h2 id="nomeTime">Carregando...</h2>
+        <div class="pedido-selos">
+          <span id="badgeStatus" class="badge"></span>
+          <span id="badgeRep" class="badge interno oculto">🔓 Modo representante</span>
+        </div>
+        <div id="infoPrecos" class="pedido-precos oculto"></div>
+        <p id="infoDataLimite" class="pedido-prazo oculto"></p>
+        <div id="pedidoNumeros" class="numeros-chips"></div>
+        <div class="pedido-hero-acoes">
+          <button type="button" id="btnIrLista" class="primario">Ver a lista e pagar</button>
+        </div>
+      </div>
     </div>
+
     <div id="barraStatus"></div>
     <p id="mensagemSuspenso" class="aviso oculto">
       ⏸ Este pedido está <strong>suspenso</strong> pela organização do interclasse. No momento não é possível cadastrar nomes nem realizar pagamentos. Tente novamente mais tarde.
@@ -42,11 +65,120 @@
     <p id="mensagemGlobalFechado" class="aviso oculto">
       Os cadastros estão temporariamente fechados pela organização do interclasse. Tente novamente mais tarde.
     </p>
-  </div>
+  </section>
 
-  <div class="card" id="formSenha">
-    <h2>Acesso do time</h2>
-    <p>Digite a senha do seu time (com a coordenação/organização) para cadastrar ou editar a lista.</p>
+  <!-- Abas do pedido. As duas últimas só aparecem para o representante
+       (depois de entrar pela engrenagem). -->
+  <nav class="abas-pedido" role="tablist" aria-label="Seções do pedido">
+    <button type="button" role="tab" class="aba-pedido ativa" data-aba-pedido="lista">Lista</button>
+    <button type="button" role="tab" class="aba-pedido" data-aba-pedido="tamanhos">Tamanhos e preços</button>
+    <button type="button" role="tab" class="aba-pedido oculto" data-aba-pedido="cadastro">+ Adicionar camiseta</button>
+    <button type="button" role="tab" class="aba-pedido oculto" data-aba-pedido="config">⚙️ Configurações</button>
+  </nav>
+
+  <section class="card secao-pedido" id="abaPedido-lista">
+    <div class="lista-cabecalho">
+      <h2>Lista do pedido</h2>
+      <p class="pix-ajuda" id="ajudaLista">Encontre o seu nome e toque em <strong>Pagar</strong>. Para pagar várias de uma vez, marque <strong>somar</strong> e pague no carrinho, lá embaixo.</p>
+    </div>
+    <p id="avisoDuplicado" class="oculto"></p>
+    <div id="resumoTamanhos" class="resumo-tamanhos"></div>
+    <input type="search" id="buscaLista" class="busca-lista" placeholder="🔎 Procurar um nome na lista" autocomplete="off" />
+
+    <div class="tabela-rolagem">
+      <table id="tabelaAlunos" class="tabela-responsiva">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Tamanho</th>
+            <th>Número</th>
+            <th>Nome na camiseta</th>
+            <th>Goleiro</th>
+            <th>Prof</th>
+            <th>Pagamento</th>
+            <th>Carrinho</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="listaVazia" class="vazio-lista oculto">Nenhuma camiseta na lista ainda.</p>
+
+    <button id="btnExportar" class="secundario">Baixar a lista (CSV)</button>
+  </section>
+
+  <section class="card secao-pedido oculto" id="abaPedido-tamanhos">
+    <h2>Tamanhos e preços</h2>
+    <p class="pix-ajuda">Confira a tabela de medidas antes de escolher o tamanho. Toque na imagem para ampliar.</p>
+    <div id="tabelaGrupos" class="grupos-pedido"></div>
+  </section>
+
+  <section class="card secao-pedido oculto" id="abaPedido-cadastro">
+    <div id="blocoCadastro" class="oculto">
+      <h2>Adicionar camiseta</h2>
+      <form id="formAluno">
+        <label for="nomeAluno">Nome do estudante</label>
+        <input type="text" id="nomeAluno" required />
+
+        <div class="grade-2">
+          <div>
+            <label for="tamanho">Tamanho da camiseta</label>
+            <select id="tamanho" required></select>
+          </div>
+          <div>
+            <label for="numeroCamiseta">Número da camiseta</label>
+            <input type="text" id="numeroCamiseta" inputmode="numeric" />
+          </div>
+        </div>
+
+        <label for="nomeCostas">Nome na camiseta (costas)</label>
+        <input type="text" id="nomeCostas" required />
+
+        <label class="checkbox-inline" for="goleiroAluno">
+          <input type="checkbox" id="goleiroAluno" />
+          🧤 É goleiro (camiseta de cor especial)
+        </label>
+        <p class="pix-ajuda">O goleiro joga com uma camiseta de cor diferente, para ser identificado em quadra. Dá para marcar e desmarcar depois, na lista.</p>
+
+        <label class="checkbox-inline" for="profAluno">
+          <input type="checkbox" id="profAluno" />
+          🎓 É camiseta de professor
+        </label>
+        <p class="pix-ajuda">Marca só para organização: ajuda a separar as camisetas dos professores. Não muda nada na camiseta.</p>
+
+        <button type="submit" class="primario">Adicionar à lista</button>
+      </form>
+      <p id="msgCadastro" class="oculto"></p>
+    </div>
+    <p id="cadastroFechado" class="aviso oculto">A lista não aceita novos nomes nesta etapa do pedido.</p>
+  </section>
+
+  <section class="card secao-pedido oculto" id="abaPedido-config">
+    <h2>Configurações do pedido</h2>
+
+    <div id="blocoDataLimite" class="oculto">
+      <h3>Data limite para pagamento</h3>
+      <p class="pix-ajuda">Defina até quando o time pode pagar. Ao passar a data, o pedido fecha automaticamente. Se deixar em branco, fica aberto até a organização fechar.</p>
+      <label for="dataLimite">Data limite</label>
+      <input type="date" id="dataLimite" />
+      <button type="button" id="btnSalvarDataLimite" class="primario">Salvar data limite</button>
+      <p id="msgDataLimite" class="oculto"></p>
+    </div>
+    <p id="dataLimiteTravada" class="pix-ajuda oculto">A data limite só pode ser mudada enquanto o pedido está <strong>Aberto</strong>. Para mudar agora, fale com a organização.</p>
+
+    <h3>Acesso</h3>
+    <p class="pix-ajuda">Você está no modo representante neste navegador. Ao terminar (principalmente num aparelho emprestado), saia.</p>
+    <button type="button" id="btnSairRep" class="secundario">Sair do modo representante</button>
+  </section>
+</main>
+
+<!-- Acesso do representante (aberto pela engrenagem do topo). -->
+<div id="modalSenha" class="modal-pix oculto">
+  <div class="modal-pix-conteudo modal-form-conteudo">
+    <button id="fecharModalSenha" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Acesso do representante</h3>
+    <p class="pix-ajuda">Digite a senha do time (com a coordenação/organização) para cadastrar nomes e configurar o pedido.</p>
     <form id="formSenhaForm">
       <label for="senhaTime">Senha do time</label>
       <input type="password" id="senhaTime" required autocomplete="off" />
@@ -54,72 +186,7 @@
     </form>
     <p id="msgSenha" class="oculto"></p>
   </div>
-
-  <div class="card oculto" id="blocoDataLimite">
-    <h2>Data limite para pagamento</h2>
-    <p>Defina até quando o time pode pagar. Ao passar a data, o pedido fecha automaticamente. Se deixar em branco, fica aberto até a organização fechar.</p>
-    <label for="dataLimite">Data limite</label>
-    <input type="date" id="dataLimite" />
-    <button type="button" id="btnSalvarDataLimite" class="primario">Salvar data limite</button>
-    <p id="msgDataLimite" class="oculto"></p>
-  </div>
-
-  <div class="card oculto" id="blocoCadastro">
-    <h2>Cadastrar aluno</h2>
-    <form id="formAluno">
-      <label for="nomeAluno">Nome do estudante</label>
-      <input type="text" id="nomeAluno" required />
-
-      <label for="tamanho">Tamanho da camiseta</label>
-      <select id="tamanho" required></select>
-
-      <label for="numeroCamiseta">Número da camiseta</label>
-      <input type="text" id="numeroCamiseta" inputmode="numeric" />
-
-      <label for="nomeCostas">Nome na camiseta (costas)</label>
-      <input type="text" id="nomeCostas" required />
-
-      <label class="checkbox-inline" for="goleiroAluno">
-        <input type="checkbox" id="goleiroAluno" />
-        🧤 É goleiro (camiseta de cor especial)
-      </label>
-      <p class="pix-ajuda">O goleiro joga com uma camiseta de cor diferente, para ser identificado em quadra. Dá para marcar e desmarcar depois, na lista.</p>
-
-      <label class="checkbox-inline" for="profAluno">
-        <input type="checkbox" id="profAluno" />
-        🎓 É camiseta de professor
-      </label>
-      <p class="pix-ajuda">Marca só para organização: ajuda a separar as camisetas dos professores. Não muda nada na camiseta.</p>
-
-      <button type="submit" class="primario">Adicionar à lista</button>
-    </form>
-  </div>
-
-  <div class="card">
-    <h2>Conferência do pedido</h2>
-    <p id="avisoDuplicado" class="oculto"></p>
-    <div id="resumoTamanhos" class="resumo-tamanhos"></div>
-
-    <table id="tabelaAlunos">
-      <thead>
-        <tr>
-          <th>Nome</th>
-          <th>Tamanho</th>
-          <th>Número</th>
-          <th>Nome na camiseta</th>
-          <th>Goleiro</th>
-          <th>Prof</th>
-          <th>Pagamento</th>
-          <th>Carrinho</th>
-          <th>Ações</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <button id="btnExportar" class="secundario">Exportar CSV deste time</button>
-  </div>
-</main>
+</div>
 
 <!-- Carrinho: marque as camisetas na lista e pague todas de uma vez.
      Fica guardado só neste navegador — não precisa de cadastro nem login. -->
@@ -197,7 +264,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260926b"></script>
-<script src="js/time.js?v=20260926b"></script>
+<script src="js/utils.js?v=20260927a"></script>
+<script src="js/time.js?v=20260927a"></script>
 </body>
 </html>

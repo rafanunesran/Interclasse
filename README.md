@@ -8,8 +8,8 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 
 ## Como funciona
 
-- **`index.html`** — lista os clientes; ao escolher um (`index.html?cliente=ID-DO-CLIENTE`), mostra os times daquele cliente. Sem nenhum cliente cadastrado, lista direto todos os times.
-- **`time.html?id=NOME-DO-TIME`** — página do representante: digita a senha do time, cadastra/edita/remove alunos, vê o resumo por tamanho, exporta CSV e fecha o pedido.
+- **`index.html`** — a **loja**: todos os times em andamento numa vitrine (imagem da camiseta, preço e situação do pedido), com **filtro por escola/cliente** e busca pelo nome. O filtro vai para o endereço (`index.html?cliente=ID-DO-CLIENTE`), então o link de um cliente já abre só os times dele.
+- **`time.html?id=NOME-DO-TIME`** — a **página do pedido**: imagem, preço, prazo e status no topo, e as abas **Lista** (com o botão **Pagar** e o carrinho) e **Tamanhos e preços** (tabela de medidas). O representante entra pela **engrenagem ⚙️** no canto superior direito, com a senha do time, e ganha as abas **+ Adicionar camiseta** e **Configurações** (data limite e sair do modo representante).
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
 - **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
@@ -66,16 +66,39 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 3. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã"), uma senha própria para ele e o cliente a que ele pertence.
 4. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`) — que lista os clientes — ou direto pelo link do cliente (`SEU-SITE/index.html?cliente=ID-DO-CLIENTE`).
 5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
-6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Faltou alguém na lista? O botão **+ Adicionar camiseta** no card do time resolve na hora, mesmo com o pedido fechado. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Faltou alguém na lista? O botão **+ Adicionar camiseta** (time aberto → aba Lista) resolve na hora, mesmo com o pedido fechado. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+
+## Aba Inicial do Super Admin (times)
+
+A aba **Inicial** mostra só o essencial de cada pedido: o **nome do time** e o **representante**
+(com o WhatsApp clicável), agrupados por cliente, com o status e avisos pequenos à direita
+(ajustes pedidos, PIX a confirmar, camisetas achadas pela busca). **+ Novo time** abre o
+formulário de criação; o time criado já abre na Configuração.
+
+Clicar num time abre o pedido, com o status (seletor) sempre no topo e três abas:
+
+- **Lista** — as camisetas, com **editar**, **registrar pagamento** (seletor por linha),
+  aplicar/dispensar ajustes, excluir, **+ Adicionar camiseta** e os CSVs do time.
+- **Configuração** — **representante** (nome, WhatsApp e **senha do time**, com os atalhos
+  *Copiar link do pedido* e *Enviar link e senha no WhatsApp*), **data limite de pagamento**,
+  nome/cliente/modelo do time, a **tabela especial de preço** e a exclusão do time. O que se
+  digita fica como rascunho até **Salvar configuração**.
+- **Arquivos de produção** — os arquivos da folha EPS (artes PNG, brasão e fonte), a
+  **Prévia da arte** — *Arte (sem simulação)*, cada peça no molde com o layout da aba Artes, ou
+  *Mockup na camiseta*, as peças vestidas numa camiseta (frente e costas, com a cor da malha
+  escolhida) — e as imagens que o cliente vê na loja e na página do pedido.
+
+O time aberto fica no endereço (`superadmin.html#time=ID&aba=config`): recarregar mantém a
+tela e o "voltar" do navegador volta para a lista. No **Kanban**, clicar no nome do time abre
+ele.
 
 ## Contato do representante (WhatsApp)
 
 Cada time pode guardar **quem responde por ele** — nome e WhatsApp — para a organização
 falar com essa pessoa em um clique, sem procurar o telefone em outro lugar.
 
-- **Onde cadastrar:** Super Admin → aba **Inicial**. No formulário **Criar novo time** (os
-  campos são opcionais) ou depois, em **Editar time**. No card de um time sem contato, o
-  atalho **"+ adicionar contato"** já abre a edição.
+- **Onde cadastrar:** Super Admin → aba **Inicial**. No formulário **+ Novo time** (os
+  campos são opcionais) ou depois, abrindo o time → **Configuração**.
 - **Como usar:** no card do pedido, o **nome** e o **número** viram links — clicar em
   qualquer um dos dois abre a conversa no WhatsApp com a mensagem já escrita, citando o
   time e a situação atual do pedido (ex.: *"Olá, Ana! Aqui é da organização do interclasse,
@@ -97,9 +120,9 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 
 - **Cadastrar:** Super Admin → aba **Clientes** → *Novo cliente* (nome e, se quiser, um
   contato). Dá para editar e excluir depois. A exclusão só é permitida quando o cliente
-  não tem mais nenhum time — mova os times antes, pelo botão **Editar time**.
+  não tem mais nenhum time — mova os times antes, pela **Configuração** do time.
 - **Vincular um time:** o cliente é escolhido no formulário **Criar novo time** e pode ser
-  trocado a qualquer momento em **Editar time**. Time sem cliente continua funcionando e
+  trocado a qualquer momento na **Configuração** do time. Time sem cliente continua funcionando e
   aparece agrupado como **Sem cliente**.
 - **Ver um cliente de cada vez:** o seletor **Cliente**, no topo do painel, vale para o
   Super Admin inteiro — lista de times, Kanban, Financeiro, resumo de pagamentos e as
@@ -133,7 +156,7 @@ cliente), acha um pedido sem precisar abrir time por time.
   `3o ano` acha "3º Ano A". Com **mais de uma palavra**, todas precisam bater, e elas podem
   vir de lugares diferentes: `3o maria` acha a Maria do 3º Ano A.
 - **O que aparece:** só os pedidos que combinam. Quando quem combinou foi uma camiseta, o
-  card do time **já abre** mostrando só as camisetas encontradas, com o aviso *"Mostrando 1
+  time aparece marcado com 🔎 e, ao abrir, a aba Lista mostra só as camisetas encontradas, com o aviso *"Mostrando 1
   de 3 camiseta(s)"* — o botão **Ver lista completa** abre o time inteiro, com as linhas
   encontradas em destaque. O resumo ao lado da caixa conta quantos pedidos e quantas
   camisetas a busca achou.
@@ -368,7 +391,7 @@ que é só do controle interno da produção e **não** mexe no status do pedido
 ### O modelo (o que divide os arquivos)
 
 O modelo de cada camiseta vinda de um pedido é, por padrão, o **nome do time** (cada time tem a
-sua arte). Para mudar, use **Editar time → Modelo da camiseta (arte)**:
+sua arte). Para mudar, use a **Configuração** do time → **Modelo da camiseta (arte)**:
 
 - dois times que usam a **mesma arte**: dê a eles o mesmo nome de modelo e eles saem
   **num arquivo só**;
@@ -417,7 +440,7 @@ próprio site (Ghostscript no navegador, ~16 MB baixados só na primeira vez); s
 célula oferece enviar um PNG. Escolha o **tamanho base** (padrão: M) — é nele que o layout é
 marcado e é para ele que as artes são feitas.
 
-### 2. Arquivos do time (aba **Inicial** → card do time → **🎨 Arquivos de produção**)
+### 2. Arquivos do time (aba **Inicial** → abra o time → **Arquivos de produção**)
 
 - A **arte de cada peça em PNG 600 dpi**, feita para o molde do tamanho base. O tamanho real
   vem do dpi do arquivo. Nos outros tamanhos a arte cresce/diminui na proporção do molde,
@@ -510,7 +533,7 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 Dá para cobrar um valor diferente em um time específico (patrocínio, tecido
 diferente, time que fechou em outra data…), sem mexer no preço dos outros.
 
-1. No **Super Admin → Inicial**, abra o card do time e clique em **"Preço da camiseta neste time"**.
+1. No **Super Admin → Inicial**, abra o time → **Configuração** → **Tabela especial de preço**.
 2. Preencha só os grupos que devem mudar (ex.: Normal R$ 50) e clique em **Salvar preços do time**.
 3. Os grupos deixados **em branco** continuam usando o preço geral da aba Pagamentos — cada campo mostra qual é esse valor ("Geral: R$ 45,00").
 
@@ -576,7 +599,7 @@ aparece também na tela inicial, com um botão que leva de volta ao pagamento.
 
 Cada aluno tem um status: **Pendente**, **Aguardando confirmação** ou **Pago (PIX/dinheiro)**.
 
-- **Pagamento em dinheiro:** você marca manualmente no Super Admin, na lista do time (aba **Inicial** → "Ver lista"), pelo seletor de pagamento de cada linha.
+- **Pagamento em dinheiro:** você marca manualmente no Super Admin, na lista do time (aba **Inicial** → abra o time → aba **Lista**), pelo seletor de pagamento de cada linha.
 - **Pagamento por PIX:** como o PIX estático não avisa o site automaticamente, o pagante clica em **"Já fiz o pagamento"** no modal do PIX (fica *Aguardando confirmação*); você confere na sua conta e confirma marcando **Pago (PIX)** no seletor. Se ele pagou várias de uma vez pelo [carrinho](#carrinho-pagar-várias-camisetas-de-uma-vez), todas ficam aguardando juntas — confirme uma a uma na lista.
 - O CSV exportado inclui as colunas `Pago` e `Forma Pagto`.
 

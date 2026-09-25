@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260926b" />
+<link rel="stylesheet" href="css/style.css?v=20260927a" />
 </head>
 <body>
 
@@ -15,14 +15,20 @@
   </nav>
 </header>
 
-<main>
-  <div class="card">
-    <h2 id="tituloLista">Times</h2>
-    <p id="subtituloLista">Toque no seu time para cadastrar a lista de camisetas.</p>
-    <p id="voltarClientes" class="oculto"><a href="index.html">← Todos os clientes</a></p>
-    <p id="carregando">Carregando...</p>
-    <div id="listaTimes" class="grade-times"></div>
+<main class="loja">
+  <section class="loja-hero">
+    <h2 id="tituloLista">Escolha o seu time</h2>
+    <p id="subtituloLista">Encontre o pedido da sua turma, confira a lista e pague as camisetas.</p>
+  </section>
+
+  <div class="loja-filtros">
+    <input type="search" id="buscaLoja" class="loja-busca" placeholder="🔎 Buscar time ou escola" autocomplete="off" aria-label="Buscar time ou escola" />
+    <div id="filtroClientesLoja" class="chips-filtro oculto" role="group" aria-label="Filtrar por escola ou cliente"></div>
   </div>
+
+  <p id="carregando" class="pix-ajuda">Carregando...</p>
+  <p id="resumoLoja" class="loja-resumo oculto"></p>
+  <div id="listaTimes" class="grade-loja"></div>
 </main>
 
 <!-- Carrinho: aparece aqui também, porque ele vale para o site inteiro —
@@ -47,7 +53,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260926b"></script>
-<script src="js/home.js?v=20260926b"></script>
+<script src="js/utils.js?v=20260927a"></script>
+<script src="js/home.js?v=20260927a"></script>
 </body>
 </html>
