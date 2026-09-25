@@ -1659,37 +1659,44 @@ tr.linha-marcada > td { background: #eff6ff; }
   font-size: 0.8rem;
 }
 
-/* ---- Aba Artes (moldes, posições e folha EPS) ---- */
+/* ---- Produção em EPS: moldes (Tamanhos), arquivos do time e editor (Artes) ---- */
 
-.form-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.form-linha label { margin: 0; }
-.form-linha input { flex: 1 1 240px; width: auto; margin: 0; }
+.moldes-topo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 8px 0; }
+.moldes-topo label { margin: 0; font-size: 0.8rem; }
+.moldes-topo select { width: auto; margin: 2px 0 0; }
+.moldes-tabela-wrap { overflow-x: auto; }
+.moldes-tabela { border-collapse: collapse; min-width: 720px; }
+.moldes-tabela th, .moldes-tabela td { border: 1px solid var(--cinza-borda); padding: 4px; font-size: 0.8rem; text-align: center; vertical-align: top; }
+.molde-celula img { display: block; max-width: 90px; max-height: 90px; margin: 0 auto 2px; background: #fff; }
+.molde-medida { color: #6b7280; font-size: 0.72rem; }
+.molde-acoes { display: flex; gap: 3px; justify-content: center; margin-top: 3px; }
+.molde-celula button { padding: 3px 7px; font-size: 0.75rem; margin: 0; }
 
-.arte-linha {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 0;
-  border-top: 1px solid var(--cinza-borda);
-}
-.arte-linha.ativa { background: #eff6ff; }
-.arte-linha button { margin-left: 6px; }
-
-.arte-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.arte-topo h2 { margin: 0; }
-.arte-topo .arte-modelo { flex: 1 1 220px; width: auto; margin: 0; font-weight: 700; }
-
-.arte-bloco {
+.producao-time {
   border: 1px solid var(--cinza-borda);
   border-radius: 8px;
   padding: 8px 12px;
-  margin-top: 12px;
+  margin: 10px 0;
   background: var(--cinza-bg);
 }
-.arte-bloco > summary { cursor: pointer; font-weight: 700; }
-.arte-item-linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+.producao-time > summary { cursor: pointer; font-weight: 700; }
+.producao-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 10px; }
+.producao-slot { background: #fff; border: 1px dashed var(--cinza-borda); border-radius: 8px; padding: 6px; text-align: center; }
+.producao-slot.ok { border-style: solid; border-color: #86efac; }
+.producao-slot-titulo { font-weight: 700; font-size: 0.8rem; }
+.producao-slot-previa { height: 80px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 0.75rem; }
+.producao-slot-previa img { max-width: 100%; max-height: 80px; }
+.producao-slot-info { font-size: 0.7rem; color: #6b7280; min-height: 2em; }
+.producao-slot-acoes { display: flex; gap: 4px; justify-content: center; }
+.producao-slot-acoes button { padding: 4px 10px; font-size: 0.78rem; margin: 0; }
+.producao-rodape { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+
+.layout-topo { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 8px; }
+.layout-topo label { margin: 0; font-size: 0.8rem; }
+.layout-topo select { width: auto; margin: 2px 0 0; }
+.layout-pecas { margin: 8px 0; }
+.layout-arte { position: absolute; pointer-events: none; opacity: 0.9; }
+.arte-el.ajuste-time { outline-color: #d97706; }
 
 .arte-grade {
   display: grid;
@@ -1718,12 +1725,13 @@ tr.linha-marcada > td { background: #eff6ff; }
 .arte-palco-wrap { overflow: auto; max-width: 100%; }
 .arte-palco {
   position: relative;
+  overflow: hidden;
   background: #fff;
   outline: 1px dashed #94a3b8;
   touch-action: none;
   user-select: none;
 }
-.arte-palco-molde { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.arte-palco-molde { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 .arte-palco-vazio { padding: 16px; color: #6b7280; font-size: 0.85rem; }
 
 .arte-el {
@@ -1732,7 +1740,8 @@ tr.linha-marcada > td { background: #eff6ff; }
   cursor: move;
   touch-action: none;
 }
-.arte-el.selecionado { outline: 2px solid var(--azul); z-index: 2; }
+.arte-el { z-index: 2; }
+.arte-el.selecionado { outline: 2px solid var(--azul); z-index: 3; }
 .arte-el img { width: 100%; height: 100%; object-fit: fill; pointer-events: none; display: block; }
 .arte-el-svg { position: absolute; left: 0; top: 0; pointer-events: none; }
 .arte-el-rotulo {

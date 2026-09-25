@@ -40,11 +40,13 @@ pasta chamada **"Interclasse Camisetas"** no seu Drive.
 - Se um dia trocar o Apps Script, atualize a URL nas Configurações. Imagens já enviadas continuam
   funcionando (a URL aponta direto para o arquivo no Drive).
 
-## Artes de produção (aba Artes)
+## Folha EPS (moldes, artes e fontes)
 
-O mesmo script guarda os arquivos das **artes de produção** (moldes EPS, PNG em alta, vetores
-EPS e fontes), **sem reduzir nada**, e os devolve ao site na hora de montar a folha EPS
+O mesmo script guarda os arquivos da **folha EPS** (moldes de corte, artes PNG 600 dpi, brasões
+e fontes), **sem reduzir nada**, e os devolve ao site na hora de montar a folha
 (`doGet?acao=arquivo&id=...`). Ele só entrega arquivos da pasta **"Interclasse Camisetas"**.
+Arquivo maior que 20 MB vai em partes (cada parte é um arquivo `….parteNdeM` na pasta) — não
+apague essas partes.
 
 Se o seu script foi publicado antes dessa função, **atualize-o**: cole o `Codigo.gs` novo, e em
 **Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão → Implantar**. Assim

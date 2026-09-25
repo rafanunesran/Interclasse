@@ -385,57 +385,73 @@ linha aparece destacada como *"Já não existe no pedido"*, para você conferir 
 > conta administradora entra. Depois de atualizar, **republique o `firestore.rules`** no console
 > do Firebase — a versão anterior não conhecia a coleção `producao`.
 
-## Aba Artes (folha EPS CMYK personalizada)
+## Folha EPS CMYK personalizada (produção)
 
 Em vez de montar nome e número camiseta por camiseta no CorelDRAW, o site monta a **folha de
-impressão** da leva em **EPS CMYK**, com cada peça de cada camiseta já personalizada e
-encaixada na largura do rolo/folha.
+impressão** de cada pedido em **EPS CMYK**: cada peça de cada camiseta com o **molde de corte**
+do tamanho dela, a **arte do time** adaptada ao tamanho, o **brasão** e o nome/número em
+**curvas**, encaixadas para aproveitar a folha. São três lugares:
 
-### Cadastrar a arte de um modelo (aba **Artes**)
+### 1. Moldes de corte (aba **Tamanhos**)
 
-1. **Crie a arte** com o **mesmo nome do modelo** usado na aba Produção (o campo sugere os
-   modelos dos times). O goleiro pode ter a sua própria arte ("<modelo> — goleiro"); sem ela,
-   usa a do modelo base (com aviso).
-2. **Fontes**: envie o `.ttf`/`.otf` do nome e do número. No arquivo final as letras saem
-   **em curvas** — a gráfica não precisa ter a fonte.
-3. **Peças**: *Costas* já vem criada; acrescente *Frente*, *Manga*... em **+ Peça**.
-4. **Moldes**: para cada tamanho, envie o **EPS do molde** (é ele que vai para a folha, no
-   tamanho real — lido do `%%BoundingBox`) e um **PNG de prévia** exportado da mesma
-   página/área (só para ver na tela; o navegador não desenha EPS). Marque o **tamanho base**.
-5. **Elementos** (botões acima do molde): **+ Nome/apelido**, **+ Número**, **+ Imagem PNG**
-   (em alta, com transparência) e **+ Vetor EPS** (com um PNG de prévia). Arraste as caixas
-   para posicionar e use a alça azul do canto para mudar o tamanho — ou digite X, Y, largura e
-   altura em mm. No texto dá para escolher o campo, a fonte, a **cor em CMYK**, o **contorno**,
-   o alinhamento e o que fazer com nome comprido (**encolher** ou **comprimir** na largura).
-6. Nos **outros tamanhos**, as posições acompanham a proporção do molde. Escolha o tamanho no
-   seletor acima do molde para conferir; mexer ali cria um **ajuste fino só daquele tamanho**
-   (e "Voltar ao proporcional" desfaz).
-7. **⬇ EPS de teste** baixa a peça aberta, no tamanho mostrado, com o apelido e o número de
-   teste — bom para conferir no Corel antes da primeira leva.
-8. **Folha de impressão**: largura do rolo (cm), espaço entre peças, altura máxima por folha
-   (passou disso, abre outra folha), contorno do molde por cima/por baixo/fora e a etiqueta
-   "nome · nº · tamanho · peça" embaixo de cada peça (para a costura separar).
+Um **EPS por peça em cada tamanho** — Frente, Costas, Manga esquerda/direita e Detalhe da manga
+esquerda/direita —, no tamanho real (lido do `%%BoundingBox`). Em **Enviar vários**, escolha
+todos de uma vez: o site reconhece a peça e o tamanho pelo nome do arquivo (`costas-M.eps`,
+`manga esq GG.eps`, `detalhe manga dir P.eps`). A **prévia** de cada molde é desenhada pelo
+próprio site (Ghostscript no navegador, ~16 MB baixados só na primeira vez); se não der, a
+célula oferece enviar um PNG. Escolha o **tamanho base** (padrão: M) — é nele que o layout é
+marcado e é para ele que as artes são feitas.
 
-### Gerar a folha (aba **Produção**)
+### 2. Arquivos do time (aba **Inicial** → card do time → **🎨 Arquivos de produção**)
 
-Em cada leva, **Folhas EPS (CMYK)** gera a folha de todos os modelos (um `.zip` quando sai
-mais de um arquivo), e **Folha EPS**, no bloco de cada modelo, gera só a daquele modelo. Os
-nomes, apelidos, números e tamanhos são os **atuais** do cadastro. Antes de baixar, o site avisa
-o que ficou de fora (modelo sem arte, tamanho sem molde...).
+- A **arte de cada peça em PNG 600 dpi**, feita para o molde do tamanho base. O tamanho real
+  vem do dpi do arquivo. Nos outros tamanhos a arte cresce/diminui na proporção do molde,
+  centralizada. PNG 8 bits (RGB/RGBA, com transparência), sem entrelaçamento.
+- O **brasão em EPS** (entra intacto, vetorial).
+- A **fonte** (`.ttf`/`.otf`) do nome e do número.
+
+O selo mostra **pronto ✓** ou o que falta. Arquivos grandes vão ao Drive em partes de 20 MB.
+
+### 3. Layout (aba **Artes**)
+
+Em cima do molde de cada peça, marque o **brasão** e as caixas do **nome** e do **número**
+(arrastar, alça do canto ou X/Y/largura/altura em mm). A caixa é o **limite**: nome ou número
+comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No texto: cor **CMYK**,
+**contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do
+molde (dá para ajustar um tamanho específico).
+
+O layout **geral** vale para todos os times. Em **Editando**, escolha um time para um **ajuste
+próprio** dele (só a posição; **Voltar ao layout geral** desfaz). **⬇ EPS de teste** baixa a peça
+aberta com o apelido e o número de teste, usando os arquivos do time.
+
+### Gerar (aba **Produção**)
+
+**Folhas EPS (CMYK)** na leva (ou **Folha EPS** no bloco de um modelo) pergunta:
+
+- **largura da folha/rolo** e **distância entre peças**;
+- se o fornecedor deixa **girar** as peças (90° quando aproveitar melhor) ou não;
+- a **resolução** das artes (600 dpi original, 300 ou 150 para prova);
+- contorno do molde por cima/por baixo/fora, altura máxima por folha e a etiqueta
+  "nome · nº · tamanho · peça" embaixo de cada peça.
+
+Sai **um EPS por time** (camisetas avulsas vão para o time do mesmo modelo; os goleiros saem num
+arquivo à parte), num `.zip` quando há mais de um. O encaixe é por "melhor espaço livre"
+(MaxRects), com as maiores peças primeiro.
 
 ### Como o arquivo é feito
 
-- Os **EPS enviados entram intactos** (vetores e cores CMYK preservados), embutidos no arquivo.
-- Os **PNG** são convertidos para **CMYK** com a fórmula simples (K = 1 − máx(R,G,B)); a
-  transparência vira máscara (pixel com menos de 50% de opacidade não imprime). Tons muito
-  saturados podem ficar um pouco diferentes de uma conversão com perfil ICC.
-- Cada PNG entra **uma vez** no arquivo, mesmo aparecendo em várias camisetas; já os EPS se
-  repetem a cada peça (um EPS pesado × muitas camisetas = arquivo grande).
-- PostScript nível 3 (a máscara do PNG usa ImageType 3).
+- EPS enviados (moldes e brasão) entram **intactos**, embutidos no arquivo.
+- As artes PNG são lidas **linha a linha** (uma arte de 600 dpi não caberia na memória do
+  navegador inteira) e convertidas para **CMYK** com a fórmula simples (K = 1 − máx(R,G,B)); a
+  transparência vira máscara (menos de 50% de opacidade não imprime). Cada arte entra **uma vez**
+  por arquivo, mesmo aparecendo em várias camisetas. Tons muito saturados podem ficar um pouco
+  diferentes de uma conversão com perfil ICC.
+- PostScript nível 3. Em 600 dpi o arquivo fica grande (centenas de MB numa leva cheia); o site
+  avisa acima de ~500 MB — gere em 300 dpi se o programa não abrir.
 
 Os arquivos ficam no seu **Google Drive**, pelo mesmo Apps Script das imagens — **reimplante o
-script** com o `Codigo.gs` atual (ele ganhou o download dos arquivos, ver
-[`apps-script/README.md`](apps-script/README.md)). O Apps Script aceita até ~50 MB por arquivo.
+script** com o `Codigo.gs` atual (ver [`apps-script/README.md`](apps-script/README.md)) e publique
+o `firestore.rules` atualizado (`config/moldes` e `config/layout`).
 
 ## Tamanhos disponíveis
 

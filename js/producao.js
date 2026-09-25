@@ -315,17 +315,14 @@ function renderizarListaLevas() {
     botoes.appendChild(btnCsvs);
 
     // Folha montada em EPS CMYK, com o nome e o número de cada camiseta
-    // (arte de cada modelo na aba Artes — js/artes.js).
-    if (typeof baixarFolhasEps === "function") {
+    // (moldes, layout e arquivos do time — js/artes.js).
+    if (typeof gerarFolhasEps === "function") {
       const btnEps = document.createElement("button");
       btnEps.className = "primario";
-      btnEps.textContent = `Folhas EPS (CMYK)`;
-      btnEps.title = "Folha de impressão de cada modelo, já personalizada, montada com as artes da aba Artes";
+      btnEps.textContent = "Folhas EPS (CMYK)";
+      btnEps.title = "Folha de impressão de cada time da leva, já personalizada (moldes da aba Tamanhos, layout da aba Artes e arquivos do time)";
       btnEps.disabled = itens.length === 0;
-      btnEps.onclick = () => baixarFolhasEps(
-        grupos.map((g) => ({ modelo: g.modelo, camisetas: g.linhas.map((l) => l.atual) })),
-        leva.nome || "leva"
-      );
+      btnEps.onclick = () => gerarFolhasEps(grupos.flatMap((g) => g.linhas), leva.nome || "leva");
       botoes.appendChild(btnEps);
     }
 
@@ -384,15 +381,12 @@ function criarBlocoModelo(leva, grupo) {
   };
   cabecalho.appendChild(btn);
 
-  if (typeof baixarFolhasEps === "function") {
+  if (typeof gerarFolhasEps === "function") {
     const btnEps = document.createElement("button");
     btnEps.className = "secundario";
     btnEps.textContent = "Folha EPS";
     btnEps.title = "Folha de impressão deste modelo em EPS CMYK, com nome e número de cada camiseta";
-    btnEps.onclick = () => baixarFolhasEps(
-      [{ modelo: grupo.modelo, camisetas: grupo.linhas.map((l) => l.atual) }],
-      leva.nome || "leva"
-    );
+    btnEps.onclick = () => gerarFolhasEps(grupo.linhas, `${leva.nome || "leva"}-${grupo.modelo}`);
     cabecalho.appendChild(btnEps);
   }
   bloco.appendChild(cabecalho);

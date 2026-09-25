@@ -67,8 +67,9 @@ auth.onAuthStateChanged((user) => {
         carregarPainelConfig();
         // Aba Produção (js/producao.js) — carregada depois deste arquivo.
         if (typeof escutarLevas === "function") escutarLevas();
-        // Aba Artes (js/artes.js).
-        if (typeof escutarArtes === "function") escutarArtes();
+        // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
+        if (typeof escutarMoldes === "function") escutarMoldes();
+        if (typeof escutarLayout === "function") escutarLayout();
       }, 0);
     }
   } else {
@@ -784,6 +785,8 @@ function renderizarTimesAdmin() {
 
     // Imagens da camiseta — simulação e arte (Google Drive via Apps Script).
     card.appendChild(criarBlocoImagemTime(timeId, time));
+    // Arquivos da folha EPS: arte de cada peça (PNG 600 dpi), brasão e fonte.
+    if (typeof criarBlocoProducaoTime === "function") card.appendChild(criarBlocoProducaoTime(timeId, time));
 
     const botoes = document.createElement("div");
 
@@ -1004,8 +1007,8 @@ function renderizarTimesAdmin() {
   renderizarClientesAdmin();
   // A aba Produção escolhe camisetas a partir desta mesma lista.
   if (typeof renderizarProducao === "function") renderizarProducao();
-  // A aba Artes sugere os modelos dos times que ainda não têm arte.
-  if (typeof renderizarListaArtes === "function") renderizarListaArtes();
+  // O editor de layout (aba Artes) lista os times e mostra a arte deles.
+  if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
 }
 
 // Linha do representante no card do pedido: nome e número clicáveis, cada um

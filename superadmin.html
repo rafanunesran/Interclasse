@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260925a" />
+<link rel="stylesheet" href="css/style.css?v=20260926a" />
 </head>
 <body>
 
@@ -140,20 +140,14 @@
       </div>
     </section>
 
-    <!-- ABA: ARTES (moldes, partes da arte e posições para a folha EPS) -->
+    <!-- ABA: ARTES (editor de layout da folha EPS: brasão, nome e número) -->
     <section id="aba-artes" class="secao-aba oculto">
       <div class="card">
-        <h2>Artes de produção</h2>
-        <p>Cada <strong>modelo</strong> de camiseta (o mesmo nome da aba Produção) ganha a sua arte: os <strong>moldes</strong> de cada peça e tamanho, as partes da arte (<strong>PNG em alta</strong> ou <strong>EPS vetorial</strong>), a <strong>fonte</strong> e a posição do <strong>nome</strong> e do <strong>número</strong>. Com isso, o botão <strong>Folhas EPS</strong> da aba Produção monta a folha de impressão da leva em <strong>CMYK</strong>, já personalizada camiseta por camiseta.</p>
-        <form id="formNovaArte" class="form-linha">
-          <label for="modeloNovaArte">Modelo</label>
-          <input type="text" id="modeloNovaArte" list="sugestoesModeloArte" placeholder="Nome do modelo (igual ao da aba Produção)" required />
-          <datalist id="sugestoesModeloArte"></datalist>
-          <button type="submit" class="primario">Criar arte</button>
-        </form>
-        <div id="listaArtes"></div>
+        <h2>Layout da folha de impressão</h2>
+        <p>Aqui você marca, em cima do <strong>molde de corte</strong> de cada peça, onde ficam o <strong>brasão</strong> e as caixas do <strong>nome</strong> e do <strong>número</strong>. A caixa é o <strong>limite</strong>: nome ou número comprido encolhe para caber e nunca sai dela. O layout geral vale para todos os times; em <strong>Editando</strong>, escolha um time para fazer um ajuste só dele.</p>
+        <p class="pix-ajuda">A arte de cada peça (PNG 600 dpi), o brasão e a fonte são enviados no card de cada time (aba Inicial → 🎨 Arquivos de produção). Os moldes de corte ficam na aba <strong>Tamanhos</strong>. A folha é gerada na aba <strong>Produção</strong>, botão <strong>Folhas EPS</strong>.</p>
+        <div id="editorLayout"></div>
       </div>
-      <div id="editorArte" class="card oculto"></div>
     </section>
 
     <!-- ABA: FINANCEIRO (relatórios de faturamento) -->
@@ -179,6 +173,12 @@
           <button type="button" id="btnRestaurarTamanhos" class="secundario">Restaurar padrão</button>
         </div>
         <p id="msgTamanhos" class="oculto"></p>
+      </div>
+
+      <!-- Moldes de corte: um EPS por peça em cada tamanho (js/moldes.js). -->
+      <div class="card">
+        <h2>Moldes de corte</h2>
+        <div id="moldesCorte"></div>
       </div>
     </section>
 
@@ -320,11 +320,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260925a"></script>
+<script src="js/utils.js?v=20260926a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260925a"></script>
-<script src="js/producao.js?v=20260925a"></script>
-<script src="js/eps.js?v=20260925a"></script>
-<script src="js/artes.js?v=20260925a"></script>
+<script src="js/admin.js?v=20260926a"></script>
+<script src="js/producao.js?v=20260926a"></script>
+<script src="js/eps.js?v=20260926a"></script>
+<script src="js/png-stream.js?v=20260926a"></script>
+<script src="js/previa-eps.js?v=20260926a"></script>
+<script src="js/moldes.js?v=20260926a"></script>
+<script src="js/artes.js?v=20260926a"></script>
 </body>
 </html>

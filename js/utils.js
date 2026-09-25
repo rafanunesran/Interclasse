@@ -16,10 +16,22 @@ const COL_CLIENTES = "clientes";
 const COL_PRODUCAO = "producao";
 const SUB_ITENS_PRODUCAO = "itens";
 
-// Coleção das artes de produção: um documento por modelo de camiseta, com os
-// moldes de cada peça, as partes da arte (EPS/PNG), as fontes e as posições
-// do nome e do número. É daqui que sai a folha EPS da leva (js/artes.js).
-const COL_ARTES = "artes";
+// Peças da camiseta na produção. Cada time envia a arte (PNG 600 dpi) de cada
+// peça; na aba Tamanhos fica o molde de corte (EPS) de cada peça em cada
+// tamanho; na aba Artes, o layout (brasão, nome e número) de cada peça.
+const PECAS_PRODUCAO = [
+  { id: "frente", nome: "Frente" },
+  { id: "costas", nome: "Costas" },
+  { id: "mangaEsq", nome: "Manga esquerda" },
+  { id: "mangaDir", nome: "Manga direita" },
+  { id: "detalheMangaEsq", nome: "Detalhe da manga esquerda" },
+  { id: "detalheMangaDir", nome: "Detalhe da manga direita" }
+];
+
+function nomePecaProducao(id) {
+  const p = PECAS_PRODUCAO.find((x) => x.id === id);
+  return p ? p.nome : id;
+}
 
 // Tamanhos padrão (usados quando ainda não há nada salvo no Firestore
 // ou para restaurar o padrão no painel administrativo). NÃO alterar em runtime.
@@ -1064,47 +1076,96 @@ function lerArquivoBase64(file) {
   });
 }
 
-// Envia o arquivo original ao Drive. Devolve { fileId, url } — a url é a
-// miniatura pública (serve para mostrar PNGs na tela).
-async function enviarArquivoDrive(scriptUrl, file, prefixo) {
-  const dataBase64 = await lerArquivoBase64(file);
+// O Apps Script aceita uns 50 MB por envio (e o base64 aumenta um terço),
+// então arquivo grande — como uma arte em 600 dpi — vai em PARTES: cada parte
+// vira um arquivo na pasta do Drive e o site junta tudo na hora de usar.
+const TAMANHO_PARTE_DRIVE = 20 * 1024 * 1024;
+
+async function enviarBase64Drive(scriptUrl, nome, mimeType, dataBase64) {
   const resp = await fetch(scriptUrl, {
     method: "POST",
-    body: JSON.stringify({
-      nome: (prefixo ? prefixo + "-" : "") + file.name,
-      mimeType: file.type || "application/octet-stream",
-      dataBase64
-    })
+    body: JSON.stringify({ nome, mimeType, dataBase64 })
   });
   const dados = await resp.json();
   if (!dados || !dados.ok) throw new Error((dados && dados.erro) || "Falha ao enviar o arquivo.");
-  return { fileId: dados.fileId, url: dados.url };
+  return dados;
 }
 
-// Bytes de um arquivo do Drive (via Apps Script, por causa do CORS). Guarda
-// em memória: a mesma arte é usada em todas as camisetas da leva.
-const cacheArquivosDrive = {};
-function baixarArquivoDrive(scriptUrl, fileId) {
-  if (!cacheArquivosDrive[fileId]) {
-    const sep = scriptUrl.includes("?") ? "&" : "?";
-    cacheArquivosDrive[fileId] = fetch(scriptUrl + sep + "acao=arquivo&id=" + encodeURIComponent(fileId))
-      .then((r) => r.json())
-      .then((dados) => {
-        if (!dados || !dados.ok) {
-          throw new Error((dados && dados.erro) ||
-            "Não foi possível baixar o arquivo. Reimplante o Apps Script (apps-script/README.md).");
-        }
-        const bin = atob(dados.dataBase64 || "");
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        return bytes;
-      })
-      .catch((e) => {
-        delete cacheArquivosDrive[fileId];
-        throw e;
-      });
+// Envia o arquivo original ao Drive. Devolve { fileId, partes, url }:
+//   fileId — a primeira parte (ou o arquivo inteiro, se couber numa só);
+//   partes — ids de todas as partes, em ordem (é o que se guarda);
+//   url    — miniatura pública (só faz sentido para imagem de uma parte).
+// `aoProgresso(fração)` é opcional.
+async function enviarArquivoDrive(scriptUrl, file, prefixo, aoProgresso) {
+  const nome = (prefixo ? prefixo + "-" : "") + file.name;
+  const nPartes = Math.max(1, Math.ceil(file.size / TAMANHO_PARTE_DRIVE));
+  const partes = [];
+  let url = "";
+  for (let i = 0; i < nPartes; i++) {
+    const pedaco = nPartes === 1 ? file : file.slice(i * TAMANHO_PARTE_DRIVE, (i + 1) * TAMANHO_PARTE_DRIVE);
+    const dataBase64 = await lerArquivoBase64(pedaco);
+    const dados = await enviarBase64Drive(
+      scriptUrl,
+      nPartes === 1 ? nome : `${nome}.parte${i + 1}de${nPartes}`,
+      nPartes === 1 ? file.type || "application/octet-stream" : "application/octet-stream",
+      dataBase64
+    );
+    partes.push(dados.fileId);
+    if (i === 0) url = dados.url;
+    if (aoProgresso) aoProgresso((i + 1) / nPartes);
   }
-  return cacheArquivosDrive[fileId];
+  return { fileId: partes[0], partes, url: nPartes === 1 ? url : "" };
+}
+
+// Bytes de um arquivo do Drive (via Apps Script, por causa do CORS). Aceita
+// o id de um arquivo ou a lista de partes. Guarda em memória: a mesma arte é
+// usada em todas as camisetas da leva.
+const cacheArquivosDrive = {};
+function baixarParteDrive(scriptUrl, fileId) {
+  const sep = scriptUrl.includes("?") ? "&" : "?";
+  return fetch(scriptUrl + sep + "acao=arquivo&id=" + encodeURIComponent(fileId))
+    .then((r) => r.json())
+    .then((dados) => {
+      if (!dados || !dados.ok) {
+        throw new Error((dados && dados.erro) ||
+          "Não foi possível baixar o arquivo. Reimplante o Apps Script (apps-script/README.md).");
+      }
+      const bin = atob(dados.dataBase64 || "");
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes;
+    });
+}
+
+function chaveArquivoDrive(ref) {
+  return Array.isArray(ref) ? ref.join("+") : String(ref);
+}
+
+function baixarArquivoDrive(scriptUrl, ref) {
+  const chave = chaveArquivoDrive(ref);
+  if (!cacheArquivosDrive[chave]) {
+    const ids = Array.isArray(ref) ? ref : [ref];
+    cacheArquivosDrive[chave] = (async () => {
+      const pedacos = [];
+      for (const id of ids) pedacos.push(await baixarParteDrive(scriptUrl, id));
+      if (pedacos.length === 1) return pedacos[0];
+      const total = pedacos.reduce((s, p) => s + p.length, 0);
+      const junto = new Uint8Array(total);
+      let o = 0;
+      pedacos.forEach((p) => { junto.set(p, o); o += p.length; });
+      return junto;
+    })().catch((e) => {
+      delete cacheArquivosDrive[chave];
+      throw e;
+    });
+  }
+  return cacheArquivosDrive[chave];
+}
+
+// Guarda no cache os bytes de um arquivo que acabou de ser enviado (evita
+// baixar de volta o que já está na memória).
+function guardarArquivoDriveNoCache(ref, bytes) {
+  cacheArquivosDrive[chaveArquivoDrive(ref)] = Promise.resolve(bytes);
 }
 
 // ---------------- Ampliar imagem (lightbox) ----------------

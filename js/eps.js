@@ -1,10 +1,10 @@
 // ============================================================
 // GERADOR DE EPS CMYK (folha montada para impressão)
 // ============================================================
-// Monta, no próprio navegador, a folha de impressão de uma leva: cada peça de
-// cada camiseta (frente, costas, manga...) com o molde do tamanho dela, as
-// partes da arte (EPS vetorial e PNG em alta) e o nome/número em CURVAS, tudo
-// encaixado lado a lado na largura do rolo/folha.
+// Monta, no próprio navegador, a folha de impressão de um pedido: cada peça
+// de cada camiseta (frente, costas, mangas...) com o MOLDE de corte do
+// tamanho dela, a ARTE do time (PNG 600 dpi, adaptada ao tamanho), o BRASÃO
+// (EPS) e o nome/número em CURVAS, tudo encaixado para aproveitar a folha.
 //
 // Não é preciso "entender" os EPS enviados: um EPS pode ser embutido dentro de
 // outro como está (BeginEPSF/EndEPSF), então as cores CMYK e os vetores do
@@ -20,6 +20,7 @@
 
 const EPS = (function () {
   const PT_POR_MM = 72 / 25.4;
+  const MM_POR_POL = 25.4;
 
   // ---------------- Leitura de EPS ----------------
 
@@ -73,43 +74,6 @@ const EPS = (function () {
     return { w: (bbox.x2 - bbox.x1) / PT_POR_MM, h: (bbox.y2 - bbox.y1) / PT_POR_MM };
   }
 
-  // ---------------- Imagem (PNG) → CMYK ----------------
-
-  // Converte os pixels RGBA (ImageData) para CMYK com a fórmula simples
-  // (K = 1 − max(R,G,B)). A transparência vira uma máscara de 1 bit:
-  // pixel com menos da metade de opacidade não é impresso. Devolve
-  // { largura, altura, cmyk, mascara } — mascara é null quando tudo é opaco.
-  function cmykDeRgba(largura, altura, rgba) {
-    const n = largura * altura;
-    const cmyk = new Uint8Array(n * 4);
-    const bytesLinha = Math.ceil(largura / 8);
-    const mascara = new Uint8Array(bytesLinha * altura);
-    let temTransparencia = false;
-
-    for (let i = 0; i < n; i++) {
-      const r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
-      const max = Math.max(r, g, b);
-      const k = 255 - max;
-      const o = i * 4;
-      if (max === 0) {
-        cmyk[o] = cmyk[o + 1] = cmyk[o + 2] = 0;
-      } else {
-        cmyk[o] = Math.round(((max - r) * 255) / max);
-        cmyk[o + 1] = Math.round(((max - g) * 255) / max);
-        cmyk[o + 2] = Math.round(((max - b) * 255) / max);
-      }
-      cmyk[o + 3] = k;
-      if (a < 128) {
-        temTransparencia = true;
-        const y = Math.floor(i / largura);
-        const x = i - y * largura;
-        // Bit 1 = mascarado (não pinta), com /Decode [0 1].
-        mascara[y * bytesLinha + (x >> 3)] |= 0x80 >> (x & 7);
-      }
-    }
-    return { largura, altura, cmyk, mascara: temTransparencia ? mascara : null };
-  }
-
   // ---------------- Texto em curvas ----------------
 
   // Altura das maiúsculas da fonte (em unidades da fonte): é ela que ocupa a
@@ -125,7 +89,8 @@ const EPS = (function () {
 
   // Desenha o texto dentro de uma caixa (w × h mm) e devolve o contorno das
   // letras como comandos de caminho, em mm e relativos ao canto de cima da
-  // caixa. É a MESMA função que desenha a prévia do editor e o EPS final.
+  // caixa. A caixa é o LIMITE: texto comprido encolhe (ou é comprimido na
+  // largura) e nunca sai dela. É a MESMA função da prévia do editor.
   //
   // opcoes:
   //   maiusculas   — converte para maiúsculas (padrão: true)
@@ -202,27 +167,35 @@ const EPS = (function () {
     });
   }
 
-  // ---------------- Montagem da folha ----------------
+  // ---------------- Layout: onde cada coisa fica em cada tamanho ----------------
 
   // Valor de texto de um elemento para uma camiseta.
   function textoDoCampo(el, camiseta) {
-    if (el.campo === "numero") return String(camiseta.numero == null ? "" : camiseta.numero);
-    if (el.campo === "nome") return camiseta.nome || "";
-    // nomeCamiseta (apelido): sem apelido, usa o nome (se o elemento permitir).
+    if (el.tipo === "numero" || el.campo === "numero") return String(camiseta.numero == null ? "" : camiseta.numero);
+    if (el.campo === "nomeCompleto") return camiseta.nome || "";
+    // Nome na camiseta (apelido): sem apelido, usa o nome (se permitido).
     const apelido = camiseta.nomeCamiseta || "";
     if (!apelido && el.usarNomeSeVazio !== false) return camiseta.nome || "";
     return apelido;
   }
 
-  // Caixa de um elemento no tamanho pedido: o ajuste fino daquele tamanho, se
-  // houver; senão, a caixa do tamanho base escalada na proporção do molde.
-  function caixaNoTamanho(el, tamanho, moldeBase, moldeTam) {
-    if (el.ajustes && el.ajustes[tamanho]) return { ...el.ajustes[tamanho] };
-    const c = el.caixa || { x: 0, y: 0, w: 10, h: 10 };
+  function escalarCaixa(c, moldeBase, moldeTam) {
     if (!moldeBase || !moldeTam) return { ...c };
     const sx = moldeTam.w / moldeBase.w;
     const sy = moldeTam.h / moldeBase.h;
     return { x: c.x * sx, y: c.y * sy, w: c.w * sx, h: c.h * sy };
+  }
+
+  // Caixa de um elemento do layout num tamanho, com o ajuste do time.
+  // Ordem: ajuste do time naquele tamanho → caixa do time (proporcional) →
+  // ajuste geral daquele tamanho → caixa geral (proporcional ao molde).
+  //   ajusteTime: { base: caixa, tamanhos: { tam: caixa } } | undefined
+  function caixaEfetiva(el, tamanho, moldeBase, moldeTam, ajusteTime) {
+    const aj = ajusteTime || {};
+    if (aj.tamanhos && aj.tamanhos[tamanho]) return { ...aj.tamanhos[tamanho] };
+    if (aj.base) return escalarCaixa(aj.base, moldeBase, moldeTam);
+    if (el.ajustes && el.ajustes[tamanho]) return { ...el.ajustes[tamanho] };
+    return escalarCaixa(el.caixa || { x: 0, y: 0, w: 10, h: 10 }, moldeBase, moldeTam);
   }
 
   // Encaixa o conteúdo inteiro (w × h) dentro da caixa, sem distorcer.
@@ -232,174 +205,253 @@ const EPS = (function () {
     return { x: caixa.x + (caixa.w - W) / 2, y: caixa.y + (caixa.h - H) / 2, w: W, h: H };
   }
 
-  // Blocos (uma peça de uma camiseta cada) → folhas. Encaixe em prateleiras:
-  // os blocos vão da esquerda para a direita na ordem das camisetas (as peças
-  // de uma mesma camiseta ficam juntas) e, quando não cabem mais, abrem uma
-  // nova prateleira. Passando da altura máxima, abre uma nova folha.
-  function empacotar(blocos, larguraMm, espacoMm, alturaMaxMm) {
-    const folhas = [];
-    let folha = null;
-    let x = 0, y = 0, alturaPrateleira = 0;
-    const novaFolha = () => {
-      folha = { larguraMm, alturaMm: 0, blocos: [] };
-      folhas.push(folha);
-      x = espacoMm; y = espacoMm; alturaPrateleira = 0;
-    };
-    novaFolha();
-    blocos.forEach((b) => {
-      if (x > espacoMm && x + b.w + espacoMm > larguraMm) {
-        x = espacoMm;
-        y += alturaPrateleira + espacoMm;
-        alturaPrateleira = 0;
-      }
-      if (alturaMaxMm > 0 && folha.blocos.length > 0 && y + b.h + espacoMm > alturaMaxMm) {
-        novaFolha();
-      }
-      folha.blocos.push({ bloco: b, x, y });
-      x += b.w + espacoMm;
-      alturaPrateleira = Math.max(alturaPrateleira, b.h);
-      folha.alturaMm = Math.max(folha.alturaMm, y + alturaPrateleira + espacoMm);
-    });
-    return folhas.filter((f) => f.blocos.length > 0);
+  // Onde a ARTE (PNG) da peça fica no molde de um tamanho. A arte é feita
+  // para o molde BASE, no tamanho real (pixels ÷ dpi) e centralizada nele.
+  // Nos outros tamanhos ela cresce/diminui na proporção do molde (a maior
+  // das duas, para continuar cobrindo a peça inteira), também centralizada.
+  function caixaArte(arte, moldeBase, moldeTam) {
+    const dpi = arte.dpi > 0 ? arte.dpi : 600;
+    let w = (arte.larguraPx / dpi) * MM_POR_POL;
+    let h = (arte.alturaPx / dpi) * MM_POR_POL;
+    const base = moldeBase || moldeTam;
+    const esc = Math.max(moldeTam.w / base.w, moldeTam.h / base.h);
+    w *= esc;
+    h *= esc;
+    return { x: (moldeTam.w - w) / 2, y: (moldeTam.h - h) / 2, w, h };
   }
 
-  // Monta as folhas de uma arte para uma lista de camisetas.
-  //
-  // arte:      documento da coleção `artes` (peças, moldes, elementos, folha)
-  // camisetas: [{ nome, nomeCamiseta, numero, tamanho }]
-  // rec:       recursos já carregados —
-  //              fontes:  { fonteId: fonte opentype }
-  //              eps:     { fileId: { bytes (PostScript), bbox } }
-  //              imagens: { fileId: { largura, altura, cmyk, mascara } }
-  //
-  // Devolve { folhas: [{ larguraMm, alturaMm, ops }], avisos: [texto] }.
-  // Cada op está em mm absolutos na folha (origem em cima à esquerda):
-  //   { tipo: "eps", fileId, x, y, w, h }
-  //   { tipo: "imagem", fileId, x, y, w, h }
-  //   { tipo: "caminho", comandos, cmyk, contorno: { cmyk, mm } | null }
-  function montarFolhas(arte, camisetas, rec) {
-    const cfg = arte.folha || {};
-    const larguraMm = Number(cfg.larguraCm) > 0 ? cfg.larguraCm * 10 : 1500;
-    const espacoMm = Number(cfg.espacoMm) >= 0 ? Number(cfg.espacoMm) : 10;
-    const alturaMaxMm = Number(cfg.alturaMaxCm) > 0 ? cfg.alturaMaxCm * 10 : 0;
-    const posMolde = cfg.molde || "frente"; // "frente" | "fundo" | "nenhum"
-    const etiqueta = cfg.etiqueta !== false;
-    const ETIQUETA_MM = 4;
+  // ---------------- Encaixe na folha (MaxRects) ----------------
+  // Cada bloco (uma peça de uma camiseta) procura o espaço livre em que sobra
+  // menos (melhor encaixe pela menor sobra de lado), olhando também a versão
+  // girada 90° quando o fornecedor permite girar. A folha tem largura fixa e a
+  // altura cresce conforme precisa; com altura máxima, abre outra folha.
+
+  function empacotar(blocos, opcoes) {
+    const larguraMm = opcoes.larguraMm;
+    const espaco = Math.max(0, opcoes.espacoMm || 0);
+    const alturaMax = opcoes.alturaMaxMm > 0 ? opcoes.alturaMaxMm : 1e7;
+    const gira90 = opcoes.rotacao === "90";
+
+    // Os maiores primeiro (encaixam melhor); a ordem original desempata,
+    // para as peças de uma mesma camiseta ficarem perto.
+    const ordem = blocos.map((b, i) => ({ b, i }))
+      .sort((a, z) => (z.b.w * z.b.h) - (a.b.w * a.b.h) || a.i - z.i);
+
+    const folhas = [];
+    const novaFolha = () => {
+      const f = {
+        larguraMm,
+        alturaMm: 0,
+        blocos: [],
+        // Retângulos livres (a área útil tem a margem = espaço entre peças).
+        livres: [{ x: espaco, y: espaco, w: larguraMm - espaco, h: alturaMax - espaco }]
+      };
+      folhas.push(f);
+      return f;
+    };
+
+    const tentar = (f, w, h) => {
+      // Cada bloco "ocupa" w+espaço × h+espaço (o espaço fica à direita e embaixo).
+      const W = w + espaco, H = h + espaco;
+      let melhor = null;
+      f.livres.forEach((r) => {
+        if (W <= r.w + 1e-6 && H <= r.h + 1e-6) {
+          // Prioriza o que fica mais em cima (folha mais curta) e depois a menor sobra.
+          const pont = [r.y + H, Math.min(r.w - W, r.h - H)];
+          if (!melhor || pont[0] < melhor.pont[0] - 1e-6 ||
+              (Math.abs(pont[0] - melhor.pont[0]) < 1e-6 && pont[1] < melhor.pont[1])) {
+            melhor = { x: r.x, y: r.y, W, H, pont };
+          }
+        }
+      });
+      return melhor;
+    };
+
+    const ocupar = (f, x, y, W, H) => {
+      const novos = [];
+      f.livres.forEach((r) => {
+        if (x >= r.x + r.w || x + W <= r.x || y >= r.y + r.h || y + H <= r.y) {
+          novos.push(r);
+          return;
+        }
+        if (x > r.x) novos.push({ x: r.x, y: r.y, w: x - r.x, h: r.h });
+        if (x + W < r.x + r.w) novos.push({ x: x + W, y: r.y, w: r.x + r.w - x - W, h: r.h });
+        if (y > r.y) novos.push({ x: r.x, y: r.y, w: r.w, h: y - r.y });
+        if (y + H < r.y + r.h) novos.push({ x: r.x, y: y + H, w: r.w, h: r.y + r.h - y - H });
+      });
+      // Remove os livres contidos em outro.
+      f.livres = novos.filter((a, i) => !novos.some((b, j) => j !== i &&
+        a.x >= b.x - 1e-6 && a.y >= b.y - 1e-6 && a.x + a.w <= b.x + b.w + 1e-6 && a.y + a.h <= b.y + b.h + 1e-6 &&
+        (j < i || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h)));
+    };
 
     const avisos = [];
+    ordem.forEach(({ b }) => {
+      if (b.w + 2 * espaco > larguraMm && (!gira90 || b.h + 2 * espaco > larguraMm)) {
+        avisos.push(`Uma peça (${b.rotulo || ""}, ${b.w.toFixed(0)} mm) é mais larga que a folha (${larguraMm} mm).`);
+      }
+      const opcoesRot = [{ rot: 0, w: b.w, h: b.h }];
+      if (gira90) opcoesRot.push({ rot: 90, w: b.h, h: b.w });
+      let feito = false;
+      for (let fi = 0; fi <= folhas.length && !feito; fi++) {
+        const f = folhas[fi] || novaFolha();
+        let escolha = null;
+        opcoesRot.forEach((o) => {
+          const m = tentar(f, o.w, o.h);
+          if (m && (!escolha || m.pont[0] < escolha.m.pont[0] - 1e-6 ||
+              (Math.abs(m.pont[0] - escolha.m.pont[0]) < 1e-6 && m.pont[1] < escolha.m.pont[1]))) {
+            escolha = { m, o };
+          }
+        });
+        if (!escolha && f.blocos.length === 0) {
+          // Não cabe nem numa folha vazia: vai assim mesmo (com aviso acima).
+          escolha = { m: { x: espaco, y: espaco, W: b.w + espaco, H: b.h + espaco }, o: opcoesRot[0] };
+        }
+        if (escolha) {
+          const { m, o } = escolha;
+          ocupar(f, m.x, m.y, m.W, m.H);
+          f.blocos.push({ bloco: b, x: m.x, y: m.y, w: o.w, h: o.h, rot: o.rot });
+          f.alturaMm = Math.max(f.alturaMm, m.y + m.H);
+          feito = true;
+        }
+      }
+    });
+    folhas.forEach((f) => delete f.livres);
+    return { folhas: folhas.filter((f) => f.blocos.length), avisos };
+  }
+
+  // ---------------- Montagem das peças ----------------
+
+  // Monta os blocos (uma peça de uma camiseta cada) de UM time.
+  //
+  // moldes:    config/moldes ({ tamanhoBase, pecas: { pecaId: { tam: { epsId, bbox } } } })
+  // layout:    config/layout ({ pecas: { pecaId: { elementos: [...] } } })
+  // time:      { producao: { pecas: { pecaId: { larguraPx, alturaPx, dpi } }, brasao: {...}, layoutAjustes } }
+  // camisetas: [{ nome, nomeCamiseta, numero, tamanho }]
+  // rec:       recursos carregados — { fonte, eps: { chave: { bytes, bbox } } }
+  //            (as imagens são referenciadas por "arte:<pecaId>")
+  // opcoes:    { molde: "frente"|"fundo"|"nenhum", etiqueta: bool, pecas: [pecaIds] }
+  //
+  // Devolve { blocos, avisos }. As ops de cada bloco estão em mm, relativas
+  // ao canto de cima do bloco (sem rotação):
+  //   { tipo: "eps", chave, x, y, w, h }
+  //   { tipo: "imagem", chave, x, y, w, h }
+  //   { tipo: "caminho", comandos, cmyk, contorno: { cmyk, mm } | null }
+  function montarBlocos(moldes, layout, time, camisetas, rec, opcoes) {
+    const op = opcoes || {};
+    const posMolde = op.molde || "frente";
+    const avisos = [];
     const avisar = (t) => { if (!avisos.includes(t)) avisos.push(t); };
-    const fonteEtiqueta = Object.values(rec.fontes || {})[0] || null;
+    const prod = (time && time.producao) || {};
+    const ajustes = prod.layoutAjustes || {};
+    const ETIQUETA_MM = 2.4;
+    const pecasIds = op.pecas || Object.keys((layout && layout.pecas) || {});
 
     const blocos = [];
     camisetas.forEach((cam) => {
-      (arte.pecas || []).forEach((peca) => {
-        const molde = peca.moldes && peca.moldes[cam.tamanho];
+      pecasIds.forEach((pecaId) => {
+        const moldesPeca = (moldes.pecas || {})[pecaId] || {};
+        const molde = moldesPeca[cam.tamanho];
+        const arte = (prod.pecas || {})[pecaId];
+        const lay = ((layout && layout.pecas) || {})[pecaId] || {};
+        if (!arte && !(lay.elementos || []).length) return; // peça sem nada deste time
         if (!molde || !molde.bbox) {
-          avisar(`Sem molde da peça "${peca.nome}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
+          avisar(`Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
           return;
         }
         const tam = tamanhoMmDoBbox(molde.bbox);
-        const base = peca.moldes[peca.tamanhoBase];
-        const tamBase = base && base.bbox ? tamanhoMmDoBbox(base.bbox) : tam;
+        const mb = moldesPeca[moldes.tamanhoBase];
+        const tamBase = mb && mb.bbox ? tamanhoMmDoBbox(mb.bbox) : tam;
 
         const ops = [];
-        const opMolde = { tipo: "eps", fileId: molde.epsId, x: 0, y: 0, w: tam.w, h: tam.h };
+        const opMolde = { tipo: "eps", chave: "molde:" + pecaId + ":" + cam.tamanho, x: 0, y: 0, w: tam.w, h: tam.h };
         if (posMolde === "fundo") ops.push(opMolde);
 
-        (peca.elementos || []).forEach((el) => {
-          const caixa = caixaNoTamanho(el, cam.tamanho, tamBase, tam);
-          if (el.tipo === "texto") {
-            const fonte = rec.fontes && rec.fontes[el.fonteId];
-            if (!fonte) { avisar("Um campo de texto está sem fonte carregada."); return; }
-            const valor = textoDoCampo(el, cam);
-            if (!String(valor).trim()) return;
-            const lay = layoutTexto(fonte, valor, caixa, el);
-            if (!lay.comandos.length) return;
-            ops.push({
-              tipo: "caminho",
-              comandos: deslocarComandos(lay.comandos, caixa.x, caixa.y),
-              cmyk: el.corCmyk || [0, 0, 0, 100],
-              contorno: el.contornoMm > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: Number(el.contornoMm) } : null
-            });
-          } else if (el.tipo === "eps") {
-            const e = rec.eps && rec.eps[el.arquivo && el.arquivo.fileId];
-            if (!e) { avisar("Uma parte vetorial (EPS) não foi carregada."); return; }
+        if (arte && arte.larguraPx) {
+          ops.push({ tipo: "imagem", chave: "arte:" + pecaId, ...caixaArte(arte, tamBase, tam) });
+        }
+
+        (lay.elementos || []).forEach((el) => {
+          const caixa = caixaEfetiva(el, cam.tamanho, tamBase, tam, (ajustes[pecaId] || {})[el.id]);
+          if (el.tipo === "brasao") {
+            const e = rec.eps && rec.eps.brasao;
+            if (!e) { avisar("O time não tem brasão (EPS) — a caixa do brasão ficou vazia."); return; }
             const t = tamanhoMmDoBbox(e.bbox);
-            ops.push({ tipo: "eps", fileId: el.arquivo.fileId, ...encaixarProporcional(caixa, t.w, t.h) });
-          } else if (el.tipo === "png") {
-            const img = rec.imagens && rec.imagens[el.arquivo && el.arquivo.fileId];
-            if (!img) { avisar("Uma imagem (PNG) não foi carregada."); return; }
-            ops.push({ tipo: "imagem", fileId: el.arquivo.fileId, ...encaixarProporcional(caixa, img.largura, img.altura) });
+            ops.push({ tipo: "eps", chave: "brasao", ...encaixarProporcional(caixa, t.w, t.h) });
+            return;
           }
+          if (!rec.fonte) { avisar("O time não tem fonte — nome e número ficaram de fora."); return; }
+          const valor = textoDoCampo(el, cam);
+          if (!String(valor).trim()) return;
+          const l = layoutTexto(rec.fonte, valor, caixa, el);
+          if (!l.comandos.length) return;
+          ops.push({
+            tipo: "caminho",
+            comandos: deslocarComandos(l.comandos, caixa.x, caixa.y),
+            cmyk: el.corCmyk || [0, 0, 0, 100],
+            contorno: el.contornoMm > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: Number(el.contornoMm) } : null
+          });
         });
 
         if (posMolde === "frente") ops.push(opMolde);
 
         // Etiqueta pequena embaixo da peça, para a costura separar as peças.
         let h = tam.h;
-        if (etiqueta && fonteEtiqueta) {
-          const texto = [cam.nomeCamiseta || cam.nome, cam.numero, cam.tamanho, peca.nome]
+        if (op.etiqueta !== false && rec.fonteEtiqueta) {
+          const texto = [cam.nomeCamiseta || cam.nome, cam.numero, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId]
             .filter((v) => String(v || "").trim()).join(" · ");
-          const lay = layoutTexto(fonteEtiqueta, texto, { w: tam.w, h: ETIQUETA_MM * 0.6 },
-            { maiusculas: false, alinhamento: "esquerda" });
-          if (lay.comandos.length) {
-            ops.push({ tipo: "caminho", comandos: deslocarComandos(lay.comandos, 0, tam.h + 1), cmyk: [0, 0, 0, 100], contorno: null });
-            h = tam.h + 1 + ETIQUETA_MM * 0.6;
+          const l = layoutTexto(rec.fonteEtiqueta, texto, { w: tam.w, h: ETIQUETA_MM }, { maiusculas: false, alinhamento: "esquerda" });
+          if (l.comandos.length) {
+            ops.push({ tipo: "caminho", comandos: deslocarComandos(l.comandos, 0, tam.h + 1), cmyk: [0, 0, 0, 100], contorno: null });
+            h = tam.h + 1 + ETIQUETA_MM * 1.3;
           }
         }
-        if (tam.w + 2 * espacoMm > larguraMm) {
-          avisar(`A peça "${peca.nome}" (${tam.w.toFixed(0)} mm) é mais larga que a folha (${larguraMm} mm).`);
-        }
-        blocos.push({ w: tam.w, h, ops });
+        blocos.push({ w: tam.w, h, ops, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
       });
     });
-
-    const folhas = empacotar(blocos, larguraMm, espacoMm, alturaMaxMm).map((f) => ({
-      larguraMm: f.larguraMm,
-      alturaMm: f.alturaMm,
-      ops: f.blocos.flatMap(({ bloco, x, y }) =>
-        bloco.ops.map((op) =>
-          op.tipo === "caminho"
-            ? { ...op, comandos: deslocarComandos(op.comandos, x, y) }
-            : { ...op, x: op.x + x, y: op.y + y }
-        )
-      )
-    }));
-    return { folhas, avisos };
+    return { blocos, avisos };
   }
 
   // ---------------- Escrita do PostScript ----------------
 
   const enc = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
-  function bytesDeTexto(s) {
-    if (enc) return enc.encode(s);
-    const b = new Uint8Array(s.length);
-    for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 0xff;
-    return b;
-  }
 
-  // ASCII85 (o "~>" no fim é do próprio formato), com quebra de linha a cada
-  // 75 caracteres — mantém o EPS 100% texto.
-  function ascii85(dados) {
-    const saida = new Uint8Array(Math.ceil(dados.length / 4) * 5 + Math.ceil(dados.length / 60) + 4);
+  // ASCII85 em fluxo sobre uma lista de pedaços (o "~>" no fim é do próprio
+  // formato), com quebra de linha a cada 75 caracteres — mantém o EPS 100%
+  // texto. Devolve uma lista de pedaços (Uint8Array).
+  function ascii85(pedacos) {
+    const lista = pedacos instanceof Uint8Array ? [pedacos] : pedacos;
+    const saidas = [];
+    let buf = new Uint8Array(65536 + 16);
     let o = 0, coluna = 0;
     const put = (ch) => {
-      saida[o++] = ch;
-      if (++coluna === 75) { saida[o++] = 10; coluna = 0; }
+      buf[o++] = ch;
+      if (++coluna === 75) { buf[o++] = 10; coluna = 0; }
+      if (o >= 65536) { saidas.push(buf.slice(0, o)); o = 0; }
     };
-    const n = dados.length;
-    for (let i = 0; i < n; i += 4) {
-      const resto = Math.min(4, n - i);
-      const v = (((dados[i] << 24) >>> 0) + ((resto > 1 ? dados[i + 1] : 0) << 16) +
-        ((resto > 2 ? dados[i + 2] : 0) << 8) + (resto > 3 ? dados[i + 3] : 0)) >>> 0;
-      if (v === 0 && resto === 4) { put(122); continue; } // "z"
-      const d = [0, 0, 0, 0, 0];
+    const grupo = [0, 0, 0, 0];
+    let ng = 0;
+    const d = [0, 0, 0, 0, 0];
+    const emitir = (n) => {
+      const v = (((grupo[0] << 24) >>> 0) + (grupo[1] << 16) + (grupo[2] << 8) + grupo[3]) >>> 0;
+      if (v === 0 && n === 4) { put(122); return; } // "z"
       let t = v;
       for (let j = 4; j >= 0; j--) { d[j] = t % 85; t = Math.floor(t / 85); }
-      for (let j = 0; j < resto + 1; j++) put(d[j] + 33);
+      for (let j = 0; j < n + 1; j++) put(d[j] + 33);
+    };
+    lista.forEach((p) => {
+      for (let i = 0; i < p.length; i++) {
+        grupo[ng++] = p[i];
+        if (ng === 4) { emitir(4); ng = 0; }
+      }
+    });
+    if (ng > 0) {
+      for (let j = ng; j < 4; j++) grupo[j] = 0;
+      emitir(ng);
     }
-    saida[o++] = 126; saida[o++] = 62; saida[o++] = 10; // "~>\n"
-    return saida.subarray(0, o);
+    buf[o++] = 126; buf[o++] = 62; buf[o++] = 10; // "~>\n"
+    saidas.push(buf.slice(0, o));
+    return saidas;
   }
 
   const num = (v) => {
@@ -423,23 +475,42 @@ const EPS = (function () {
     "%%EndProlog"
   ].join("\n");
 
+  // Estimativa do tamanho do arquivo (bytes), para avisar antes de gerar.
+  function estimarTamanho(folha, rec) {
+    let t = 4096;
+    const imgs = new Set();
+    folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((op) => {
+      if (op.tipo === "imagem") imgs.add(op.chave);
+      else if (op.tipo === "eps" && rec.eps[op.chave]) t += rec.eps[op.chave].bytes.length + 300;
+      else if (op.tipo === "caminho") t += op.comandos.length * 40;
+    }));
+    imgs.forEach((k) => {
+      const img = rec.imagens[k];
+      if (!img) return;
+      const soma = (l) => (l || []).reduce((s, p) => s + p.length, 0);
+      t += (soma(img.cmykZ) + soma(img.mascaraZ)) * 1.25;
+    });
+    return t;
+  }
+
   // Escreve uma folha como EPS. Devolve uma lista de pedaços (strings e
   // Uint8Array) — é só passar para `new Blob(pedacos)`.
   //
-  // rec: { eps: { fileId: { bytes, bbox } }, imagens: { fileId: {...} } }
-  // deflate: função (Uint8Array) => Uint8Array no formato zlib (ex. pako.deflate)
-  function escreverEps(folha, rec, deflate, titulo) {
-    const W = folha.larguraMm * PT_POR_MM;
-    const H = folha.alturaMm * PT_POR_MM;
+  // folha: { larguraMm, alturaMm, blocos: [{ bloco: { w, h, ops }, x, y, w, h, rot }] }
+  // rec:   { eps: { chave: { bytes, bbox } },
+  //          imagens: { chave: { largura, altura, cmykZ: [..], mascaraZ: [..] | null } } }
+  function escreverEps(folha, rec, titulo) {
+    const HS = folha.alturaMm * PT_POR_MM;
+    const WS = folha.larguraMm * PT_POR_MM;
     const k = PT_POR_MM;
     const pedacos = [];
-    const escrever = (s) => pedacos.push(s);
+    const escrever = (s) => pedacos.push(enc ? enc.encode(s) : s);
 
     escrever(
       "%!PS-Adobe-3.0 EPSF-3.0\n" +
-      `%%BoundingBox: 0 0 ${Math.ceil(W)} ${Math.ceil(H)}\n` +
-      `%%HiResBoundingBox: 0 0 ${num(W)} ${num(H)}\n` +
-      `%%Title: (${String(titulo || "Folha").replace(/[()\\\r\n]/g, " ")})\n` +
+      `%%BoundingBox: 0 0 ${Math.ceil(WS)} ${Math.ceil(HS)}\n` +
+      `%%HiResBoundingBox: 0 0 ${num(WS)} ${num(HS)}\n` +
+      `%%Title: (${String(titulo || "Folha").replace(/[^\x20-\x7e]/g, "_").replace(/[()\\]/g, " ")})\n` +
       "%%Creator: Interclasse - folha de producao\n" +
       "%%LanguageLevel: 3\n" +
       "%%DocumentProcessColors: Cyan Magenta Yellow Black\n" +
@@ -449,84 +520,104 @@ const EPS = (function () {
     );
 
     // Cada imagem entra UMA vez no arquivo (fluxo reutilizável) e é
-    // desenhada quantas vezes aparecer na folha — senão uma arte repetida em
-    // 30 camisetas deixaria o arquivo 30 vezes maior.
-    const idsImagem = [...new Set(folha.ops.filter((o) => o.tipo === "imagem").map((o) => o.fileId))];
+    // desenhada quantas vezes aparecer na folha — senão a mesma arte em 30
+    // camisetas deixaria o arquivo 30 vezes maior.
+    const chavesImg = [];
+    folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((op) => {
+      if (op.tipo === "imagem" && rec.imagens[op.chave] && !chavesImg.includes(op.chave)) chavesImg.push(op.chave);
+    }));
     const nomeImg = {};
-    idsImagem.forEach((id, i) => {
-      const img = rec.imagens[id];
+    chavesImg.forEach((chave, i) => {
+      const img = rec.imagens[chave];
       const nome = "Img" + i;
-      nomeImg[id] = nome;
+      nomeImg[chave] = nome;
       escrever(`/${nome}D currentfile /ASCII85Decode filter /ReusableStreamDecode filter\n`);
-      pedacos.push(ascii85(deflate(img.cmyk)));
+      ascii85(img.cmykZ).forEach((p) => pedacos.push(p));
       escrever("def\n");
-      if (img.mascara) {
+      if (img.mascaraZ) {
         escrever(`/${nome}M currentfile /ASCII85Decode filter /ReusableStreamDecode filter\n`);
-        pedacos.push(ascii85(deflate(img.mascara)));
+        ascii85(img.mascaraZ).forEach((p) => pedacos.push(p));
         escrever("def\n");
       }
     });
     escrever("%%EndSetup\n");
 
-    folha.ops.forEach((op) => {
-      if (op.tipo === "caminho") {
-        let s = "";
-        let cx = 0, cy = 0;
-        op.comandos.forEach((c) => {
-          const X = (v) => num(v * k);
-          const Y = (v) => num(H - v * k);
-          if (c.type === "M") { s += `${X(c.x)} ${Y(c.y)} m\n`; cx = c.x; cy = c.y; }
-          else if (c.type === "L") { s += `${X(c.x)} ${Y(c.y)} l\n`; cx = c.x; cy = c.y; }
-          else if (c.type === "C") {
-            s += `${X(c.x1)} ${Y(c.y1)} ${X(c.x2)} ${Y(c.y2)} ${X(c.x)} ${Y(c.y)} c\n`;
-            cx = c.x; cy = c.y;
-          } else if (c.type === "Q") {
-            // Quadrática → cúbica (o PostScript só tem a cúbica).
-            const c1x = cx + (2 / 3) * (c.x1 - cx), c1y = cy + (2 / 3) * (c.y1 - cy);
-            const c2x = c.x + (2 / 3) * (c.x1 - c.x), c2y = c.y + (2 / 3) * (c.y1 - c.y);
-            s += `${X(c1x)} ${Y(c1y)} ${X(c2x)} ${Y(c2y)} ${X(c.x)} ${Y(c.y)} c\n`;
-            cx = c.x; cy = c.y;
-          } else if (c.type === "Z") s += "h\n";
-        });
-        if (op.contorno) {
-          // Contorno por fora: traço com o dobro da espessura por baixo do
-          // preenchimento — só a metade de fora fica visível.
-          escrever(`gsave newpath\n${s}${cmykPs(op.contorno.cmyk)} setcmykcolor ` +
-            `${num(op.contorno.mm * 2 * k)} setlinewidth 1 setlinejoin 1 setlinecap stroke grestore\n`);
-        }
-        escrever(`gsave newpath\n${s}${cmykPs(op.cmyk)} setcmykcolor fill grestore\n`);
-      } else if (op.tipo === "imagem") {
-        const img = rec.imagens[op.fileId];
-        const nome = nomeImg[op.fileId];
-        const w = img.largura, h = img.altura;
-        const mat = `[${w} 0 0 ${-h} 0 ${h}]`;
-        let s = `gsave ${num(op.x * k)} ${num(H - (op.y + op.h) * k)} translate ` +
-          `${num(op.w * k)} ${num(op.h * k)} scale /DeviceCMYK setcolorspace\n` +
-          `${nome}D resetfile\n`;
-        const dados = `<< /ImageType 1 /Width ${w} /Height ${h} /BitsPerComponent 8 ` +
-          `/Decode [0 1 0 1 0 1 0 1] /ImageMatrix ${mat} /DataSource ${nome}D /FlateDecode filter >>`;
-        if (img.mascara) {
-          s += `${nome}M resetfile\n<< /ImageType 3 /InterleaveType 3\n/DataDict ${dados}\n` +
-            `/MaskDict << /ImageType 1 /Width ${w} /Height ${h} /BitsPerComponent 1 /Decode [0 1] ` +
-            `/ImageMatrix ${mat} /DataSource ${nome}M /FlateDecode filter >>\n>> image\n`;
-        } else {
-          s += `${dados} image\n`;
-        }
-        escrever(s + "grestore\n");
-      } else if (op.tipo === "eps") {
-        const e = rec.eps[op.fileId];
-        if (!e) return;
-        const bw = e.bbox.x2 - e.bbox.x1, bh = e.bbox.y2 - e.bbox.y1;
-        escrever(
-          `BeginEPSF\n${num(op.x * k)} ${num(H - (op.y + op.h) * k)} translate ` +
-          `${num((op.w * k) / bw)} ${num((op.h * k) / bh)} scale ` +
-          `${num(-e.bbox.x1)} ${num(-e.bbox.y1)} translate\n` +
-          `${num(e.bbox.x1)} ${num(e.bbox.y1)} ${num(bw)} ${num(bh)} rectclip\n` +
-          `%%BeginDocument: ${op.fileId}.eps\n`
-        );
-        pedacos.push(e.bytes);
-        escrever("\n%%EndDocument\nEndEPSF\n");
+    folha.blocos.forEach((pos) => {
+      const b = pos.bloco;
+      const hb = b.h;
+      // Origem local = canto de baixo à esquerda do bloco (sem rotação).
+      let transf;
+      if (pos.rot === 90) {
+        transf = `${num((pos.x + pos.w) * k)} ${num(HS - (pos.y + pos.h) * k)} translate 90 rotate`;
+      } else if (pos.rot === 180) {
+        transf = `${num((pos.x + pos.w) * k)} ${num(HS - pos.y * k)} translate 180 rotate`;
+      } else {
+        transf = `${num(pos.x * k)} ${num(HS - (pos.y + pos.h) * k)} translate`;
       }
+      escrever(`gsave ${transf}\n`);
+      const X = (v) => num(v * k);
+      const Y = (v) => num((hb - v) * k);
+
+      b.ops.forEach((op) => {
+        if (op.tipo === "caminho") {
+          let s = "";
+          let cx = 0, cy = 0;
+          op.comandos.forEach((c) => {
+            if (c.type === "M") { s += `${X(c.x)} ${Y(c.y)} m\n`; cx = c.x; cy = c.y; }
+            else if (c.type === "L") { s += `${X(c.x)} ${Y(c.y)} l\n`; cx = c.x; cy = c.y; }
+            else if (c.type === "C") {
+              s += `${X(c.x1)} ${Y(c.y1)} ${X(c.x2)} ${Y(c.y2)} ${X(c.x)} ${Y(c.y)} c\n`;
+              cx = c.x; cy = c.y;
+            } else if (c.type === "Q") {
+              // Quadrática → cúbica (o PostScript só tem a cúbica).
+              const c1x = cx + (2 / 3) * (c.x1 - cx), c1y = cy + (2 / 3) * (c.y1 - cy);
+              const c2x = c.x + (2 / 3) * (c.x1 - c.x), c2y = c.y + (2 / 3) * (c.y1 - c.y);
+              s += `${X(c1x)} ${Y(c1y)} ${X(c2x)} ${Y(c2y)} ${X(c.x)} ${Y(c.y)} c\n`;
+              cx = c.x; cy = c.y;
+            } else if (c.type === "Z") s += "h\n";
+          });
+          if (op.contorno) {
+            // Contorno por fora: traço com o dobro da espessura por baixo do
+            // preenchimento — só a metade de fora fica visível.
+            escrever(`gsave newpath\n${s}${cmykPs(op.contorno.cmyk)} setcmykcolor ` +
+              `${num(op.contorno.mm * 2 * k)} setlinewidth 1 setlinejoin 1 setlinecap stroke grestore\n`);
+          }
+          escrever(`gsave newpath\n${s}${cmykPs(op.cmyk)} setcmykcolor fill grestore\n`);
+        } else if (op.tipo === "imagem") {
+          const img = rec.imagens[op.chave];
+          if (!img) return;
+          const nome = nomeImg[op.chave];
+          const w = img.largura, h = img.altura;
+          const mat = `[${w} 0 0 ${-h} 0 ${h}]`;
+          let s = `gsave ${X(op.x)} ${Y(op.y + op.h)} translate ` +
+            `${num(op.w * k)} ${num(op.h * k)} scale /DeviceCMYK setcolorspace\n` +
+            `${nome}D resetfile\n`;
+          const dados = `<< /ImageType 1 /Width ${w} /Height ${h} /BitsPerComponent 8 ` +
+            `/Decode [0 1 0 1 0 1 0 1] /ImageMatrix ${mat} /DataSource ${nome}D /FlateDecode filter >>`;
+          if (img.mascaraZ) {
+            s += `${nome}M resetfile\n<< /ImageType 3 /InterleaveType 3\n/DataDict ${dados}\n` +
+              `/MaskDict << /ImageType 1 /Width ${w} /Height ${h} /BitsPerComponent 1 /Decode [0 1] ` +
+              `/ImageMatrix ${mat} /DataSource ${nome}M /FlateDecode filter >>\n>> image\n`;
+          } else {
+            s += `${dados} image\n`;
+          }
+          escrever(s + "grestore\n");
+        } else if (op.tipo === "eps") {
+          const e = rec.eps[op.chave];
+          if (!e) return;
+          const bw = e.bbox.x2 - e.bbox.x1, bh = e.bbox.y2 - e.bbox.y1;
+          escrever(
+            `BeginEPSF\n${X(op.x)} ${Y(op.y + op.h)} translate ` +
+            `${num((op.w * k) / bw)} ${num((op.h * k) / bh)} scale ` +
+            `${num(-e.bbox.x1)} ${num(-e.bbox.y1)} translate\n` +
+            `${num(e.bbox.x1)} ${num(e.bbox.y1)} ${num(bw)} ${num(bh)} rectclip\n` +
+            `%%BeginDocument: ${String(op.chave).replace(/[^\w:.-]/g, "_")}.eps\n`
+          );
+          pedacos.push(e.bytes);
+          escrever("\n%%EndDocument\nEndEPSF\n");
+        }
+      });
+      escrever("grestore\n");
     });
 
     escrever("end\nshowpage\n%%Trailer\n%%EOF\n");
@@ -538,12 +629,14 @@ const EPS = (function () {
     extrairPostScript,
     lerBoundingBox,
     tamanhoMmDoBbox,
-    cmykDeRgba,
     layoutTexto,
     textoDoCampo,
-    caixaNoTamanho,
+    caixaEfetiva,
+    caixaArte,
+    encaixarProporcional,
     empacotar,
-    montarFolhas,
+    montarBlocos,
+    estimarTamanho,
     ascii85,
     escreverEps
   };
