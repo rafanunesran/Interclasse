@@ -1611,7 +1611,9 @@ function calcularFinanceiro() {
   fin.lucroPrevisto = fin.previsto - fin.custos;
   // O que entrou de verdade na conta: o preço menos a taxa do Mercado Pago.
   fin.recebidoLiquido = fin.recebido - fin.taxas;
-  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas;
+  // As internas não têm receita, mas são produzidas: o custo delas sai do
+  // lucro realizado (como já sai do previsto).
+  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas - fin.custoInterno;
   fin.taxaMedia = fin.recebidoOnline > 0 ? (fin.taxas / fin.recebidoOnline) * 100 : 0;
   fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
   fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
@@ -1978,7 +1980,7 @@ function finViewGeral(alvo, f) {
       <div class="fin-card fin-card-click" data-fin-modal="lucro-realizado" role="button" tabindex="0" title="Ver detalhe do lucro realizado">
         <span class="fin-rotulo">Lucro realizado</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.lucroRealizado)}</span>
-        <span class="fin-sub fin-link">Custos realizados + taxas · ver detalhe ›</span>
+        <span class="fin-sub fin-link">Custos realizados + taxas${f.qtdInternas > 0 ? " + internas" : ""} · ver detalhe ›</span>
       </div>
       ${f.qtdInternas > 0 ? `
       <div class="fin-card fin-card-interno">
@@ -2449,8 +2451,8 @@ function finViewResultado(alvo, f) {
     ["Receita já recebida", f.recebido, "linha"],
     ["(-) Custo das camisetas já pagas", -f.custosRecebido, "linha"],
     ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
+    ["(-) Custo das camisetas internas (sem receita)", -f.custoInterno, "linha"],
     ["(=) Lucro realizado", f.lucroRealizado, "total"],
-    ["Custo das camisetas internas (sem receita)", -f.custoInterno, "linha"],
     ["(=) Caixa a receber", f.aReceber, "total"]
   ].map(([rotulo, valor, tipo]) => `
     <tr class="${tipo === "total" ? "fin-linha-total" : ""}">
@@ -2550,7 +2552,7 @@ function abrirModalCusto(titulo, d) {
 function abrirModalLucroRealizado(f) {
   const nota = `${f.qtdPagas} camiseta(s) paga(s). O custo das que ainda não foram pagas fica no custo previsto.`
     + (f.qtdInternas > 0
-      ? ` As ${f.qtdInternas} interna(s) (${formatarReais(f.custoInterno)}) não entram aqui: não têm receita e aparecem à parte no DRE (visão Resultado).`
+      ? ` As ${f.qtdInternas} interna(s) não têm receita, mas são produzidas: o custo delas é descontado.`
       : "");
   abrirModalDetalhe("Lucro realizado — detalhe", [
     ["Receita já recebida", f.recebido, "linha"],
@@ -2558,6 +2560,7 @@ function abrirModalLucroRealizado(f) {
     ["(-) Custo de costureira", -f.custoCostureiraRecebido, "linha"],
     ["(=) Custos realizados", -f.custosRecebido, "subtotal"],
     ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
+    ...(f.qtdInternas > 0 ? [["(-) Custo das camisetas internas", -f.custoInterno, "linha"]] : []),
     ["(=) Lucro realizado", f.lucroRealizado, "total"]
   ], nota);
 }
@@ -2700,8 +2703,8 @@ function exportarResultado(f) {
     ["Custo das camisetas pagas", -f.custosRecebido],
     ["Taxas do Mercado Pago", -f.taxas],
     ["Receita liquida recebida", f.recebidoLiquido],
-    ["Lucro realizado", f.lucroRealizado],
     ["Custo das camisetas internas", -f.custoInterno],
+    ["Lucro realizado", f.lucroRealizado],
     ["Caixa a receber", f.aReceber]
   ].forEach(([r, v]) => linhas.push([r, v.toFixed(2)]));
 
