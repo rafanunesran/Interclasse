@@ -16,6 +16,11 @@ const COL_CLIENTES = "clientes";
 const COL_PRODUCAO = "producao";
 const SUB_ITENS_PRODUCAO = "itens";
 
+// Coleção das artes de produção: um documento por modelo de camiseta, com os
+// moldes de cada peça, as partes da arte (EPS/PNG), as fontes e as posições
+// do nome e do número. É daqui que sai a folha EPS da leva (js/artes.js).
+const COL_ARTES = "artes";
+
 // Tamanhos padrão (usados quando ainda não há nada salvo no Firestore
 // ou para restaurar o padrão no painel administrativo). NÃO alterar em runtime.
 const TAMANHOS_PADRAO = [
@@ -1043,6 +1048,63 @@ async function enviarImagemDrive(scriptUrl, timeId, file, tipo) {
   const maiorResolucao = tipo === "arte" || tipo === "tamanho";
   const dataBase64 = await redimensionarImagemBase64(file, maiorResolucao ? 1600 : 1200);
   return enviarImagemBase64Drive(scriptUrl, timeId, dataBase64, tipo);
+}
+
+// ---------------- Arquivos originais (artes de produção) ----------------
+// Diferente das imagens acima, estes arquivos vão ao Drive EXATAMENTE como
+// foram escolhidos (EPS, PNG em alta, fontes) — nada de reduzir ou converter,
+// porque é deles que sai o arquivo de impressão.
+
+function lerArquivoBase64(file) {
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result).split(",")[1] || "");
+    leitor.onerror = () => reject(new Error("Não foi possível ler o arquivo."));
+    leitor.readAsDataURL(file);
+  });
+}
+
+// Envia o arquivo original ao Drive. Devolve { fileId, url } — a url é a
+// miniatura pública (serve para mostrar PNGs na tela).
+async function enviarArquivoDrive(scriptUrl, file, prefixo) {
+  const dataBase64 = await lerArquivoBase64(file);
+  const resp = await fetch(scriptUrl, {
+    method: "POST",
+    body: JSON.stringify({
+      nome: (prefixo ? prefixo + "-" : "") + file.name,
+      mimeType: file.type || "application/octet-stream",
+      dataBase64
+    })
+  });
+  const dados = await resp.json();
+  if (!dados || !dados.ok) throw new Error((dados && dados.erro) || "Falha ao enviar o arquivo.");
+  return { fileId: dados.fileId, url: dados.url };
+}
+
+// Bytes de um arquivo do Drive (via Apps Script, por causa do CORS). Guarda
+// em memória: a mesma arte é usada em todas as camisetas da leva.
+const cacheArquivosDrive = {};
+function baixarArquivoDrive(scriptUrl, fileId) {
+  if (!cacheArquivosDrive[fileId]) {
+    const sep = scriptUrl.includes("?") ? "&" : "?";
+    cacheArquivosDrive[fileId] = fetch(scriptUrl + sep + "acao=arquivo&id=" + encodeURIComponent(fileId))
+      .then((r) => r.json())
+      .then((dados) => {
+        if (!dados || !dados.ok) {
+          throw new Error((dados && dados.erro) ||
+            "Não foi possível baixar o arquivo. Reimplante o Apps Script (apps-script/README.md).");
+        }
+        const bin = atob(dados.dataBase64 || "");
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      })
+      .catch((e) => {
+        delete cacheArquivosDrive[fileId];
+        throw e;
+      });
+  }
+  return cacheArquivosDrive[fileId];
 }
 
 // ---------------- Ampliar imagem (lightbox) ----------------

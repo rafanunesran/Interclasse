@@ -64,6 +64,13 @@ service cloud.firestore {
       }
     }
 
+    // Artes de produção (aba Artes do Super Admin): moldes, partes da arte,
+    // fontes e posições do nome/número de cada modelo. Controle interno,
+    // como as levas: só a conta administradora lê e grava.
+    match /artes/{arteId} {
+      allow read, write: if ehAdmin();
+    }
+
     // Times (a coleção continua com o nome antigo, "turmas", para não
     // quebrar os dados já cadastrados — ver COL_TIMES em js/utils.js).
     match /turmas/{timeId} {

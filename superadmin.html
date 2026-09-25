@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20260924a" />
+<link rel="stylesheet" href="css/style.css?v=20260925a" />
 </head>
 <body>
 
@@ -43,6 +43,7 @@
         <button type="button" class="aba" data-aba="clientes">Clientes</button>
         <button type="button" class="aba" data-aba="kanban">Kanban</button>
         <button type="button" class="aba" data-aba="producao">Produção</button>
+        <button type="button" class="aba" data-aba="artes">Artes</button>
         <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
         <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
         <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
@@ -137,6 +138,22 @@
         <div id="barraProducao" class="barra-producao oculto"></div>
         <div id="selecaoProducao"></div>
       </div>
+    </section>
+
+    <!-- ABA: ARTES (moldes, partes da arte e posições para a folha EPS) -->
+    <section id="aba-artes" class="secao-aba oculto">
+      <div class="card">
+        <h2>Artes de produção</h2>
+        <p>Cada <strong>modelo</strong> de camiseta (o mesmo nome da aba Produção) ganha a sua arte: os <strong>moldes</strong> de cada peça e tamanho, as partes da arte (<strong>PNG em alta</strong> ou <strong>EPS vetorial</strong>), a <strong>fonte</strong> e a posição do <strong>nome</strong> e do <strong>número</strong>. Com isso, o botão <strong>Folhas EPS</strong> da aba Produção monta a folha de impressão da leva em <strong>CMYK</strong>, já personalizada camiseta por camiseta.</p>
+        <form id="formNovaArte" class="form-linha">
+          <label for="modeloNovaArte">Modelo</label>
+          <input type="text" id="modeloNovaArte" list="sugestoesModeloArte" placeholder="Nome do modelo (igual ao da aba Produção)" required />
+          <datalist id="sugestoesModeloArte"></datalist>
+          <button type="submit" class="primario">Criar arte</button>
+        </form>
+        <div id="listaArtes"></div>
+      </div>
+      <div id="editorArte" class="card oculto"></div>
     </section>
 
     <!-- ABA: FINANCEIRO (relatórios de faturamento) -->
@@ -303,9 +320,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20260924a"></script>
+<script src="js/utils.js?v=20260925a"></script>
 <script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20260924a"></script>
-<script src="js/producao.js?v=20260924a"></script>
+<script src="js/admin.js?v=20260925a"></script>
+<script src="js/producao.js?v=20260925a"></script>
+<script src="js/eps.js?v=20260925a"></script>
+<script src="js/artes.js?v=20260925a"></script>
 </body>
 </html>

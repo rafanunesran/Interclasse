@@ -168,7 +168,7 @@ Cada time tem um **status**, mudado pelo Super Admin no card do pedido (aba **In
 arrastando o card no **Kanban**. A ordem normal é a linha do tempo do pedido:
 
 **Aberto** → **Fechado** → **Pagamento em andamento** → **Pagamento encerrado** →
-**Impressão** → **Costura** → **Logística** → **Entregue ao representante**
+**Impressão** → **Costura** → **Logística** → **Entregue ao representante** → **Finalizado**
 
 - O representante **cadastra e edita** nomes em *Aberto*, *Fechado* e *Pagamento em
   andamento*; a lista trava de vez a partir de *Pagamento encerrado*.
@@ -188,6 +188,15 @@ nomes e sem receber pagamento:
 
 Para destravar, é só devolver o pedido ao status em que ele estava — nada se perde no
 caminho: a lista, os pagamentos e o histórico continuam como estavam.
+
+### Finalizado (arquivo)
+
+**Finalizado** é a última etapa: o pedido acabou e vai para o **arquivo**. Ele sai da lista
+principal da aba **Inicial** (fica na seção recolhível **📦 Arquivados**, no fim da página),
+do **Kanban** (a coluna *Finalizado* só recebe cards — arraste um pedido para lá para
+arquivá-lo — e mostra quantos há) e da **tela inicial** do site. Continua contando no
+**Financeiro**, e o link direto do time segue abrindo, só para consulta. Para tirar um pedido
+do arquivo, é só mudar o status dele.
 
 ## Goleiro (camiseta de cor especial)
 
@@ -375,6 +384,58 @@ linha aparece destacada como *"Já não existe no pedido"*, para você conferir 
 > escolhidas na subcoleção `itens`. É controle interno, então **nem a leitura é pública**: só a
 > conta administradora entra. Depois de atualizar, **republique o `firestore.rules`** no console
 > do Firebase — a versão anterior não conhecia a coleção `producao`.
+
+## Aba Artes (folha EPS CMYK personalizada)
+
+Em vez de montar nome e número camiseta por camiseta no CorelDRAW, o site monta a **folha de
+impressão** da leva em **EPS CMYK**, com cada peça de cada camiseta já personalizada e
+encaixada na largura do rolo/folha.
+
+### Cadastrar a arte de um modelo (aba **Artes**)
+
+1. **Crie a arte** com o **mesmo nome do modelo** usado na aba Produção (o campo sugere os
+   modelos dos times). O goleiro pode ter a sua própria arte ("<modelo> — goleiro"); sem ela,
+   usa a do modelo base (com aviso).
+2. **Fontes**: envie o `.ttf`/`.otf` do nome e do número. No arquivo final as letras saem
+   **em curvas** — a gráfica não precisa ter a fonte.
+3. **Peças**: *Costas* já vem criada; acrescente *Frente*, *Manga*... em **+ Peça**.
+4. **Moldes**: para cada tamanho, envie o **EPS do molde** (é ele que vai para a folha, no
+   tamanho real — lido do `%%BoundingBox`) e um **PNG de prévia** exportado da mesma
+   página/área (só para ver na tela; o navegador não desenha EPS). Marque o **tamanho base**.
+5. **Elementos** (botões acima do molde): **+ Nome/apelido**, **+ Número**, **+ Imagem PNG**
+   (em alta, com transparência) e **+ Vetor EPS** (com um PNG de prévia). Arraste as caixas
+   para posicionar e use a alça azul do canto para mudar o tamanho — ou digite X, Y, largura e
+   altura em mm. No texto dá para escolher o campo, a fonte, a **cor em CMYK**, o **contorno**,
+   o alinhamento e o que fazer com nome comprido (**encolher** ou **comprimir** na largura).
+6. Nos **outros tamanhos**, as posições acompanham a proporção do molde. Escolha o tamanho no
+   seletor acima do molde para conferir; mexer ali cria um **ajuste fino só daquele tamanho**
+   (e "Voltar ao proporcional" desfaz).
+7. **⬇ EPS de teste** baixa a peça aberta, no tamanho mostrado, com o apelido e o número de
+   teste — bom para conferir no Corel antes da primeira leva.
+8. **Folha de impressão**: largura do rolo (cm), espaço entre peças, altura máxima por folha
+   (passou disso, abre outra folha), contorno do molde por cima/por baixo/fora e a etiqueta
+   "nome · nº · tamanho · peça" embaixo de cada peça (para a costura separar).
+
+### Gerar a folha (aba **Produção**)
+
+Em cada leva, **Folhas EPS (CMYK)** gera a folha de todos os modelos (um `.zip` quando sai
+mais de um arquivo), e **Folha EPS**, no bloco de cada modelo, gera só a daquele modelo. Os
+nomes, apelidos, números e tamanhos são os **atuais** do cadastro. Antes de baixar, o site avisa
+o que ficou de fora (modelo sem arte, tamanho sem molde...).
+
+### Como o arquivo é feito
+
+- Os **EPS enviados entram intactos** (vetores e cores CMYK preservados), embutidos no arquivo.
+- Os **PNG** são convertidos para **CMYK** com a fórmula simples (K = 1 − máx(R,G,B)); a
+  transparência vira máscara (pixel com menos de 50% de opacidade não imprime). Tons muito
+  saturados podem ficar um pouco diferentes de uma conversão com perfil ICC.
+- Cada PNG entra **uma vez** no arquivo, mesmo aparecendo em várias camisetas; já os EPS se
+  repetem a cada peça (um EPS pesado × muitas camisetas = arquivo grande).
+- PostScript nível 3 (a máscara do PNG usa ImageType 3).
+
+Os arquivos ficam no seu **Google Drive**, pelo mesmo Apps Script das imagens — **reimplante o
+script** com o `Codigo.gs` atual (ele ganhou o download dos arquivos, ver
+[`apps-script/README.md`](apps-script/README.md)). O Apps Script aceita até ~50 MB por arquivo.
 
 ## Tamanhos disponíveis
 

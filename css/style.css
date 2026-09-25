@@ -1658,3 +1658,111 @@ tr.linha-marcada > td { background: #eff6ff; }
   gap: 6px;
   font-size: 0.8rem;
 }
+
+/* ---- Aba Artes (moldes, posições e folha EPS) ---- */
+
+.form-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.form-linha label { margin: 0; }
+.form-linha input { flex: 1 1 240px; width: auto; margin: 0; }
+
+.arte-linha {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-top: 1px solid var(--cinza-borda);
+}
+.arte-linha.ativa { background: #eff6ff; }
+.arte-linha button { margin-left: 6px; }
+
+.arte-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.arte-topo h2 { margin: 0; }
+.arte-topo .arte-modelo { flex: 1 1 220px; width: auto; margin: 0; font-weight: 700; }
+
+.arte-bloco {
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  background: var(--cinza-bg);
+}
+.arte-bloco > summary { cursor: pointer; font-weight: 700; }
+.arte-item-linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+
+.arte-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+.arte-grade.arte-grade-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.arte-grade label { font-size: 0.8rem; margin: 0; }
+.arte-grade input, .arte-grade select { margin-top: 2px; }
+
+.arte-moldes td, .arte-moldes th { padding: 4px 6px; font-size: 0.85rem; }
+.arte-moldes-acoes button { padding: 4px 8px; font-size: 0.8rem; margin: 1px; }
+
+.arte-abas-pecas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; align-items: center; }
+
+.arte-area { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; align-items: flex-start; }
+.arte-palco-col { flex: 1 1 360px; min-width: 0; }
+.arte-painel { flex: 0 1 320px; min-width: 260px; }
+.arte-barra-palco { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+.arte-barra-palco label { font-size: 0.8rem; margin: 0; }
+.arte-barra-palco input, .arte-barra-palco select { width: auto; margin: 2px 0 0; }
+.arte-botoes-add { display: flex; flex-wrap: wrap; gap: 4px; }
+.arte-botoes-add button { padding: 6px 10px; font-size: 0.8rem; }
+
+.arte-palco-wrap { overflow: auto; max-width: 100%; }
+.arte-palco {
+  position: relative;
+  background: #fff;
+  outline: 1px dashed #94a3b8;
+  touch-action: none;
+  user-select: none;
+}
+.arte-palco-molde { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.arte-palco-vazio { padding: 16px; color: #6b7280; font-size: 0.85rem; }
+
+.arte-el {
+  position: absolute;
+  outline: 1px dashed rgba(29, 78, 216, 0.6);
+  cursor: move;
+  touch-action: none;
+}
+.arte-el.selecionado { outline: 2px solid var(--azul); z-index: 2; }
+.arte-el img { width: 100%; height: 100%; object-fit: fill; pointer-events: none; display: block; }
+.arte-el-svg { position: absolute; left: 0; top: 0; pointer-events: none; }
+.arte-el-rotulo {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  width: 100%; height: 100%; font-size: 0.7rem; color: var(--azul);
+  background: rgba(219, 234, 254, 0.5); pointer-events: none;
+}
+.arte-el-alca {
+  position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px;
+  background: var(--azul); border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize;
+}
+
+.arte-lista-el { padding-left: 18px; margin: 4px 0; font-size: 0.85rem; }
+.arte-lista-el li { cursor: pointer; padding: 2px 0; }
+.arte-lista-el li.ativo { font-weight: 700; color: var(--azul); }
+.arte-cmyk { display: flex; gap: 6px; align-items: flex-end; }
+.arte-cmyk label { font-size: 0.75rem; margin: 0; }
+.arte-cmyk input { width: 58px; margin: 2px 0 0; }
+.arte-amostra-cor { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--cinza-borda); }
+.arte-rotulo-cor { font-size: 0.8rem; margin: 10px 0 2px; font-weight: 600; }
+.arte-botoes-el { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.arte-botoes-el button { padding: 6px 10px; }
+
+.progresso-eps {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 8px;
+  z-index: 1000; font-size: 0.9rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  max-width: calc(100% - 32px);
+}
+
+@media (max-width: 600px) {
+  .arte-painel { flex-basis: 100%; }
+}

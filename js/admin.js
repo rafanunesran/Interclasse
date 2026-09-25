@@ -67,6 +67,8 @@ auth.onAuthStateChanged((user) => {
         carregarPainelConfig();
         // Aba Produção (js/producao.js) — carregada depois deste arquivo.
         if (typeof escutarLevas === "function") escutarLevas();
+        // Aba Artes (js/artes.js).
+        if (typeof escutarArtes === "function") escutarArtes();
       }, 0);
     }
   } else {
@@ -1002,6 +1004,8 @@ function renderizarTimesAdmin() {
   renderizarClientesAdmin();
   // A aba Produção escolhe camisetas a partir desta mesma lista.
   if (typeof renderizarProducao === "function") renderizarProducao();
+  // A aba Artes sugere os modelos dos times que ainda não têm arte.
+  if (typeof renderizarListaArtes === "function") renderizarListaArtes();
 }
 
 // Linha do representante no card do pedido: nome e número clicáveis, cada um

@@ -39,3 +39,13 @@ pasta chamada **"Interclasse Camisetas"** no seu Drive.
   plano pago do Firebase.
 - Se um dia trocar o Apps Script, atualize a URL nas Configurações. Imagens já enviadas continuam
   funcionando (a URL aponta direto para o arquivo no Drive).
+
+## Artes de produção (aba Artes)
+
+O mesmo script guarda os arquivos das **artes de produção** (moldes EPS, PNG em alta, vetores
+EPS e fontes), **sem reduzir nada**, e os devolve ao site na hora de montar a folha EPS
+(`doGet?acao=arquivo&id=...`). Ele só entrega arquivos da pasta **"Interclasse Camisetas"**.
+
+Se o seu script foi publicado antes dessa função, **atualize-o**: cole o `Codigo.gs` novo, e em
+**Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão → Implantar**. Assim
+a URL continua a mesma e não precisa mudar nada nas Configurações.

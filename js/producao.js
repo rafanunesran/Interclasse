@@ -314,6 +314,21 @@ function renderizarListaLevas() {
     btnCsvs.onclick = () => baixarCsvsDaLeva(leva, grupos);
     botoes.appendChild(btnCsvs);
 
+    // Folha montada em EPS CMYK, com o nome e o número de cada camiseta
+    // (arte de cada modelo na aba Artes — js/artes.js).
+    if (typeof baixarFolhasEps === "function") {
+      const btnEps = document.createElement("button");
+      btnEps.className = "primario";
+      btnEps.textContent = `Folhas EPS (CMYK)`;
+      btnEps.title = "Folha de impressão de cada modelo, já personalizada, montada com as artes da aba Artes";
+      btnEps.disabled = itens.length === 0;
+      btnEps.onclick = () => baixarFolhasEps(
+        grupos.map((g) => ({ modelo: g.modelo, camisetas: g.linhas.map((l) => l.atual) })),
+        leva.nome || "leva"
+      );
+      botoes.appendChild(btnEps);
+    }
+
     const btnConf = document.createElement("button");
     btnConf.className = "secundario";
     btnConf.textContent = "CSV de conferência";
@@ -368,6 +383,18 @@ function criarBlocoModelo(leva, grupo) {
     baixarCSVProducaoItens(nomeArquivoModelo(leva, grupo.modelo), grupo.linhas.map((l) => l.atual));
   };
   cabecalho.appendChild(btn);
+
+  if (typeof baixarFolhasEps === "function") {
+    const btnEps = document.createElement("button");
+    btnEps.className = "secundario";
+    btnEps.textContent = "Folha EPS";
+    btnEps.title = "Folha de impressão deste modelo em EPS CMYK, com nome e número de cada camiseta";
+    btnEps.onclick = () => baixarFolhasEps(
+      [{ modelo: grupo.modelo, camisetas: grupo.linhas.map((l) => l.atual) }],
+      leva.nome || "leva"
+    );
+    cabecalho.appendChild(btnEps);
+  }
   bloco.appendChild(cabecalho);
 
   const tabela = document.createElement("table");
