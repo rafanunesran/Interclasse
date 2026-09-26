@@ -45,7 +45,9 @@ async function chamarBackup(acao, extra) {
   if (!dados || !dados.ok) {
     const erro = (dados && dados.erro) || "Falha no backup.";
     throw new Error(/Sem imagem/.test(erro)
-      ? "O Apps Script publicado ainda não tem o backup. Atualize-o com o Codigo.gs e o appsscript.json novos (apps-script/README.md)."
+      ? "Quem respondeu foi o código ANTIGO do Apps Script. Confira: (1) no projeto só pode existir UM arquivo .gs — se houver \"Código.gs\" e \"Codigo.gs\", apague o antigo; " +
+        "(2) Implantar → Gerenciar implantações → lápis → Versão: Nova versão → Implantar; " +
+        "(3) a URL em Configurações é a mesma da implantação. Abrindo essa URL no navegador deve aparecer \"versao\": \"2026-09-26-backup\"."
       : erro);
   }
   return dados;

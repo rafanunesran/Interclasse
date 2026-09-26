@@ -12,6 +12,10 @@
  * Como publicar: veja apps-script/README.md.
  */
 
+// Versão deste código. Abrindo a URL do app da Web (/exec) no navegador, ela
+// aparece na resposta — é o jeito de conferir se a implantação está atualizada.
+var VERSAO_SCRIPT = "2026-09-26-backup";
+
 // Nome da pasta no seu Drive onde as imagens ficam (criada automaticamente).
 var NOME_PASTA = "Interclasse Camisetas";
 
@@ -44,7 +48,8 @@ function doPost(e) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.acao !== "arquivo") {
-    return json_({ ok: true, msg: "Interclasse - uploader de imagem ativo." });
+    // "versao" mostra qual código está publicado (abra a URL /exec no navegador).
+    return json_({ ok: true, msg: "Interclasse - uploader de imagem ativo.", versao: VERSAO_SCRIPT, backup: true });
   }
   try {
     var arquivo = DriveApp.getFileById(p.id);
