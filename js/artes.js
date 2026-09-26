@@ -129,6 +129,7 @@ function escutarLayout() {
       if (salvarLayoutTimer) return;
       const d = doc.exists ? doc.data() : {};
       layoutConfig = { pecas: d.pecas || {}, folha: d.folha || {} };
+      ultimoLayoutSalvo = JSON.stringify(layoutConfig);
       renderizarEditorLayout();
       if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
     },
@@ -142,7 +143,58 @@ function elementosDaPeca(pecaId) {
   return p.elementos;
 }
 
+// ---------------- Desfazer / refazer ----------------
+// Cada mudança do editor guarda o "antes" e o "depois": do layout geral
+// (config/layout) ou da produção do time (ajustes próprios).
+const historicoEditor = { desfazer: [], refazer: [] };
+let ultimoLayoutSalvo = "";   // layout geral como estava na última gravação
+let aplicandoHistorico = false;
+
+function registrarHistorico(entrada) {
+  if (aplicandoHistorico || entrada.antes === entrada.depois) return;
+  historicoEditor.desfazer.push(entrada);
+  if (historicoEditor.desfazer.length > 100) historicoEditor.desfazer.shift();
+  historicoEditor.refazer = [];
+  atualizarBotoesHistorico();
+}
+
+function atualizarBotoesHistorico() {
+  const b1 = document.querySelector('[data-historico="desfazer"]');
+  const b2 = document.querySelector('[data-historico="refazer"]');
+  if (b1) b1.disabled = !historicoEditor.desfazer.length;
+  if (b2) b2.disabled = !historicoEditor.refazer.length;
+}
+
+async function aplicarHistorico(de, para, lado) {
+  const e = historicoEditor[de].pop();
+  if (!e) return;
+  historicoEditor[para].push(e);
+  const valor = e[lado];
+  aplicandoHistorico = true;
+  try {
+    if (e.tipo === "geral") {
+      layoutConfig = JSON.parse(valor);
+      ultimoLayoutSalvo = valor;
+      salvarLayout(true);
+    } else if (estadoTimes[e.timeId]) {
+      await gravarProducaoTime(e.timeId, JSON.parse(valor));
+    }
+  } finally {
+    aplicandoHistorico = false;
+  }
+  estadoSalvarLayout(de === "desfazer" ? "↶ Desfeito" : "↷ Refeito");
+  renderizarPalcoLayout();
+  renderizarPainelLayout();
+  atualizarBotoesHistorico();
+}
+
+const desfazerEditor = () => aplicarHistorico("desfazer", "refazer", "antes");
+const refazerEditor = () => aplicarHistorico("refazer", "desfazer", "depois");
+
 function salvarLayout(imediato) {
+  const agora = JSON.stringify(layoutConfig);
+  if (ultimoLayoutSalvo) registrarHistorico({ tipo: "geral", antes: ultimoLayoutSalvo, depois: agora });
+  ultimoLayoutSalvo = agora;
   estadoSalvarLayout("Salvando…");
   clearTimeout(salvarLayoutTimer);
   const gravar = async () => {
@@ -777,20 +829,16 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
       const url = imagemDaCaixa(el, prod, pecaId);
       if (url) {
         partes.push(`<image href="${escAttr(urlPreviaGrande(url))}" x="${n(c.x)}" y="${n(c.y)}" ` +
-          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${EPS.imagemLivre(el) ? "none" : "xMidYMid meet"}" />`);
+          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${EPS.imagemLivre(el) ? "none" : "xMidYMid meet"}"${transformSvgDoElemento(el, c)} />`);
       } else if (comMolde) {
         partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
       }
       return;
     }
     if (fonte) {
-      const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostra), { w: c.w, h: c.h }, el);
+      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostra), { w: c.w, h: c.h }, el);
       if (!l.comandos.length) return;
-      const contorno = el.contornoMm > 0
-        ? ` stroke="${cmykParaCss(el.contornoCmyk)}" stroke-width="${n(el.contornoMm * 2)}" stroke-linejoin="round" paint-order="stroke"`
-        : "";
-      partes.push(`<path transform="translate(${n(c.x)} ${n(c.y)})" d="${caminhoSvg(l.comandos, 1)}" ` +
-        `fill="${cmykParaCss(el.corCmyk)}"${contorno} />`);
+      partes.push(`<g transform="translate(${n(c.x)} ${n(c.y)})">${svgDoTexto(l.comandos, el, 1)}</g>`);
     } else if (comMolde) {
       // Sem a fonte (ainda carregando ou não enviada): a caixa-limite tracejada.
       partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
@@ -1415,6 +1463,10 @@ function renderizarEditorLayout() {
         <label class="campo-inline">Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
         <label class="campo-inline">Nº <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" class="input-curto" /></label>
         <span class="estudio-espaco"></span>
+        <span class="estudio-historico">
+          <button type="button" data-historico="desfazer" title="Desfazer (Ctrl+Z)" aria-label="Desfazer">${icone("undo-2")}</button>
+          <button type="button" data-historico="refazer" title="Refazer (Ctrl+Y)" aria-label="Refazer">${icone("redo-2")}</button>
+        </span>
         <span id="layoutEstadoSalvar" class="estudio-salvo" aria-live="polite"></span>
         <button type="button" class="botao-acento" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">${icone("download")} EPS de teste</button>
       </header>
@@ -1431,7 +1483,7 @@ function renderizarEditorLayout() {
             ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}
           </div>`}
           <p class="estudio-peca-rotulo">${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}${tam ? ` · ${escapeHtmlAdmin(tam)}${tam === moldesConfig.tamanhoBase ? " (base)" : ""}` : ""}</p>
-          <div class="arte-palco-wrap estudio-palco-fundo"><div id="layoutPalco" class="arte-palco"></div></div>
+          <div class="arte-palco-wrap estudio-palco-fundo"><div class="palco-reguas"><svg class="regua regua-h" aria-hidden="true"></svg><svg class="regua regua-v" aria-hidden="true"></svg><div id="layoutPalco" class="arte-palco"></div></div></div>
           <div class="estudio-rodape">
             <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_PRODUCAO.map((p) =>
               `<button type="button" role="tab" aria-selected="${p.id === layoutPeca}" class="estudio-peca${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}${qtdNaPeca(p.id) ? ` <span class="estudio-peca-qtd">${qtdNaPeca(p.id)}</span>` : ""}</button>`).join("")}</nav>
@@ -1450,6 +1502,11 @@ function renderizarEditorLayout() {
       <p class="estudio-dica">Arraste para mover · alça do canto para redimensionar · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Esc</kbd> solta a seleção</p>
     </div>`;
 
+  elEditorLayout.querySelector('[data-historico="desfazer"]').onclick = desfazerEditor;
+  elEditorLayout.querySelector('[data-historico="refazer"]').onclick = refazerEditor;
+  atualizarBotoesHistorico();
+  if (contaGotasAlvo) elEditorLayout.querySelector(".estudio-palco-fundo").classList.add("modo-conta-gotas");
+
   // Zoom do palco (100% = a peça inteira cabendo na tela).
   elEditorLayout.querySelectorAll("[data-zoom]").forEach((b) => {
     b.onclick = () => {
@@ -1461,7 +1518,26 @@ function renderizarEditorLayout() {
   });
   // Clique no fundo do palco solta a seleção.
   const palcoFundo = elEditorLayout.querySelector(".estudio-palco-fundo");
-  palcoFundo.addEventListener("pointerdown", (ev) => {
+  palcoFundo.addEventListener("pointerdown", async (ev) => {
+    if (contaGotasAlvo) {
+      ev.preventDefault();
+      const palco = document.getElementById("layoutPalco");
+      const m = medidasLayout();
+      if (!palco || !m) return;
+      const r = palco.getBoundingClientRect();
+      const chave = contaGotasAlvo;
+      estadoSalvarLayout("Lendo a cor…");
+      try {
+        const hex = await corNoPontoDaPeca((ev.clientX - r.left) / m.s, (ev.clientY - r.top) / m.s);
+        sairContaGotas();
+        gravarEstiloElemento(layoutElSel, chave, hexParaCmyk(hex));
+        estadoSalvarLayout(`Cor ${hex.toUpperCase()} aplicada`);
+      } catch (e) {
+        console.warn(e);
+        estadoSalvarLayout(e.message || "Não foi possível ler a cor");
+      }
+      return;
+    }
     if (ev.target.closest(".arte-el") || !layoutElSel) return;
     layoutElSel = "";
     renderizarPalcoLayout();
@@ -1558,6 +1634,33 @@ function cmykParaHex(v) {
   return "#" + h(C) + h(M) + h(Y);
 }
 
+// Giro/espelho de uma imagem (brasão, logo, detalhe) no SVG, em volta do
+// centro da caixa c (mm) — o mesmo que a folha EPS faz.
+function transformSvgDoElemento(el, c, s) {
+  const k = s || 1;
+  const rot = Number(el.rotacao) || 0;
+  if (!rot && !el.espelharH && !el.espelharV) return "";
+  const cx = (c.x + c.w / 2) * k, cy = (c.y + c.h / 2) * k;
+  return ` transform="translate(${cx.toFixed(2)} ${cy.toFixed(2)}) rotate(${rot}) scale(${el.espelharH ? -1 : 1} ${el.espelharV ? -1 : 1}) translate(${(-cx).toFixed(2)} ${(-cy).toFixed(2)})"`;
+}
+
+// O texto (comandos já prontos) em SVG: sombra, segundo contorno, contorno e
+// preenchimento, na mesma ordem da folha EPS. `s` = px por mm.
+function svgDoTexto(comandos, el, s) {
+  const d = caminhoSvg(comandos, s);
+  const c1 = Number(el.contornoMm) || 0, c2 = Number(el.contorno2Mm) || 0;
+  let out = "";
+  const sombra = EPS.sombraDoElemento(el);
+  if (sombra) {
+    const cor = cmykParaCss(sombra.cmyk);
+    out += `<path transform="translate(${(sombra.dx * s).toFixed(2)} ${(sombra.dy * s).toFixed(2)})" d="${d}" fill="${cor}"` +
+      (c1 + c2 > 0 ? ` stroke="${cor}" stroke-width="${((c1 + c2) * 2 * s).toFixed(2)}" stroke-linejoin="round"` : "") + " />";
+  }
+  if (c2 > 0) out += `<path d="${d}" fill="none" stroke="${cmykParaCss(el.contorno2Cmyk || [0, 0, 0, 100])}" stroke-width="${((c1 + c2) * 2 * s).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round" />`;
+  if (c1 > 0) out += `<path d="${d}" fill="none" stroke="${cmykParaCss(el.contornoCmyk)}" stroke-width="${(c1 * 2 * s).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round" />`;
+  return out + `<path d="${d}" fill="${cmykParaCss(el.corCmyk)}" />`;
+}
+
 function caminhoSvg(comandos, s) {
   const f = (v) => (v * s).toFixed(2);
   return comandos.map((c) => {
@@ -1598,6 +1701,7 @@ function renderizarPalcoLayout() {
   const { dim, base, s } = m;
   palco.style.width = dim.w * s + "px";
   palco.style.height = dim.h * s + "px";
+  desenharReguas(palco, dim, s);
   const time = timeDaPrevia();
   const prod = producaoDoTime(time);
 
@@ -1648,19 +1752,29 @@ function renderizarPalcoLayout() {
         ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${EPS.imagemLivre(el) ? "fill" : "contain"}" />`
         : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
     } else if (fonte) {
-      const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el);
-      const contorno = el.contornoMm > 0
-        ? ` stroke="${cmykParaCss(el.contornoCmyk)}" stroke-width="${(el.contornoMm * 2 * s).toFixed(2)}" stroke-linejoin="round" paint-order="stroke"`
-        : "";
+      // Sem o giro: quem gira é a caixa inteira (a div), com a seleção junto.
+      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el, { semGiro: true });
       div.innerHTML = `<svg class="arte-el-svg" width="${c.w * s}" height="${c.h * s}" overflow="visible">` +
-        `<path d="${caminhoSvg(l.comandos, s)}" fill="${cmykParaCss(el.corCmyk)}"${contorno}/></svg>`;
+        `${svgDoTexto(l.comandos, el, s)}</svg>`;
     } else {
       div.innerHTML = `<span class="arte-el-rotulo">${escapeHtmlAdmin(rotuloElementoLayout(el))}${time ? "" : "<br>(escolha um time para ver a fonte)"}</span>`;
     }
+    // Giro e espelho: a caixa inteira gira (texto, imagem e seleção).
+    const rot = Number(el.rotacao) || 0;
+    if (rot || el.espelharH || el.espelharV) {
+      div.style.transform = `rotate(${rot}deg)`;
+      const alvoEsp = div.querySelector("svg, img");
+      if (alvoEsp && (el.espelharH || el.espelharV)) alvoEsp.style.transform = `scale(${el.espelharH ? -1 : 1}, ${el.espelharV ? -1 : 1})`;
+    }
+    if (el.travado) div.classList.add("travado");
     const alca = document.createElement("span");
     alca.className = "arte-el-alca";
     div.appendChild(alca);
-    ligarArrasteLayout(div, alca, elGeral);
+    const alcaGiro = document.createElement("span");
+    alcaGiro.className = "arte-el-giro";
+    alcaGiro.title = "Girar (Shift: de 15 em 15°)";
+    div.appendChild(alcaGiro);
+    ligarArrasteLayout(div, alca, elGeral, alcaGiro);
     palco.appendChild(div);
   });
 }
@@ -1701,35 +1815,175 @@ function empurrarSelecionado(dx, dy) {
   }, 450);
 }
 
+// ---------------- Operações de elemento (atalhos e botões) ----------------
+let elementoCopiado = null; // Ctrl+C (só no layout geral)
+
+function elementoSelecionado() {
+  return elementosDaPeca(layoutPeca).find((e) => e.id === layoutElSel) || null;
+}
+
+function duplicarElementoLayout(el, deslocar) {
+  const copia = limparParaFirestore(el);
+  copia.id = novoIdLayout("e");
+  const d = deslocar == null ? 10 : deslocar;
+  copia.caixa = { ...copia.caixa, x: arred1(copia.caixa.x + d), y: arred1(copia.caixa.y + d) };
+  delete copia.ajustes;
+  delete copia.travado;
+  elementosDaPeca(layoutPeca).push(copia);
+  layoutElSel = copia.id;
+  salvarLayout(true);
+  renderizarEditorLayout();
+}
+
+function excluirElementoLayout(el) {
+  const els = elementosDaPeca(layoutPeca);
+  const i = els.indexOf(el);
+  if (i < 0) return;
+  els.splice(i, 1);
+  layoutElSel = "";
+  salvarLayout(true);
+  estadoSalvarLayout("Excluído — Ctrl+Z desfaz");
+  renderizarEditorLayout();
+}
+
+// Ordem das camadas: o fim da lista fica por cima. `para`: "frente",
+// "tras", "topo" ou "fundo".
+function moverCamadaLayout(el, para) {
+  const els = elementosDaPeca(layoutPeca);
+  const i = els.indexOf(el);
+  if (i < 0) return;
+  els.splice(i, 1);
+  const j = para === "topo" ? els.length : para === "fundo" ? 0
+    : para === "frente" ? Math.min(els.length, i + 1) : Math.max(0, i - 1);
+  els.splice(j, 0, el);
+  salvarLayout(true);
+  renderizarPalcoLayout();
+  renderizarPainelLayout();
+}
+
 document.addEventListener("keydown", (ev) => {
-  if (!editorLayoutVisivel() || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if (!editorLayoutVisivel() || ev.altKey) return;
   const alvo = ev.target;
   if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "SELECT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
   if (document.querySelector(".modal-pix:not(.oculto), .lightbox:not(.oculto)")) return;
-  if (ev.key === "Escape" && layoutElSel) {
-    layoutElSel = "";
-    renderizarPalcoLayout();
-    renderizarPainelLayout();
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  const tecla = ev.key.toLowerCase();
+  const el = elementoSelecionado();
+
+  if (ctrl && tecla === "z") { ev.preventDefault(); (ev.shiftKey ? refazerEditor : desfazerEditor)(); return; }
+  if (ctrl && tecla === "y") { ev.preventDefault(); refazerEditor(); return; }
+  if (ctrl && tecla === "c" && el && !layoutModo) {
+    elementoCopiado = limparParaFirestore(el);
+    estadoSalvarLayout("Copiado — Ctrl+V cola");
+    return;
+  }
+  if (ctrl && tecla === "v" && elementoCopiado && !layoutModo) { ev.preventDefault(); duplicarElementoLayout(elementoCopiado); return; }
+  if (ctrl && tecla === "d" && el && !layoutModo) { ev.preventDefault(); duplicarElementoLayout(el); return; }
+  if (ctrl) return;
+
+  if (ev.key === "Escape") {
+    if (contaGotasAlvo) { sairContaGotas(); return; }
+    if (layoutElSel) { layoutElSel = ""; renderizarPalcoLayout(); renderizarPainelLayout(); }
+    return;
+  }
+  if ((ev.key === "Delete" || ev.key === "Backspace") && el) {
+    ev.preventDefault();
+    if (layoutModo) {
+      // No time não se apaga do layout geral: oculta só neste time.
+      gravarAjusteTime(el.id, (a) => { a.oculto = true; }).then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+      estadoSalvarLayout("Oculto neste time — Ctrl+Z desfaz");
+    } else {
+      excluirElementoLayout(el);
+    }
     return;
   }
   const passos = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  if (!passos[ev.key] || !layoutElSel) return;
+  if (!passos[ev.key] || !el) return;
   ev.preventDefault();
+  if (elementoNoEditor(el).travado) { estadoSalvarLayout("Elemento travado"); return; }
   const k = ev.shiftKey ? 10 : 1;
   empurrarSelecionado(passos[ev.key][0] * k, passos[ev.key][1] * k);
 });
 
+// ---------------- Conta-gotas: pega a cor de um ponto da arte ----------------
+// Clique no conta-gotas e depois num ponto do desenho: a cor daquele ponto
+// (arte, brasão, logo ou texto, como aparece na prévia) vai para o campo.
+let contaGotasAlvo = ""; // estilo que vai receber a cor ("corCmyk", ...)
+
+function entrarContaGotas(chave) {
+  contaGotasAlvo = chave;
+  const fundo = elEditorLayout && elEditorLayout.querySelector(".estudio-palco-fundo");
+  if (fundo) fundo.classList.add("modo-conta-gotas");
+  document.querySelectorAll("[data-conta-gotas]").forEach((b) => b.classList.toggle("ativo", b.dataset.contaGotas === chave));
+  estadoSalvarLayout("Conta-gotas: clique num ponto da arte (Esc cancela)");
+}
+
+function sairContaGotas() {
+  contaGotasAlvo = "";
+  const fundo = elEditorLayout && elEditorLayout.querySelector(".estudio-palco-fundo");
+  if (fundo) fundo.classList.remove("modo-conta-gotas");
+  document.querySelectorAll("[data-conta-gotas]").forEach((b) => b.classList.remove("ativo"));
+  estadoSalvarLayout("");
+}
+
+// Cor (hex) num ponto da peça, em mm — desenha a peça como na prévia (arte,
+// brasão, logo, textos) num canvas e lê o pixel.
+async function corNoPontoDaPeca(xMm, yMm) {
+  const m = medidasLayout();
+  const time = timeDaPrevia();
+  const p = time && pecaEmSvg(time, layoutModo || layoutTimePrevia, layoutPeca, m.tam, amostraLayout, false, true);
+  if (!p) throw new Error("Escolha um time com arte (\"Prévia com a arte de\") para pegar a cor da arte.");
+  const canvas = await pecaEmCanvas(p, 1200);
+  const k = canvas.width / p.w;
+  const px = Math.min(canvas.width - 1, Math.max(0, Math.round(xMm * k)));
+  const py = Math.min(canvas.height - 1, Math.max(0, Math.round(yMm * k)));
+  const d = canvas.getContext("2d").getImageData(px, py, 1, 1).data;
+  if (d[3] < 10) throw new Error("Nesse ponto não há arte (é o fundo). Clique em cima do desenho.");
+  return "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+// Réguas em mm em cima e à esquerda do palco (traço a cada 10 mm, número a cada 50).
+function desenharReguas(palco, dim, s) {
+  const caixa = palco.parentElement;
+  const rh = caixa && caixa.querySelector(".regua-h");
+  const rv = caixa && caixa.querySelector(".regua-v");
+  if (!rh || !rv) return;
+  const passo = s * 10 < 6 ? 50 : 10;
+  const marcas = (total, vertical) => {
+    let out = "";
+    for (let v = 0; v <= total + 0.01; v += passo) {
+      const p = (v * s).toFixed(1), grande = v % 50 === 0;
+      const t = grande ? 9 : 5;
+      out += vertical
+        ? `<line x1="${16 - t}" y1="${p}" x2="16" y2="${p}" />` + (grande && v ? `<text x="2" y="${p}" transform="rotate(-90 7 ${p})">${v}</text>` : "")
+        : `<line x1="${p}" y1="${16 - t}" x2="${p}" y2="16" />` + (grande && v ? `<text x="${Number(p) + 2}" y="8">${v}</text>` : "");
+    }
+    return out;
+  };
+  rh.setAttribute("width", (dim.w * s).toFixed(0));
+  rh.setAttribute("height", "16");
+  rh.innerHTML = marcas(dim.w, false);
+  rv.setAttribute("width", "16");
+  rv.setAttribute("height", (dim.h * s).toFixed(0));
+  rv.innerHTML = marcas(dim.h, true);
+}
+
 // Arrastar (mover) e a alça do canto (redimensionar). O brasão mantém a
 // proporção; as caixas de texto são livres (são o limite do texto).
-function ligarArrasteLayout(div, alca, el) {
+function ligarArrasteLayout(div, alca, el, alcaGiro) {
   div.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || contaGotasAlvo) return; // conta-gotas: quem trata é o palco
     ev.preventDefault();
-    const redimensionar = ev.target === alca;
+    ev.stopPropagation();
     if (layoutElSel !== el.id) {
       layoutElSel = el.id;
       document.querySelectorAll("#layoutPalco .arte-el").forEach((d) => d.classList.toggle("selecionado", d === div));
       renderizarPainelLayout();
+    }
+    const elT = elementoNoEditor(el);
+    if (elT.travado) {
+      estadoSalvarLayout("Elemento travado — destrave no cadeado para mexer");
+      return;
     }
     const m = medidasLayout();
     const ini = caixaNoEditor(el, m);
@@ -1738,15 +1992,80 @@ function ligarArrasteLayout(div, alca, el) {
     let atual = { ...ini };
     layoutArrastando = true;
     div.setPointerCapture(ev.pointerId);
+
+    // Girar pela alça de cima: ângulo do centro até o ponteiro.
+    if (ev.target === alcaGiro) {
+      const r = div.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      let graus = Number(elT.rotacao) || 0;
+      const mover = (e) => {
+        graus = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI + 90;
+        if (e.shiftKey) graus = Math.round(graus / 15) * 15;
+        graus = Math.round(((graus % 360) + 540) % 360 - 180);
+        div.style.transform = `rotate(${graus}deg)`;
+        estadoSalvarLayout(`Girando: ${graus}°`);
+      };
+      const soltar = () => {
+        div.removeEventListener("pointermove", mover);
+        div.removeEventListener("pointerup", soltar);
+        div.removeEventListener("pointercancel", soltar);
+        layoutArrastando = false;
+        gravarEstiloElemento(el.id, "rotacao", graus);
+      };
+      div.addEventListener("pointermove", mover);
+      div.addEventListener("pointerup", soltar);
+      div.addEventListener("pointercancel", soltar);
+      return;
+    }
+
+    const redimensionar = ev.target === alca;
+    // Guias magnéticas: bordas e centro da peça e dos outros elementos.
+    const palco = document.getElementById("layoutPalco");
+    const alvos = { x: [0, m.dim.w / 2, m.dim.w], y: [0, m.dim.h / 2, m.dim.h] };
+    elementosDaPeca(layoutPeca).forEach((o) => {
+      if (o.id === el.id) return;
+      const oT = EPS.elementoDoTime(o, ajusteNoEditor(layoutPeca, o.id));
+      if (!oT) return;
+      const c = caixaNoEditor(o, m);
+      alvos.x.push(c.x, c.x + c.w / 2, c.x + c.w);
+      alvos.y.push(c.y, c.y + c.h / 2, c.y + c.h);
+    });
+    const tolerancia = 6 / m.s; // 6 px na tela, em mm
+    const guias = [];
+    const limparGuias = () => { guias.forEach((g) => g.remove()); guias.length = 0; };
+    const guia = (eixo, valor) => {
+      const g = document.createElement("div");
+      g.className = "guia-" + eixo;
+      if (eixo === "v") g.style.left = valor * m.s + "px";
+      else g.style.top = valor * m.s + "px";
+      palco.appendChild(g);
+      guias.push(g);
+    };
+    const encaixar = (pontos, lista) => {
+      let melhor = null;
+      pontos.forEach((p) => lista.forEach((l) => {
+        const d = l - p;
+        if (Math.abs(d) <= tolerancia && (!melhor || Math.abs(d) < Math.abs(melhor.d))) melhor = { d, l };
+      }));
+      return melhor;
+    };
+
     const mover = (e) => {
       const dx = (e.clientX - x0) / m.s, dy = (e.clientY - y0) / m.s;
+      limparGuias();
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        const livre = EPS.imagemLivre(EPS.elementoDoTime(el, ajusteNoEditor(layoutPeca, el.id)) || el);
+        const livre = EPS.imagemLivre(elT);
         atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
+        if (!e.altKey) {
+          const sx = encaixar([atual.x, atual.x + atual.w / 2, atual.x + atual.w], alvos.x);
+          const sy = encaixar([atual.y, atual.y + atual.h / 2, atual.y + atual.h], alvos.y);
+          if (sx) { atual.x += sx.d; guia("v", sx.l); }
+          if (sy) { atual.y += sy.d; guia("h", sy.l); }
+        }
       }
       div.style.left = atual.x * m.s + "px";
       div.style.top = atual.y * m.s + "px";
@@ -1757,6 +2076,7 @@ function ligarArrasteLayout(div, alca, el) {
       div.removeEventListener("pointermove", mover);
       div.removeEventListener("pointerup", soltar);
       div.removeEventListener("pointercancel", soltar);
+      limparGuias();
       layoutArrastando = false;
       if (atual.x !== ini.x || atual.y !== ini.y || atual.w !== ini.w || atual.h !== ini.h) {
         gravarCaixaLayout(el, m, atual);
@@ -1770,12 +2090,33 @@ function ligarArrasteLayout(div, alca, el) {
   });
 }
 
+// O elemento como vale no editor (no time: com o estilo próprio dele).
+function elementoNoEditor(el) {
+  return layoutModo ? (EPS.elementoDoTime(el, ajusteNoEditor(layoutPeca, el.id)) || el) : el;
+}
+
+// Grava um estilo (cor, giro, efeito, travado...) de um elemento da peça
+// aberta: no layout geral muda o elemento; no time, o estilo próprio dele.
+function gravarEstiloElemento(elId, k, v) {
+  const el = elementosDaPeca(layoutPeca).find((e) => e.id === elId);
+  if (!el) return Promise.resolve();
+  const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
+  if (layoutModo) {
+    return gravarAjusteTime(el.id, (a) => { a.estilo = { ...(a.estilo || {}), [k]: v }; }).then(redesenhar);
+  }
+  el[k] = v;
+  salvarLayout();
+  redesenhar();
+  return Promise.resolve();
+}
+
 // Grava a caixa onde ela deve ir: no layout geral (tamanho base = posição do
 // elemento; outro tamanho = ajuste daquele tamanho) ou no ajuste do time.
 function gravarCaixaLayout(el, m, caixa) {
   const c = { x: arred1(caixa.x), y: arred1(caixa.y), w: arred1(caixa.w), h: arred1(caixa.h) };
   if (layoutModo) {
     const time = estadoTimes[layoutModo].time;
+    const antes = JSON.stringify(producaoDoTime(time));
     const prod = limparParaFirestore(producaoDoTime(time));
     const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
     alvo.layoutAjustes = alvo.layoutAjustes || {};
@@ -1793,6 +2134,7 @@ function gravarCaixaLayout(el, m, caixa) {
       aj.tamanhos = aj.tamanhos || {};
       aj.tamanhos[m.tam] = c;
     }
+    registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
     gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
       .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
     return;
@@ -1852,17 +2194,37 @@ function renderizarPainelLayout() {
     <div class="painel-cabecalho"><span class="ativo">Design</span></div>
     <section class="painel-secao">
       <h4 class="painel-titulo">${icone("layers")} Camadas <span>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</span></h4>
-      <ul class="lista-elementos">${els.map((e) => {
+      <ul class="lista-elementos">${els.slice().reverse().map((e) => {
         const ajE = ajusteNoEditor(layoutPeca, e.id);
+        const eT = EPS.elementoDoTime(e, ajE) || { ...e, ...((ajE && ajE.estilo) || {}) };
         return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ajE && ajE.oculto ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
           `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
           `${seloAjusteTime(ajE)}` +
-          `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}</li>`;
+          `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}` +
+          `<span class="camada-acoes">` +
+          (layoutModo ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ajE && ajE.oculto ? "Mostrar neste time" : "Ocultar neste time"}">${icone(ajE && ajE.oculto ? "eye-off" : "eye")}</button>` : "") +
+          `<button type="button" class="camada-botao${eT.travado ? " ligado" : ""}" data-camada-trava="${escAttr(e.id)}" title="${eT.travado ? "Destravar" : "Travar (não deixa mover sem querer)"}">${icone(eT.travado ? "lock" : "lock-open")}</button>` +
+          `</span></li>`;
       }).join("") ||
         `<li class="lista-elementos-vazia">Nada nesta peça${layoutModo ? " no layout geral" : " — use <strong>+ Adicionar</strong>"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
       ${els.length && !layoutElSel ? '<p class="pix-ajuda">Clique num elemento (aqui ou no desenho) para editar.</p>' : ""}
     </section>
     <div id="layoutPainelEl"></div>`;
+  painel.querySelectorAll("[data-camada-trava]").forEach((b) => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const e = els.find((x) => x.id === b.dataset.camadaTrava);
+      if (e) gravarEstiloElemento(e.id, "travado", !elementoNoEditor(e).travado);
+    };
+  });
+  painel.querySelectorAll("[data-camada-olho]").forEach((b) => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const aj = ajusteNoEditor(layoutPeca, b.dataset.camadaOlho);
+      gravarAjusteTime(b.dataset.camadaOlho, (a) => { a.oculto = !(aj && aj.oculto); })
+        .then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+    };
+  });
   painel.querySelectorAll("li[data-id]").forEach((li) => {
     li.onclick = () => { layoutElSel = li.dataset.id; renderizarPalcoLayout(); renderizarPainelLayout(); };
     li.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); } };
@@ -1926,12 +2288,41 @@ function renderizarPainelLayout() {
       </div>
     </section>`;
 
+  // Organizar: alinhar na peça, ordem das camadas e travar.
+  const alinhar = [["esquerda", "align-start-vertical", "Alinhar à esquerda da peça"], ["centroH", "align-center-vertical", "Centralizar na largura"],
+    ["direita", "align-end-vertical", "Alinhar à direita da peça"], ["topo", "align-start-horizontal", "Alinhar ao topo da peça"],
+    ["meio", "align-center-horizontal", "Centralizar na altura"], ["base", "align-end-horizontal", "Alinhar à base da peça"]];
+  html += `
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("layout-grid")} Organizar</h4>
+      <div class="linha-icones" role="group" aria-label="Alinhar na peça">${alinhar.map(([v, ic, t]) =>
+        `<button type="button" data-alinhar-peca="${v}" title="${t}" aria-label="${t}">${icone(ic)}</button>`).join("")}</div>
+      ${!layoutModo ? `<div class="linha-icones" role="group" aria-label="Ordem das camadas">
+        <button type="button" data-camada="topo" title="Trazer para a frente de tudo">${icone("chevrons-up")}</button>
+        <button type="button" data-camada="frente" title="Trazer uma camada para a frente">${icone("chevron-up")}</button>
+        <button type="button" data-camada="tras" title="Enviar uma camada para trás">${icone("chevron-down")}</button>
+        <button type="button" data-camada="fundo" title="Enviar para trás de tudo">${icone("chevrons-down")}</button>
+      </div>` : ""}
+      <label class="interruptor"><input type="checkbox" data-p="travado" ${elT.travado ? "checked" : ""} /> <span>${icone("lock")} Travar (não mexe ao arrastar)</span></label>
+    </section>
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("rotate-cw")} Girar e espelhar</h4>
+      <div class="linha-giro">
+        <label class="campo-graus"><input type="number" step="1" min="-180" max="180" data-p="rotacao" value="${Number(elT.rotacao) || 0}" /><span>°</span></label>
+        <button type="button" class="botao-icone" data-girar="-90" title="Girar 90° para a esquerda">${icone("rotate-ccw")}</button>
+        <button type="button" class="botao-icone" data-girar="90" title="Girar 90° para a direita">${icone("rotate-cw")}</button>
+        <button type="button" class="botao-icone${elT.espelharH ? " ligado" : ""}" data-espelhar="espelharH" title="Espelhar na horizontal">${icone("flip-horizontal-2")}</button>
+        <button type="button" class="botao-icone${elT.espelharV ? " ligado" : ""}" data-espelhar="espelharV" title="Espelhar na vertical">${icone("flip-vertical-2")}</button>
+      </div>
+      <p class="pix-ajuda">Também dá para girar pela bolinha em cima da caixa (Shift: de 15 em 15°).</p>
+    </section>`;
+
   if (ehTexto) {
     // Amostra (clique = seletor de cor) + conta-gotas + os 4 campos CMYK.
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
       `<label class="arte-amostra-cor" style="background:${cmykParaCss(v)}" title="Escolher a cor">` +
       `<input type="color" data-cor-rgb="${nome}" value="${cmykParaHex(v)}" aria-label="Escolher a cor" /></label>` +
-      `<button type="button" class="conta-gotas" data-conta-gotas="${nome}" title="Conta-gotas: pegar uma cor da tela" aria-label="Conta-gotas">${icone("pipette")}</button>` +
+      `<button type="button" class="conta-gotas" data-conta-gotas="${nome}" title="Conta-gotas: clique aqui e depois num ponto da arte" aria-label="Conta-gotas">${icone("pipette")}</button>` +
       ["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number((v || [])[i]) || 0}" /></label>`).join("") +
       `</div>`;
@@ -1956,6 +2347,21 @@ function renderizarPainelLayout() {
         <p class="arte-rotulo-cor">Preenchimento</p>${cmyk("corCmyk", elT.corCmyk)}
         <label class="arte-contorno">Contorno <small>(mm, 0 = sem)</small><input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
         <p class="arte-rotulo-cor">Cor do contorno</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
+      </section>
+      <section class="painel-secao">
+        <h4 class="painel-titulo">${icone("sparkles")} Efeitos</h4>
+        <label class="campo-deslizante">Arco <small>(graus; negativo curva para baixo)</small>
+          <span><input type="range" min="-180" max="180" step="5" data-p="arco" value="${Number(elT.arco) || 0}" /><input type="number" step="5" min="-300" max="300" data-p="arco" value="${Number(elT.arco) || 0}" /></span></label>
+        <label class="campo-deslizante">Itálico <small>(inclinação, graus)</small>
+          <span><input type="range" min="-30" max="30" step="1" data-p="inclinacao" value="${Number(elT.inclinacao) || 0}" /><input type="number" step="1" min="-45" max="45" data-p="inclinacao" value="${Number(elT.inclinacao) || 0}" /></span></label>
+        <label class="interruptor"><input type="checkbox" data-p="sombra" ${elT.sombra ? "checked" : ""} /> <span>Sombra</span></label>
+        ${elT.sombra ? `<div class="arte-grade arte-grade-4 efeito-sub">
+          <label>Deslocar X<input type="number" step="0.5" data-p="sombraDx" value="${elT.sombraDx == null ? 1.5 : Number(elT.sombraDx)}" /></label>
+          <label>Deslocar Y<input type="number" step="0.5" data-p="sombraDy" value="${elT.sombraDy == null ? 1.5 : Number(elT.sombraDy)}" /></label>
+        </div>
+        <p class="arte-rotulo-cor">Cor da sombra</p>${cmyk("sombraCmyk", elT.sombraCmyk || [0, 0, 0, 60])}` : ""}
+        <label class="arte-contorno">Segundo contorno <small>(mm por fora do primeiro, 0 = sem)</small><input type="number" step="0.5" min="0" data-p="contorno2Mm" value="${Number(elT.contorno2Mm) || 0}" /></label>
+        ${Number(elT.contorno2Mm) > 0 ? `<p class="arte-rotulo-cor">Cor do segundo contorno</p>${cmyk("contorno2Cmyk", elT.contorno2Cmyk || [0, 0, 0, 100])}` : ""}
       </section>`;
   }
   if (!layoutModo) {
@@ -1978,6 +2384,35 @@ function renderizarPainelLayout() {
   };
 
   box.querySelectorAll("[data-alinhar]").forEach((b) => (b.onclick = () => gravarEstilo("alinhamento", b.dataset.alinhar)));
+  box.querySelectorAll("[data-alinhar-peca]").forEach((b) => {
+    b.onclick = () => {
+      const v = b.dataset.alinharPeca, nova = { ...c };
+      if (v === "esquerda") nova.x = 0;
+      else if (v === "centroH") nova.x = (m.dim.w - c.w) / 2;
+      else if (v === "direita") nova.x = m.dim.w - c.w;
+      else if (v === "topo") nova.y = 0;
+      else if (v === "meio") nova.y = (m.dim.h - c.h) / 2;
+      else nova.y = m.dim.h - c.h;
+      gravarCaixaLayout(el, m, nova);
+      redesenhar();
+    };
+  });
+  box.querySelectorAll("[data-camada]").forEach((b) => (b.onclick = () => moverCamadaLayout(el, b.dataset.camada)));
+  box.querySelectorAll("[data-girar]").forEach((b) => {
+    b.onclick = () => {
+      let g = (Number(elT.rotacao) || 0) + Number(b.dataset.girar);
+      g = ((g % 360) + 540) % 360 - 180;
+      gravarEstilo("rotacao", g);
+    };
+  });
+  box.querySelectorAll("[data-espelhar]").forEach((b) => (b.onclick = () => gravarEstilo(b.dataset.espelhar, !elT[b.dataset.espelhar])));
+  // Deslizante e número do mesmo efeito andam juntos.
+  box.querySelectorAll('input[type="range"][data-p]').forEach((r) => {
+    r.oninput = () => {
+      const par = r.parentElement.querySelector('input[type="number"]');
+      if (par) par.value = r.value;
+    };
+  });
   const chkOculto = box.querySelector("[data-oculto]");
   if (chkOculto) {
     chkOculto.onchange = () => {
@@ -2010,29 +2445,16 @@ function renderizarPainelLayout() {
   box.querySelectorAll("[data-p]").forEach((inp) => {
     if (inp.tagName === "SELECT") inp.value = elT[inp.dataset.p] || inp.options[0].value;
     inp.onchange = () => {
-      gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value);
+      gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" || inp.type === "range" ? Number(inp.value) || 0 : inp.value);
     };
   });
-  // Conta-gotas: pega a cor de qualquer ponto da tela (EyeDropper, no Chrome
-  // e no Edge). Onde ele não existe, abre o seletor de cor do sistema, que
-  // também tem conta-gotas na maioria dos navegadores.
+  // Amostra: seletor de cor; conta-gotas: pega a cor de um ponto da arte.
   box.querySelectorAll("[data-cor-rgb]").forEach((inp) => {
     inp.onchange = () => gravarEstilo(inp.dataset.corRgb, hexParaCmyk(inp.value));
   });
   box.querySelectorAll("[data-conta-gotas]").forEach((b) => {
-    b.onclick = async () => {
-      const campo = box.querySelector(`[data-cor-rgb="${b.dataset.contaGotas}"]`);
-      if (!window.EyeDropper) {
-        if (campo) campo.click();
-        return;
-      }
-      try {
-        const { sRGBHex } = await new window.EyeDropper().open();
-        gravarEstilo(b.dataset.contaGotas, hexParaCmyk(sRGBHex));
-      } catch (e) {
-        /* cancelou com Esc: nada muda */
-      }
-    };
+    if (b.dataset.contaGotas === contaGotasAlvo) b.classList.add("ativo");
+    b.onclick = () => (contaGotasAlvo === b.dataset.contaGotas ? sairContaGotas() : entrarContaGotas(b.dataset.contaGotas));
   });
   box.querySelectorAll("[data-cor]").forEach((grupo) => {
     grupo.querySelectorAll("input[data-i]").forEach((inp) => {
@@ -2080,6 +2502,7 @@ function renderizarPainelLayout() {
 function gravarAjusteTime(elId, mudar) {
   const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
   if (!time) return Promise.resolve();
+  const antes = JSON.stringify(producaoDoTime(time));
   const prod = limparParaFirestore(producaoDoTime(time));
   const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
   alvo.layoutAjustes = alvo.layoutAjustes || {};
@@ -2094,6 +2517,7 @@ function gravarAjusteTime(elId, mudar) {
   if (!Object.keys(aj).length) delete porPeca[elId];
   if (!Object.keys(porPeca).length) delete alvo.layoutAjustes[layoutPeca];
   if (layoutGoleiro) limparGoleiroVazio(prod);
+  registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
   return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
     .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
 }

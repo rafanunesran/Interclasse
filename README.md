@@ -567,6 +567,24 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
   **GOLEIRO** na imagem e a legenda "🧤 Goleiro — …" na galeria; no **Ver em 3D** o cliente troca
   entre **Camiseta** e **🧤 Goleiro**.
 
+### Ferramentas do editor
+
+- **Desfazer/refazer** (botões no topo, <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), **copiar/colar/duplicar**
+  (<kbd>Ctrl+C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, no layout geral), <kbd>Delete</kbd> apaga (no time: oculta só nele),
+  setas movem 1 mm (<kbd>Shift</kbd>: 10 mm).
+- **Camadas**: a lista mostra o que fica por cima primeiro; cadeado **trava** o elemento (não mexe ao
+  arrastar) e, no time, o olho oculta. **Organizar**: alinhar na peça (esquerda, centro, direita, topo,
+  meio, base) e a ordem das camadas.
+- **Guias magnéticas** ao arrastar (bordas e centro da peça e dos outros elementos; segure <kbd>Alt</kbd>
+  para soltar livre) e **réguas** em mm.
+- **Girar e espelhar** (campo em graus, ±90°, espelho horizontal/vertical ou a bolinha em cima da caixa).
+- **Efeitos no texto**: arco (negativo curva para baixo), itálico, sombra e segundo contorno. Com arco ou
+  itálico o texto é reencaixado e continua sem sair da caixa.
+- **Cores**: o **conta-gotas** pega a cor de um ponto da arte (clique nele e depois no desenho); a amostra
+  abre o seletor de cor. A cor vira CMYK pela conversão simples (K = 1 − máx(R,G,B)).
+
+Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
+
 ### Gerar (aba **Produção**)
 
 **Folhas EPS (CMYK)** na leva (ou **Folha EPS** no bloco de um modelo) pergunta:

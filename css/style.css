@@ -2814,3 +2814,74 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .estudio-painel .arte-cmyk input::-webkit-outer-spin-button,
 .estudio-painel .arte-cmyk input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .estudio-painel .arte-cmyk { gap: 4px; }
+
+/* ============================================================
+   FERRAMENTAS DO EDITOR (réguas, guias, giro, camadas, efeitos)
+   ============================================================ */
+.palco-reguas { position: relative; padding: 18px 0 0 18px; margin: auto; flex: 0 0 auto; }
+.regua { position: absolute; overflow: visible; }
+.regua-h { top: 0; left: 18px; }
+.regua-v { left: 0; top: 18px; }
+.regua line { stroke: #9ca3af; stroke-width: 1; }
+.regua text { font: 600 8px -apple-system, "Segoe UI", Roboto, Arial, sans-serif; fill: #9ca3af; }
+.tema-escuro .regua line { stroke: #4b5563; }
+.tema-escuro .regua text { fill: #6b7280; }
+.tema-escuro .palco-reguas .arte-palco { margin: 0; }
+
+/* Guias magnéticas ao arrastar. */
+.guia-v, .guia-h { position: absolute; z-index: 6; pointer-events: none; background: #ff2d87; }
+.guia-v { top: 0; bottom: 0; width: 1px; }
+.guia-h { left: 0; right: 0; height: 1px; }
+
+/* Alça de girar (bolinha em cima da caixa). */
+.arte-el-giro {
+  position: absolute; left: 50%; top: -26px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--acento, var(--azul)); cursor: grab; display: none;
+}
+.arte-el-giro::after { content: ""; position: absolute; left: 3px; top: 12px; width: 2px; height: 12px; background: var(--acento, var(--azul)); }
+.arte-el.selecionado .arte-el-giro { display: block; }
+.arte-el.travado { cursor: not-allowed; }
+.arte-el.travado .arte-el-alca, .arte-el.travado .arte-el-giro { display: none !important; }
+.arte-el.travado.selecionado { outline-style: dashed; }
+
+/* Conta-gotas: o palco vira mira. */
+.modo-conta-gotas, .modo-conta-gotas * { cursor: crosshair !important; }
+.modo-conta-gotas .arte-palco { box-shadow: 0 0 0 3px var(--acento, var(--azul)), 0 12px 40px rgba(0, 0, 0, 0.45) !important; }
+.conta-gotas.ativo { background: var(--acento, var(--azul)) !important; color: #fff !important; border-color: transparent !important; }
+
+/* Desfazer / refazer. */
+.estudio-historico { display: inline-flex; gap: 2px; align-self: center; }
+.estudio-historico button { margin: 0; width: 34px; height: 34px; padding: 0; border-radius: 8px; background: transparent; color: #d1d5db; display: inline-flex; align-items: center; justify-content: center; }
+.estudio-historico button:hover:not(:disabled) { background: #2c2d34; }
+.estudio-historico button:disabled { opacity: 0.3; }
+
+/* Camadas: cadeado e olho. */
+.lista-elementos li[data-id] .camada-acoes { margin-left: auto; display: inline-flex; gap: 2px; }
+.camada-botao { margin: 0; width: 26px; height: 26px; padding: 0; border-radius: 6px; background: transparent; color: #6b7280; display: inline-flex; align-items: center; justify-content: center; opacity: 0.55; }
+.lista-elementos li:hover .camada-botao, .camada-botao.ligado { opacity: 1; }
+.camada-botao.ligado { color: var(--acento, var(--azul)); }
+.camada-botao:hover { background: rgba(127, 127, 127, 0.18); }
+
+/* Linhas de botões de ícone (alinhar, ordem, giro). */
+.linha-icones { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-bottom: 8px; }
+.linha-icones:has(> :nth-child(4):last-child) { grid-template-columns: repeat(4, 1fr); }
+.linha-icones button, .botao-icone {
+  margin: 0; height: 32px; padding: 0; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center;
+  background: #f3f4f6; color: #374151; border: 1px solid var(--cinza-borda);
+}
+.tema-escuro .linha-icones button, .tema-escuro .botao-icone { background: #26272d; color: #d1d5db; border-color: #34353d; }
+.linha-icones button:hover, .botao-icone:hover { border-color: var(--acento, var(--azul)); }
+.botao-icone { width: 34px; }
+.botao-icone.ligado { background: var(--acento, var(--azul)) !important; color: #fff !important; border-color: transparent !important; }
+.linha-giro { display: flex; gap: 4px; align-items: center; }
+.campo-graus { display: inline-flex !important; align-items: center; gap: 4px; margin: 0 6px 0 0 !important; flex: 1; }
+.campo-graus input { width: 100%; }
+.campo-graus span { color: var(--texto-suave); }
+
+/* Efeitos. */
+.campo-deslizante { display: block; margin: 10px 0 2px; font-size: 0.78rem; }
+.campo-deslizante small { color: var(--texto-suave); font-weight: 400; }
+.campo-deslizante > span { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.campo-deslizante input[type="range"] { flex: 1; accent-color: var(--acento, var(--azul)); height: auto !important; padding: 0 !important; background: transparent !important; border: 0 !important; }
+.campo-deslizante input[type="number"] { width: 64px !important; flex: 0 0 64px; }
+.efeito-sub { margin: 8px 0 4px; }
