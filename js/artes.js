@@ -1541,6 +1541,23 @@ function cmykParaCss(c) {
   return `rgb(${Math.round(255 * (1 - C) * (1 - K))},${Math.round(255 * (1 - M) * (1 - K))},${Math.round(255 * (1 - Y) * (1 - K))})`;
 }
 
+// Cor da tela (hex) para CMYK em % — a conta inversa de cmykParaCss, a mesma
+// conversão simples usada nas artes (K = 1 − máx(R, G, B)).
+function hexParaCmyk(hex) {
+  const n = parseInt(String(hex).replace("#", ""), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 1) return [0, 0, 0, 100];
+  const c = (x) => Math.round(((1 - x - k) / (1 - k)) * 100);
+  return [c(r), c(g), c(b), Math.round(k * 100)];
+}
+
+function cmykParaHex(v) {
+  const [C, M, Y, K] = (v || [0, 0, 0, 100]).map((x) => (Number(x) || 0) / 100);
+  const h = (x) => Math.round(255 * (1 - x) * (1 - K)).toString(16).padStart(2, "0");
+  return "#" + h(C) + h(M) + h(Y);
+}
+
 function caminhoSvg(comandos, s) {
   const f = (v) => (v * s).toFixed(2);
   return comandos.map((c) => {
@@ -1910,8 +1927,11 @@ function renderizarPainelLayout() {
     </section>`;
 
   if (ehTexto) {
+    // Amostra (clique = seletor de cor) + conta-gotas + os 4 campos CMYK.
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
-      `<span class="arte-amostra-cor" style="background:${cmykParaCss(v)}"></span>` +
+      `<label class="arte-amostra-cor" style="background:${cmykParaCss(v)}" title="Escolher a cor">` +
+      `<input type="color" data-cor-rgb="${nome}" value="${cmykParaHex(v)}" aria-label="Escolher a cor" /></label>` +
+      `<button type="button" class="conta-gotas" data-conta-gotas="${nome}" title="Conta-gotas: pegar uma cor da tela" aria-label="Conta-gotas">${icone("pipette")}</button>` +
       ["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number((v || [])[i]) || 0}" /></label>`).join("") +
       `</div>`;
@@ -1993,8 +2013,29 @@ function renderizarPainelLayout() {
       gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value);
     };
   });
+  // Conta-gotas: pega a cor de qualquer ponto da tela (EyeDropper, no Chrome
+  // e no Edge). Onde ele não existe, abre o seletor de cor do sistema, que
+  // também tem conta-gotas na maioria dos navegadores.
+  box.querySelectorAll("[data-cor-rgb]").forEach((inp) => {
+    inp.onchange = () => gravarEstilo(inp.dataset.corRgb, hexParaCmyk(inp.value));
+  });
+  box.querySelectorAll("[data-conta-gotas]").forEach((b) => {
+    b.onclick = async () => {
+      const campo = box.querySelector(`[data-cor-rgb="${b.dataset.contaGotas}"]`);
+      if (!window.EyeDropper) {
+        if (campo) campo.click();
+        return;
+      }
+      try {
+        const { sRGBHex } = await new window.EyeDropper().open();
+        gravarEstilo(b.dataset.contaGotas, hexParaCmyk(sRGBHex));
+      } catch (e) {
+        /* cancelou com Esc: nada muda */
+      }
+    };
+  });
   box.querySelectorAll("[data-cor]").forEach((grupo) => {
-    grupo.querySelectorAll("input").forEach((inp) => {
+    grupo.querySelectorAll("input[data-i]").forEach((inp) => {
       inp.onchange = () => {
         gravarEstilo(grupo.dataset.cor, [0, 1, 2, 3].map((i) =>
           Math.max(0, Math.min(100, Number(grupo.querySelector(`[data-i="${i}"]`).value) || 0))));
