@@ -7,6 +7,8 @@
  * produção (EPS, PNG em alta, fontes) e os devolve ao site (doGet). Serve como alternativa gratuita ao Firebase
  * Storage (que exige plano pago).
  *
+ * O backup diário dos dados fica em Backup.gs (mesmo projeto).
+ *
  * Como publicar: veja apps-script/README.md.
  */
 
@@ -16,6 +18,8 @@ var NOME_PASTA = "Interclasse Camisetas";
 function doPost(e) {
   try {
     var dados = JSON.parse(e.postData.contents);
+    // Ações do backup (aba Backup do Super Admin) — ver Backup.gs.
+    if (dados.acao && String(dados.acao).indexOf("backup") === 0) return json_(rotearBackup_(dados));
     if (!dados.dataBase64) return json_({ ok: false, erro: "Sem imagem." });
 
     var pasta = obterPasta_();

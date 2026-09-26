@@ -2373,3 +2373,11 @@ button.kanban-card-nome:hover { color: var(--azul); text-decoration: underline; 
 .pedido-hero-midia .carrossel-seta { top: 45%; }
 .pedido-hero-midia .carrossel-antes { left: 8px; }
 .pedido-hero-midia .carrossel-depois { right: 8px; }
+
+/* ---------------- Aba Backup ---------------- */
+.modal-largo { max-width: 560px; }
+.backup-status { margin: 10px 0 4px; }
+.backup-antigos { border-color: #fde68a; background: #fffbeb; }
+.backup-antigos summary { cursor: pointer; font-weight: 600; color: #92400e; }
+.backup-antigos-lista { list-style: none; padding: 0; margin: 10px 0; }
+.backup-antigos-lista label { margin: 4px 0; font-weight: 400; }
