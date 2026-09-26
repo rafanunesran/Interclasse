@@ -643,14 +643,17 @@ function escutarAlunosDaTime(timeId) {
 //   • Configuração — representante (contato e senha), data limite e a
 //     tabela especial de preço;
 //   • Arquivos de produção — os arquivos da folha EPS, a prévia da arte
-//     (sem simulação e no mockup) e as imagens da página do pedido.
+//     (sem simulação e no mockup) e as imagens da página do pedido;
+//   • Editar arte — o editor de layout travado neste time: posição,
+//     tamanho da letra, cores e o que aparece, só para ele.
 // O time aberto fica no endereço (#time=ID&aba=...), então recarregar a
 // página ou usar o "voltar" do navegador funciona como esperado.
 
 const ABAS_TIME_ADMIN = [
   { id: "lista", label: "Lista" },
   { id: "config", label: "Configuração" },
-  { id: "arquivos", label: "Arquivos de produção" }
+  { id: "arquivos", label: "Arquivos de produção" },
+  { id: "editarArte", label: "Editar arte" }
 ];
 
 let timeAbertoAdmin = "";     // time aberto na aba Inicial ("" = lista de times)
@@ -966,7 +969,12 @@ function renderizarTimeAberto(timeId) {
   const contadores = {
     lista: `<span class="subaba-qtd">${alunos.length}</span>${nAjustes ? ` <span class="marca-ajuste">!</span>` : ""}`,
     config: rascunhoConfigTime[timeId] ? ' <span class="subaba-ponto" title="Alterações não salvas">●</span>' : "",
-    arquivos: faltaProducao.length ? ' <span class="subaba-ponto pendente" title="Faltam arquivos">●</span>' : ' <span class="subaba-ok">✓</span>'
+    arquivos: faltaProducao.length ? ' <span class="subaba-ponto pendente" title="Faltam arquivos">●</span>' : ' <span class="subaba-ok">✓</span>',
+    editarArte: (() => {
+      const aj = (time.producao && time.producao.layoutAjustes) || {};
+      const n = Object.values(aj).reduce((s, p) => s + Object.keys(p || {}).length, 0);
+      return n ? `<span class="subaba-qtd" title="Ajustes próprios deste time">${n}</span>` : "";
+    })()
   };
   const nav = document.createElement("nav");
   nav.className = "subabas-time";
@@ -985,6 +993,7 @@ function renderizarTimeAberto(timeId) {
 
   if (abaTimeAdmin === "config") renderizarConfigTime(timeId);
   else if (abaTimeAdmin === "arquivos") renderizarArquivosTime(timeId);
+  else if (abaTimeAdmin === "editarArte") renderizarEditarArteTime(timeId);
   else renderizarListaDoTime(timeId);
 }
 
@@ -1408,6 +1417,24 @@ function renderizarConfigTime(timeId) {
   btnExcluir.onclick = () => excluirTime(timeId, time);
   cardPerigo.appendChild(btnExcluir);
   elListaTimesAdmin.appendChild(cardPerigo);
+}
+
+// ---------------- Aba Editar arte ----------------
+// O editor de layout (js/artes.js) travado neste time: o que mudar aqui vale
+// só para ele; o resto segue o layout geral da aba Artes.
+
+function renderizarEditarArteTime(timeId) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
+    '<p class="pix-ajuda">Escolha a peça e clique num elemento (nome, número, brasão…) para mudar a posição, o tamanho da letra, as cores ou ocultá-lo — só neste time. ' +
+    'O que não for mudado aqui segue o layout geral (aba <strong>Artes</strong>). A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
+  const host = document.createElement("div");
+  host.className = "editor-layout-pedido";
+  card.appendChild(host);
+  elListaTimesAdmin.appendChild(card);
+  if (typeof montarEditorLayout === "function") montarEditorLayout(host, timeId);
+  else host.innerHTML = '<p class="pix-ajuda">Editor indisponível.</p>';
 }
 
 // ---------------- Aba Arquivos de produção ----------------

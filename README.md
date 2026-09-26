@@ -493,6 +493,23 @@ O seu logo em **EPS**, o mesmo para todos os times, para usar como detalhe das c
 aba Artes, **+ Logo** coloca uma caixa dele em qualquer peça (proporção mantida, ajuste por time
 como o brasão). O EPS entra intacto na folha.
 
+### Editar arte (time aberto → aba **Editar arte**)
+
+O mesmo editor da aba Artes, travado no time aberto. O que mudar ali vale **só para este time**;
+o resto continua seguindo o layout geral:
+
+- **posição e tamanho** de cada caixa (arrastar ou pelos campos);
+- nos textos (nome e número): **tamanho da letra** (altura das maiúsculas, em mm), **cor** e
+  **cor/espessura do contorno** (CMYK), alinhamento, espaço entre letras, maiúsculas e o que
+  fazer com texto comprido;
+- nas imagens (brasão, logo, detalhe): **manter proporção** ou esticar;
+- **Ocultar neste time** (ex.: um time sem o logo) — o elemento aparece apagado no editor.
+
+A lista de elementos mostra os selos *posição do time*, *estilo do time* e *oculto*. **Voltar ao
+layout geral** desfaz tudo daquele elemento; **Voltar só a posição** mantém o estilo. A folha
+EPS, a prévia, o mockup e a prévia do cliente já saem com os ajustes (guardados em
+`producao.layoutAjustes` do time).
+
 ### Prévia do time (time aberto → Arquivos de produção)
 
 - **Arte (sem simulação)**: as peças planas, no formato do molde e com a arte recortada, como na

@@ -337,11 +337,11 @@ function criarBlocoProducaoTime(timeId, time) {
   const btnLayout = document.createElement("button");
   btnLayout.type = "button";
   btnLayout.className = "secundario";
-  btnLayout.textContent = "Ajustar layout deste time";
+  btnLayout.textContent = "Editar arte deste time";
   btnLayout.onclick = () => abrirLayoutDoTime(timeId);
   rodape.appendChild(btnLayout);
   const nAjustes = Object.values(prod.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-  if (nAjustes) rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes} ajuste(s) próprio(s) de posição</span>`);
+  if (nAjustes) rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes} ajuste(s) próprio(s) — aba "Editar arte"</span>`);
   bloco.appendChild(rodape);
   return bloco;
 }
@@ -560,8 +560,11 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
 
   const fonte = fonteProntaDoTime(time);
   const elementos = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
-  (soArte === true ? [] : elementos).forEach((el) => {
-    const c = EPS.caixaEfetiva(el, tam, base, dim, ajusteDoTime(timeId, pecaId, el.id));
+  (soArte === true ? [] : elementos).forEach((elGeral) => {
+    const ajTime = ajusteDoTime(timeId, pecaId, elGeral.id);
+    const el = EPS.elementoDoTime(elGeral, ajTime);
+    if (!el) return; // oculto neste time
+    const c = EPS.caixaEfetiva(el, tam, base, dim, ajTime);
     if (ehCaixaImagem(el)) {
       const url = imagemDaCaixa(el, prod, pecaId);
       if (url) {
@@ -1002,7 +1005,13 @@ function criarPreviaArteTime(timeId, time) {
 // EDITOR DE LAYOUT (aba Artes)
 // ============================================================
 
-const elEditorLayout = document.getElementById("editorLayout");
+// O mesmo editor serve à aba Artes (#editorLayout, layout geral ou um time)
+// e à aba "Editar arte" do pedido (travado naquele time). Só um desenha por
+// vez: o do pedido quando está visível, senão o da aba Artes.
+let elEditorLayout = document.getElementById("editorLayout");
+let editorPedido = null;    // { container, timeId } da aba "Editar arte"
+let editorTravado = false;  // desenhando no pedido?
+let layoutModoArtes = "";   // o que a aba Artes estava editando
 let layoutModo = "";        // "" = layout geral; timeId = ajuste daquele time
 let layoutTimePrevia = "";  // time cuja arte/fonte aparece na prévia (modo geral)
 let layoutPeca = "costas";
@@ -1011,14 +1020,46 @@ let layoutElSel = "";
 let layoutArrastando = false;
 const amostraLayout = { nomeCamiseta: "JOÃO PEDRO", nome: "João Pedro Silva", numero: "10" };
 
+// "Ajustar layout deste time": abre a aba "Editar arte" do pedido.
 function abrirLayoutDoTime(timeId) {
-  layoutModo = timeId;
-  layoutTimePrevia = timeId;
-  const aba = document.querySelector('.aba[data-aba="artes"]');
-  if (aba) aba.click();
-  renderizarEditorLayout();
-  if (elEditorLayout) elEditorLayout.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (typeof abrirTimeAdmin === "function") abrirTimeAdmin(timeId, "editarArte");
 }
+
+// Chamado pela aba "Editar arte" do pedido: desenha o editor ali.
+function montarEditorLayout(container, timeId) {
+  container.dataset.editorLayout = "1";
+  editorPedido = { container, timeId };
+  renderizarEditorLayout();
+}
+
+function editorNoPedidoVisivel() {
+  const c = editorPedido && editorPedido.container;
+  return !!(c && c.isConnected && !c.closest(".oculto") && estadoTimes[editorPedido.timeId]);
+}
+
+// Escolhe onde o editor desenha (pedido ou aba Artes) e limpa o outro, para
+// não haver dois palcos com os mesmos ids na página.
+function escolherAlvoDoEditor() {
+  const noPedido = editorNoPedidoVisivel();
+  const alvo = noPedido ? editorPedido.container : document.getElementById("editorLayout");
+  if (alvo !== elEditorLayout) {
+    if (elEditorLayout && elEditorLayout.isConnected) elEditorLayout.innerHTML = "";
+    elEditorLayout = alvo;
+  }
+  if (noPedido) {
+    if (!editorTravado) layoutModoArtes = layoutModo;
+    layoutModo = editorPedido.timeId;
+    layoutTimePrevia = editorPedido.timeId;
+  } else if (editorTravado) {
+    layoutModo = layoutModoArtes;
+  }
+  editorTravado = noPedido;
+}
+
+// Trocar de aba principal muda onde o editor aparece (aba Artes ou o
+// pedido aberto): redesenha no lugar certo.
+document.querySelectorAll(".aba").forEach((aba) =>
+  aba.addEventListener("click", () => setTimeout(renderizarEditorLayout, 0)));
 
 // Times que aparecem nos seletores (com o filtro de cliente do topo).
 function timesParaLayout() {
@@ -1045,7 +1086,9 @@ function tamanhoDoEditor() {
 }
 
 function renderizarEditorLayout() {
-  if (!elEditorLayout || layoutArrastando) return;
+  if (layoutArrastando) return;
+  escolherAlvoDoEditor();
+  if (!elEditorLayout) return;
   const foco = document.activeElement && elEditorLayout.contains(document.activeElement) ? document.activeElement : null;
   // Não redesenha com o cursor num campo de texto (perderia o que se digita).
   if (foco && foco.tagName === "INPUT" && foco.type !== "checkbox") return;
@@ -1062,13 +1105,13 @@ function renderizarEditorLayout() {
 
   elEditorLayout.innerHTML = `
     <div class="layout-topo">
-      <label>Editando
-        <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>
+      ${editorTravado ? "" : `<label>Editando
+        <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
       ${layoutModo ? "" : `<label>Prévia com a arte de
         <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
       <span id="layoutEstadoSalvar" class="pix-ajuda"></span>
     </div>
-    ${layoutModo ? `<p class="aviso">Ajuste próprio de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: arrastar muda a posição só para este time. O estilo (cor, contorno, fonte) vem do layout geral.</p>` : ""}
+    ${layoutModo ? `<p class="aviso">Ajustes próprios de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para este time. O que não for mudado aqui segue o layout geral (aba Artes).</p>` : ""}
     <nav class="fin-subabas layout-pecas">${PECAS_PRODUCAO.map((p) =>
       `<button type="button" class="fin-subaba${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}</button>`).join("")}</nav>
     <div class="arte-area">
@@ -1093,8 +1136,9 @@ function renderizarEditorLayout() {
     </div>`;
 
   const q = (s) => elEditorLayout.querySelector(s);
-  q('[data-l="modo"]').onchange = (ev) => {
+  if (q('[data-l="modo"]')) q('[data-l="modo"]').onchange = (ev) => {
     layoutModo = ev.target.value;
+    layoutModoArtes = layoutModo;
     if (layoutModo) layoutTimePrevia = layoutModo;
     renderizarEditorLayout();
   };
@@ -1204,11 +1248,16 @@ function renderizarPalcoLayout() {
   }
 
   const fonte = fonteProntaDoTime(time);
-  elementosDaPeca(layoutPeca).forEach((el) => {
+  elementosDaPeca(layoutPeca).forEach((elGeral) => {
+    const ajTime = ajusteDoTime(layoutModo, layoutPeca, elGeral.id);
+    // Oculto neste time: aparece apagado (dá para selecionar e mostrar de novo).
+    const el = EPS.elementoDoTime(elGeral, ajTime) || elGeral;
+    const oculto = !!(ajTime && ajTime.oculto);
     const c = caixaNoEditor(el, m);
     const div = document.createElement("div");
-    const temAjusteTime = !!ajusteDoTime(layoutModo, layoutPeca, el.id);
-    div.className = "arte-el arte-el-" + el.tipo + (el.id === layoutElSel ? " selecionado" : "") + (temAjusteTime ? " ajuste-time" : "");
+    const temAjusteTime = !!ajTime;
+    div.className = "arte-el arte-el-" + el.tipo + (el.id === layoutElSel ? " selecionado" : "") +
+      (temAjusteTime ? " ajuste-time" : "") + (oculto ? " oculto-time" : "");
     div.style.left = c.x * s + "px";
     div.style.top = c.y * s + "px";
     div.style.width = c.w * s + "px";
@@ -1231,7 +1280,7 @@ function renderizarPalcoLayout() {
     const alca = document.createElement("span");
     alca.className = "arte-el-alca";
     div.appendChild(alca);
-    ligarArrasteLayout(div, alca, el);
+    ligarArrasteLayout(div, alca, elGeral);
     palco.appendChild(div);
   });
 }
@@ -1260,7 +1309,8 @@ function ligarArrasteLayout(div, alca, el) {
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !el.livre ? w / prop : Math.max(2, ini.h + dy) };
+        const livre = (EPS.elementoDoTime(el, ajusteDoTime(layoutModo, layoutPeca, el.id)) || el).livre;
+        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
       }
@@ -1341,6 +1391,16 @@ function adicionarElementoLayout(tipo) {
   renderizarPainelLayout();
 }
 
+// Selos da lista de elementos: o que este time mudou.
+function seloAjusteTime(aj) {
+  if (!aj) return "";
+  const selos = [];
+  if (aj.oculto) selos.push('<span class="badge pendente">oculto</span>');
+  if (aj.base || aj.tamanhos) selos.push('<span class="badge aguardando">posição do time</span>');
+  if (aj.estilo && Object.keys(aj.estilo).length) selos.push('<span class="badge aguardando">estilo do time</span>');
+  return selos.length ? " " + selos.join(" ") : "";
+}
+
 function renderizarPainelLayout() {
   const painel = document.getElementById("layoutPainel");
   if (!painel) return;
@@ -1350,7 +1410,7 @@ function renderizarPainelLayout() {
     <h4>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
     <ul class="arte-lista-el">${els.map((e) =>
       `<li class="${e.id === layoutElSel ? "ativo" : ""}" data-id="${escAttr(e.id)}">${escapeHtmlAdmin(rotuloElementoLayout(e))}` +
-      `${ajusteDoTime(layoutModo, layoutPeca, e.id) ? " <span class=\"badge aguardando\">ajuste do time</span>" : ""}</li>`).join("") ||
+      `${seloAjusteTime(ajusteDoTime(layoutModo, layoutPeca, e.id))}</li>`).join("") ||
       `<li class="pix-ajuda">Nada nesta peça${layoutModo ? " no layout geral" : " — use + Brasão / + Nome / + Número"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
     <div id="layoutPainelEl"></div>`;
   painel.querySelectorAll("li[data-id]").forEach((li) => {
@@ -1358,51 +1418,61 @@ function renderizarPainelLayout() {
   });
   const m = medidasLayout();
   if (!el || !m) return;
-  const c = caixaNoEditor(el, m);
   const aj = ajusteDoTime(layoutModo, layoutPeca, el.id);
+  // Valores que valem para o que está sendo editado: no time, o estilo
+  // próprio dele por cima do geral.
+  const elT = layoutModo ? (EPS.elementoDoTime(el, aj) || el) : el;
+  const c = caixaNoEditor(elT, m);
   const box = document.getElementById("layoutPainelEl");
+  const temPosicao = !!(aj && (aj.base || aj.tamanhos));
+  const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
+  const ehTexto = !ehCaixaImagem(el);
 
   let html = `<p class="pix-ajuda">${layoutModo
-    ? aj ? "Posição própria deste time." : "Posição do layout geral — mexer cria um ajuste só para este time."
+    ? aj ? `Este time tem ajuste próprio${temPosicao ? " de posição" : ""}${temPosicao && temEstilo ? " e" : ""}${temEstilo ? " de estilo" : ""}${aj.oculto ? " (oculto)" : ""}.`
+      : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para este time."
     : m.ehBase ? `Posição no tamanho base (${escapeHtmlAdmin(m.tam)}).`
       : el.ajustes && el.ajustes[m.tam] ? `Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.`
         : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`}</p>
+    ${layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> Ocultar neste time</label>` : ""}
     <div class="arte-grade arte-grade-4">
       <label>X (mm)<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
       <label>Y (mm)<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
       <label>Largura<input type="number" step="0.5" min="1" data-cx="w" value="${c.w.toFixed(1)}" /></label>
       <label>Altura<input type="number" step="0.5" min="1" data-cx="h" value="${c.h.toFixed(1)}" /></label>
     </div>
+    ${ehTexto ? `<label class="arte-letra">Tamanho da letra (altura das maiúsculas, mm)
+      <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
     <div class="arte-botoes-el">
       <button type="button" class="secundario" data-acao="centralizar">Centralizar na largura</button>
       ${layoutModo && aj ? '<button type="button" class="secundario" data-acao="voltarGeral">Voltar ao layout geral</button>' : ""}
+      ${layoutModo && temPosicao && (temEstilo || (aj && aj.oculto)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
       ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
     </div>`;
 
-  if (!layoutModo && ehCaixaImagem(el)) {
-    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${el.livre ? "" : "checked"} /> Manter proporção</label>
+  if (!ehTexto) {
+    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${elT.livre ? "" : "checked"} /> Manter proporção</label>
       <p class="pix-ajuda">Desmarque para esticar ${escapeHtmlAdmin(rotuloElementoLayout(el).toLowerCase())} na largura e na altura, cada uma no seu (a alça do canto e os campos passam a mexer só na medida escolhida).</p>`;
-  }
-  if (!layoutModo && !ehCaixaImagem(el)) {
+  } else {
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
       ["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number((v || [])[i]) || 0}" /></label>`).join("") +
       `<span class="arte-amostra-cor" style="background:${cmykParaCss(v)}"></span></div>`;
     html += `
       <div class="arte-grade">
-        ${el.tipo === "nome" ? `<label>Texto
+        ${el.tipo === "nome" && !layoutModo ? `<label>Texto
           <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
         <label>Alinhamento
           <select data-p="alinhamento"><option value="centro">Centro</option><option value="esquerda">Esquerda</option><option value="direita">Direita</option></select></label>
         <label>Texto maior que a caixa
           <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
-        <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(el.espacamento) || 0}" /></label>
-        <label>Contorno (mm, 0 = sem)<input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(el.contornoMm) || 0}" /></label>
-        <label class="checkbox-inline"><input type="checkbox" data-p="maiusculas" ${el.maiusculas !== false ? "checked" : ""} /> MAIÚSCULAS</label>
-        ${el.tipo === "nome" ? `<label class="checkbox-inline"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> Sem apelido, usar o nome</label>` : ""}
+        <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
+        <label>Contorno (mm, 0 = sem)<input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
+        <label class="checkbox-inline"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> MAIÚSCULAS</label>
+        ${el.tipo === "nome" && !layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> Sem apelido, usar o nome</label>` : ""}
       </div>
-      <p class="arte-rotulo-cor">Cor (CMYK %)</p>${cmyk("corCmyk", el.corCmyk)}
-      <p class="arte-rotulo-cor">Cor do contorno (CMYK %)</p>${cmyk("contornoCmyk", el.contornoCmyk)}
+      <p class="arte-rotulo-cor">Cor (CMYK %)</p>${cmyk("corCmyk", elT.corCmyk)}
+      <p class="arte-rotulo-cor">Cor do contorno (CMYK %)</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
       <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>`;
   }
   if (!layoutModo) {
@@ -1412,45 +1482,58 @@ function renderizarPainelLayout() {
   }
   box.innerHTML = html;
 
-  const chkProp = box.querySelector("[data-proporcao]");
-  if (chkProp) {
-    chkProp.onchange = () => {
-      el.livre = !chkProp.checked;
+  const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
+  // Estilo: no layout geral muda o elemento; no time, o estilo próprio dele.
+  const gravarEstilo = (k, v) => {
+    if (layoutModo) {
+      gravarAjusteTime(el.id, (a) => { a.estilo = { ...(a.estilo || {}), [k]: v }; }).then(redesenhar);
+    } else {
+      el[k] = v;
       salvarLayout();
-      renderizarPalcoLayout();
-      renderizarPainelLayout();
+    }
+    redesenhar();
+  };
+
+  const chkOculto = box.querySelector("[data-oculto]");
+  if (chkOculto) {
+    chkOculto.onchange = () => {
+      gravarAjusteTime(el.id, (a) => { a.oculto = chkOculto.checked; }).then(redesenhar);
+      redesenhar();
     };
   }
+  const chkProp = box.querySelector("[data-proporcao]");
+  if (chkProp) chkProp.onchange = () => gravarEstilo("livre", !chkProp.checked);
   box.querySelectorAll("[data-cx]").forEach((inp) => {
     inp.onchange = () => {
       const nova = { ...c, [inp.dataset.cx]: Number(inp.value) || 0 };
-      if (ehCaixaImagem(el) && !el.livre && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
+      if (!ehTexto && !elT.livre && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
         const prop = c.w / c.h;
         if (inp.dataset.cx === "w") nova.h = nova.w / prop; else nova.w = nova.h * prop;
       }
       gravarCaixaLayout(el, m, nova);
-      renderizarPalcoLayout();
-      renderizarPainelLayout();
+      redesenhar();
     };
   });
+  const inpLetra = box.querySelector("[data-letra]");
+  if (inpLetra) {
+    // A altura da caixa é a altura das maiúsculas: muda pelo centro.
+    inpLetra.onchange = () => {
+      const h = Math.max(1, Number(inpLetra.value) || c.h);
+      gravarCaixaLayout(el, m, { ...c, y: c.y + (c.h - h) / 2, h });
+      redesenhar();
+    };
+  }
   box.querySelectorAll("[data-p]").forEach((inp) => {
-    if (inp.tagName === "SELECT") inp.value = el[inp.dataset.p] || inp.options[0].value;
+    if (inp.tagName === "SELECT") inp.value = elT[inp.dataset.p] || inp.options[0].value;
     inp.onchange = () => {
-      const k = inp.dataset.p;
-      el[k] = inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value;
-      salvarLayout();
-      renderizarPalcoLayout();
-      renderizarPainelLayout();
+      gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value);
     };
   });
   box.querySelectorAll("[data-cor]").forEach((grupo) => {
     grupo.querySelectorAll("input").forEach((inp) => {
       inp.onchange = () => {
-        el[grupo.dataset.cor] = [0, 1, 2, 3].map((i) =>
-          Math.max(0, Math.min(100, Number(grupo.querySelector(`[data-i="${i}"]`).value) || 0)));
-        salvarLayout();
-        renderizarPalcoLayout();
-        renderizarPainelLayout();
+        gravarEstilo(grupo.dataset.cor, [0, 1, 2, 3].map((i) =>
+          Math.max(0, Math.min(100, Number(grupo.querySelector(`[data-i="${i}"]`).value) || 0))));
       };
     });
   });
@@ -1460,9 +1543,9 @@ function renderizarPainelLayout() {
       if (a === "centralizar") {
         gravarCaixaLayout(el, m, { ...c, x: (m.dim.w - c.w) / 2 });
       } else if (a === "voltarGeral") {
-        const prod = limparParaFirestore(producaoDoTime(estadoTimes[layoutModo].time));
-        delete prod.layoutAjustes[layoutPeca][el.id];
-        await gravarProducaoTime(layoutModo, prod);
+        await gravarAjusteTime(el.id, (x) => { Object.keys(x).forEach((k) => delete x[k]); });
+      } else if (a === "voltarPosicao") {
+        await gravarAjusteTime(el.id, (x) => { delete x.base; delete x.tamanhos; });
       } else if (a === "semAjusteTam") {
         delete el.ajustes[m.tam];
         salvarLayout(true);
@@ -1480,10 +1563,27 @@ function renderizarPainelLayout() {
         layoutElSel = "";
         salvarLayout(true);
       }
-      renderizarPalcoLayout();
-      renderizarPainelLayout();
+      redesenhar();
     };
   });
+}
+
+// Muda o ajuste próprio do time aberto no editor para um elemento da peça
+// mostrada (posição, estilo, oculto) e grava. Ajuste vazio é apagado.
+function gravarAjusteTime(elId, mudar) {
+  const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
+  if (!time) return Promise.resolve();
+  const prod = limparParaFirestore(producaoDoTime(time));
+  prod.layoutAjustes = prod.layoutAjustes || {};
+  const porPeca = prod.layoutAjustes[layoutPeca] = prod.layoutAjustes[layoutPeca] || {};
+  const aj = porPeca[elId] = porPeca[elId] || {};
+  mudar(aj);
+  if (aj.estilo && !Object.keys(aj.estilo).length) delete aj.estilo;
+  if (!aj.oculto) delete aj.oculto;
+  if (!Object.keys(aj).length) delete porPeca[elId];
+  if (!Object.keys(porPeca).length) delete prod.layoutAjustes[layoutPeca];
+  return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout("✓ Salvo no time"))
+    .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
 }
 
 // ============================================================

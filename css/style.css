@@ -1703,6 +1703,9 @@ tr.linha-marcada > td { background: #eff6ff; }
 .layout-pecas { margin: 8px 0; }
 .layout-arte { position: absolute; pointer-events: none; opacity: 0.9; }
 .arte-el.ajuste-time { outline-color: #d97706; }
+.arte-el.oculto-time { opacity: 0.35; outline-style: dashed; }
+.arte-letra { display: block; margin: 8px 0 4px; font-size: 0.8rem; }
+.arte-letra input { display: block; margin-top: 4px; width: 120px; }
 
 .arte-grade {
   display: grid;

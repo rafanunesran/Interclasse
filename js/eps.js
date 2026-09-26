@@ -198,6 +198,14 @@ const EPS = (function () {
     return escalarCaixa(el.caixa || { x: 0, y: 0, w: 10, h: 10 }, moldeBase, moldeTam);
   }
 
+  // O elemento como fica num time: o estilo próprio do time (aba "Editar
+  // arte" do pedido) por cima do layout geral. null = oculto neste time.
+  function elementoDoTime(el, ajusteTime) {
+    const aj = ajusteTime || {};
+    if (aj.oculto) return null;
+    return aj.estilo ? { ...el, ...aj.estilo } : el;
+  }
+
   // Encaixa o conteúdo inteiro (w × h) dentro da caixa, sem distorcer.
   function encaixarProporcional(caixa, w, h) {
     const e = Math.min(caixa.w / w, caixa.h / h);
@@ -639,8 +647,11 @@ const EPS = (function () {
           ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam, op.sangriaMm == null ? 2 : op.sangriaMm) });
         }
 
-        (lay.elementos || []).forEach((el) => {
-          const caixa = caixaEfetiva(el, cam.tamanho, tamBase, tam, (ajustes[pecaId] || {})[el.id]);
+        (lay.elementos || []).forEach((elGeral) => {
+          const ajTime = (ajustes[pecaId] || {})[elGeral.id];
+          const el = elementoDoTime(elGeral, ajTime);
+          if (!el) return; // oculto neste time
+          const caixa = caixaEfetiva(el, cam.tamanho, tamBase, tam, ajTime);
           if (el.tipo === "detalhe") {
             const d = detalheDaPeca(prod, pecaId);
             const img = d && rec.imagens && rec.imagens[d.chave];
@@ -953,6 +964,7 @@ const EPS = (function () {
     caixaArte,
     encaixarProporcional,
     empacotar,
+    elementoDoTime,
     montarBlocos,
     arteDaPeca,
     detalheDaPeca,
