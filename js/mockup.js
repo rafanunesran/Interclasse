@@ -17,6 +17,9 @@
 //      sombras escurecem como na foto. Um toque de lustro volta por cima.
 // A gola é uma faixa: recebe a cor média da arte da gola.
 //
+// As mangas têm `cilindro` (ombro, barra, raio e giro): o molde dá a volta
+// no braço e o detalhe segue a manga da foto (ver mapaDoCilindro).
+//
 // Coordenadas das regiões em pixels da foto (1024 × 1536). Na vista de
 // frente, a manga à esquerda de quem olha é a DIREITA de quem veste.
 
@@ -30,11 +33,14 @@ const MOCKUP_BASE = {
       { peca: "costas", gama: 1, caixa: [700, 416, 942, 990],
         poligono: [[650, 452], [755, 418], [808, 428], [862, 418], [948, 468], [946, 600], [946, 700], [944, 958], [930, 969], [900, 979], [873, 985], [800, 990], [740, 984], [700, 977], [664, 966], [652, 800], [640, 700], [640, 560]] },
       { peca: "mangaDir", gama: 1,
+        cilindro: { ombro: [940, 460], barra: [962, 662], raio: [32, 53], giro: 20 },
         poligono: [[926, 460], [962, 468], [988, 530], [1008, 600], [1022, 662], [1000, 684], [952, 682], [906, 642], [904, 560]] },
       { peca: "gola", tipo: "faixa", poligono: [[740, 422], [748, 416], [756, 412], [808, 411], [846, 412], [856, 419], [846, 432], [808, 438], [760, 431]] },
       { peca: "mangaDir", gama: 1,
+        cilindro: { ombro: [85, 380], barra: [95, 662], raio: [27, 50], giro: -50 },
         poligono: [[78, 380], [92, 384], [118, 460], [120, 560], [112, 672], [80, 672], [22, 644], [38, 520], [62, 422]] },
       { peca: "mangaEsq", gama: 1,
+        cilindro: { ombro: [608, 345], barra: [640, 680], raio: [46, 80], giro: 20 },
         poligono: [[596, 334], [640, 350], [650, 376], [682, 468], [702, 560], [720, 658], [642, 694], [560, 696], [550, 560], [562, 420]] },
       { peca: "frente", gama: 1.32,
         poligono: [[92, 388], [84, 370], [160, 330], [242, 288], [250, 330], [266, 366], [300, 398], [378, 352], [424, 318], [455, 262], [603, 344], [562, 420], [550, 560], [562, 692], [566, 900], [584, 1150], [572, 1168], [540, 1180], [500, 1190], [400, 1197], [300, 1189], [200, 1176], [150, 1169], [108, 1153], [104, 900], [112, 672], [120, 560], [118, 460]] },
@@ -48,11 +54,13 @@ const MOCKUP_BASE = {
     img: "img/mockup/frente.webp", largura: 1024, altura: 1536,
     regioes: [
       { peca: "mangaDir", gama: 1,
+        cilindro: { ombro: [188, 352], barra: [168, 724], raio: [72, 101], giro: -20 },
         poligono: [[200, 346], [262, 400], [290, 470], [300, 560], [303, 650], [298, 712], [252, 756], [160, 738], [62, 696], [86, 600], [108, 480], [124, 405], [156, 364], [190, 343]] },
       // Abertura da manga (o avesso visível, em sombra): pintada sem a máscara.
       { peca: "mangaDir", interior: true,
         poligono: [[64, 688], [100, 692], [150, 704], [200, 716], [250, 728], [252, 752], [200, 750], [150, 736], [100, 717], [66, 702]] },
       { peca: "mangaEsq", gama: 1,
+        cilindro: { ombro: [835, 350], barra: [878, 720], raio: [40, 69], giro: 30 },
         poligono: [[805, 346], [852, 380], [884, 446], [908, 556], [940, 690], [900, 732], [860, 740], [812, 732], [812, 600], [815, 450]] },
       { peca: "frente", gama: 0.69,
         poligono: [[200, 350], [398, 244], [590, 398], [640, 262], [805, 346], [815, 450], [812, 600], [815, 714], [818, 900], [825, 1100], [836, 1372], [700, 1418], [500, 1422], [300, 1417], [248, 1380], [252, 1200], [258, 1000], [264, 850], [258, 726], [303, 650], [300, 560], [290, 470], [262, 400]] },
@@ -66,8 +74,10 @@ const MOCKUP_BASE = {
     img: "img/mockup/costas.webp", largura: 1024, altura: 1536,
     regioes: [
       { peca: "mangaEsq", gama: 1,
+        cilindro: { ombro: [178, 398], barra: [155, 740], raio: [48, 98], giro: -25 },
         poligono: [[188, 396], [213, 500], [238, 640], [256, 764], [160, 764], [56, 712], [92, 570], [136, 436]] },
       { peca: "mangaDir", gama: 1,
+        cilindro: { ombro: [840, 398], barra: [880, 740], raio: [45, 90], giro: 25 },
         poligono: [[838, 396], [810, 500], [784, 640], [770, 764], [864, 766], [966, 712], [932, 570], [888, 436]] },
       { peca: "costas", gama: 1,
         poligono: [[180, 390], [250, 342], [352, 308], [500, 328], [648, 302], [770, 342], [838, 396], [810, 500], [784, 640], [772, 760], [774, 1000], [786, 1300], [784, 1318], [762, 1342], [700, 1356], [500, 1360], [300, 1352], [240, 1302], [250, 1000], [254, 760], [238, 640], [213, 500]] },
@@ -205,18 +215,53 @@ const Mockup = (function () {
     ctx.restore();
   }
 
-  function deformar(ctx, fonte, quad, gama) {
-    const N = 16;
+  // Desenha a peça plana (u, v de 0 a 1) no destino dado por `mapa(u, v)`
+  // → [x, y, visível]. Células viradas para trás (manga) não são desenhadas.
+  function deformar(ctx, fonte, mapa, divisoesU) {
+    const NU = divisoesU || 16, NV = 16;
     const W = fonte.width, H = fonte.height;
-    for (let i = 0; i < N; i++) {
-      for (let j = 0; j < N; j++) {
-        const u0 = i / N, u1 = (i + 1) / N, v0 = j / N, v1 = (j + 1) / N;
-        const p00 = mapear(quad, gama, u0, v0), p10 = mapear(quad, gama, u1, v0);
-        const p01 = mapear(quad, gama, u0, v1), p11 = mapear(quad, gama, u1, v1);
+    for (let i = 0; i < NU; i++) {
+      for (let j = 0; j < NV; j++) {
+        const u0 = i / NU, u1 = (i + 1) / NU, v0 = j / NV, v1 = (j + 1) / NV;
+        const meio = mapa((u0 + u1) / 2, (v0 + v1) / 2);
+        if (meio[2] <= 0) continue;
+        const p00 = mapa(u0, v0), p10 = mapa(u1, v0);
+        const p01 = mapa(u0, v1), p11 = mapa(u1, v1);
         triangulo(ctx, fonte, p00[0], p00[1], p10[0], p10[1], p11[0], p11[1], u0 * W, v0 * H, u1 * W, v0 * H, u1 * W, v1 * H);
         triangulo(ctx, fonte, p00[0], p00[1], p11[0], p11[1], p01[0], p01[1], u0 * W, v0 * H, u1 * W, v1 * H, u0 * W, v1 * H);
       }
     }
+  }
+
+  // Quadrilátero (malha bilinear, com o `gama` que comprime um lado).
+  function mapaDoQuad(quad, gama) {
+    return (u, v) => [...mapear(quad, gama, u, v), 1];
+  }
+
+  // Manga como CILINDRO: o molde plano dá a volta no braço. O meio do molde
+  // (a linha de fora do braço, onde vai o detalhe) fica no ângulo `giro`
+  // (0 = virado para a câmera; −90/+90 = na borda esquerda/direita da
+  // silhueta); v vai do ombro (copa) à barra. Visto de fora com a copa para
+  // cima, o molde não fica espelhado.
+  function mapaDoCilindro(c) {
+    const [sx, sy] = c.ombro, [bx, by] = c.barra;
+    const dx = bx - sx, dy = by - sy, len = Math.hypot(dx, dy) || 1;
+    const nx = dy / len, ny = -dx / len; // perpendicular, para a direita da tela
+    const giro = ((c.giro || 0) * Math.PI) / 180;
+    return (u, v) => {
+      const psi = giro + (u - 0.5) * 2 * Math.PI;
+      const r = c.raio[0] + (c.raio[1] - c.raio[0]) * v;
+      // Um pouco além da silhueta, achatado na borda (sem fresta no contorno).
+      const lim = Math.PI / 2;
+      const q = Math.atan2(Math.sin(psi), Math.cos(psi));
+      const d = r * Math.sin(Math.max(-lim, Math.min(lim, q)));
+      return [sx + dx * v + nx * d, sy + dy * v + ny * d, Math.cos(psi) + 0.3];
+    };
+  }
+
+  function mapaDaRegiao(r) {
+    if (r.cilindro) return mapaDoCilindro(r.cilindro);
+    return mapaDoQuad(quadDaRegiao(r), r.gama);
   }
 
   // Caixa da região (com folga): é para onde a peça inteira é esticada. A
@@ -295,13 +340,23 @@ const Mockup = (function () {
         // (a primeira da lista com a mesma peça), só que sem máscara.
         const principal = base.regioes.find((x) => x.peca === r.peca && !x.interior && x.poligono && x.tipo !== "faixa") || r;
         if (!p.canvas) return;
-        deformar(cc, p.fundo || p.canvas, quadDaRegiao({ poligono: principal.poligono }), principal.gama);
+        deformar(cc, p.fundo || p.canvas, mapaDoQuad(quadDaRegiao({ poligono: principal.poligono }), principal.gama));
       } else {
         if (!p.canvas) return;
         // Com `caixa` própria, a arte esticada na região inteira vai por baixo
         // (preenche as bordas que ficam fora da caixa).
-        if (r.caixa) deformar(cc, p.fundo || p.canvas, quadDaRegiao({ poligono: r.poligono }), r.gama);
-        deformar(cc, p.canvas, quadDaRegiao(r), r.gama);
+        if (r.caixa && p.elementos) {
+          // Com `caixa` própria: a arte cobre a região inteira (sem emenda) e
+          // só os elementos (nome, número, brasão...) vão para a caixa.
+          deformar(cc, p.fundo || p.canvas, mapaDoQuad(quadDaRegiao({ poligono: r.poligono }), r.gama));
+          deformar(cc, p.elementos, mapaDoQuad(quadDaRegiao(r), r.gama));
+        } else {
+          if (r.caixa) deformar(cc, p.fundo || p.canvas, mapaDoQuad(quadDaRegiao({ poligono: r.poligono }), r.gama));
+          // Manga: por baixo, só a arte (sem o detalhe) esticada na região,
+          // para não sobrar fresta onde o cilindro não alcança o contorno.
+          if (r.cilindro) deformar(cc, p.fundo || p.canvas, mapaDoQuad(quadDaRegiao({ poligono: r.poligono }), 1));
+          deformar(cc, p.canvas, mapaDaRegiao(r), r.cilindro ? 32 : 16);
+        }
       }
       // Arte × sombreado do tecido, só dentro da região — e por cima da foto
       // (a camiseta da frente, desenhada depois, cobre a de trás).

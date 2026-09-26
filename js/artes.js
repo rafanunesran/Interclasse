@@ -521,7 +521,8 @@ function tamanhoDaPrevia() {
 // peça não tem nem molde nem arte (não há o que mostrar).
 // `semRecorte`: sem o recorte no formato do molde (o mockup usa a peça
 // inteira; quem dá o formato é a foto). `soArte`: só a arte, sem brasão,
-// logo, detalhe, nome e número (fundo das bordas no mockup).
+// logo, detalhe, nome e número (fundo das bordas no mockup); "elementos":
+// só eles, sem a arte (a caixa própria das regiões do mockup).
 // Espessura da faca (linha de corte), toda por fora do molde — igual à folha.
 const FACA_MM = 3;
 
@@ -551,7 +552,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   // Recorte no formato do molde (a arte, o brasão, o logo e os textos).
   const idClip = "pc" + Math.random().toString(36).slice(2, 8);
   const recorte = !semRecorte && molde && molde.contorno ? molde.contorno : "";
-  if (arte && arte.previaUrl) {
+  if (arte && arte.previaUrl && soArte !== "elementos") {
     const c = EPS.caixaArte(arte, base, dim, sangriaDaPrevia());
     partes.push(`<image href="${escAttr(urlPreviaGrande(arte.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
       `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="none" />`);
@@ -559,7 +560,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
 
   const fonte = fonteProntaDoTime(time);
   const elementos = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
-  (soArte ? [] : elementos).forEach((el) => {
+  (soArte === true ? [] : elementos).forEach((el) => {
     const c = EPS.caixaEfetiva(el, tam, base, dim, ajusteDoTime(timeId, pecaId, el.id));
     if (ehCaixaImagem(el)) {
       const url = imagemDaCaixa(el, prod, pecaId);
@@ -697,7 +698,10 @@ async function pecasParaMockup(time, timeId, tam, amostra) {
     // regiões com caixa própria no mockup sem duplicar os textos.
     const soArte = id === "gola" ? null : pecaEmSvg(time, timeId, id, tam, amostra, false, true, true);
     const fundo = soArte && soArte.svg ? await pecaEmCanvas(soArte, px) : null;
-    saida[id] = { canvas, fundo, cor: id === "gola" ? corMedia(canvas) : "" };
+    // Só os elementos (fundo transparente), para as regiões com caixa própria.
+    const soElem = id === "frente" || id === "costas" ? pecaEmSvg(time, timeId, id, tam, amostra, false, true, "elementos") : null;
+    const elementos = soElem && soElem.svg ? await pecaEmCanvas(soElem, px) : null;
+    saida[id] = { canvas, fundo, elementos, cor: id === "gola" ? corMedia(canvas) : "" };
   }
   return saida;
 }
