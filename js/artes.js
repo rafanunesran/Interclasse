@@ -521,6 +521,9 @@ function tamanhoDaPrevia() {
 // `semRecorte`: sem o recorte no formato do molde (o mockup usa a peça
 // inteira; quem dá o formato é a foto). `soArte`: só a arte, sem brasão,
 // logo, detalhe, nome e número (fundo das bordas no mockup).
+// Espessura da faca (linha de corte), toda por fora do molde — igual à folha.
+const FACA_MM = 3;
+
 function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soArte) {
   const prod = producaoDoTime(time);
   const ad = EPS.arteDaPeca(prod, pecaId);
@@ -593,13 +596,22 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
     : partes.join("");
   // Linha de corte por cima: do contorno (a prévia do EPS pode ter fundo
   // branco e taparia a arte); sem contorno, a prévia do molde.
+  // A faca tem 3 mm, toda por fora do contorno (como na folha EPS): traço
+  // com o dobro da espessura e máscara que esconde a metade de dentro.
+  let margem = 0;
   if (comMolde && molde && molde.contorno) {
-    svg += `<path d="${escAttr(molde.contorno)}" fill="none" stroke="#111" stroke-width="0.8" stroke-linejoin="round" />`;
+    margem = FACA_MM;
+    const idMasc = "fm" + Math.random().toString(36).slice(2, 8);
+    svg += `<mask id="${idMasc}" maskUnits="userSpaceOnUse" x="${-margem - 1}" y="${-margem - 1}" ` +
+      `width="${n(dim.w + 2 * margem + 2)}" height="${n(dim.h + 2 * margem + 2)}">` +
+      `<rect x="${-margem - 1}" y="${-margem - 1}" width="${n(dim.w + 2 * margem + 2)}" height="${n(dim.h + 2 * margem + 2)}" fill="#fff" />` +
+      `<path d="${escAttr(molde.contorno)}" fill="#000" /></mask>` +
+      `<path d="${escAttr(molde.contorno)}" fill="none" stroke="#111" stroke-width="${2 * FACA_MM}" stroke-linejoin="round" mask="url(#${idMasc})" />`;
   } else if (comMolde && molde && molde.previaUrl) {
     svg += `<image href="${escAttr(urlPreviaGrande(molde.previaUrl))}" x="0" y="0" ` +
       `width="${n(dim.w)}" height="${n(dim.h)}" preserveAspectRatio="none" />`;
   }
-  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte };
+  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte, margem };
 }
 
 // ---------------- Mockup nas fotos base (js/mockup.js) ----------------
@@ -782,12 +794,12 @@ function criarPreviaArteTime(timeId, time) {
       .map((ids) => pecas.filter(({ p }) => ids.includes(p.id)))
       .filter((l) => l.length);
     const larguraTela = Math.max(280, area.clientWidth || 800);
-    const larguraLinha = Math.max(...linhas.map((l) => l.reduce((t, { s }) => t + s.w, 0)));
-    const alturaTotal = linhas.reduce((t, l) => t + Math.max(...l.map(({ s }) => s.h)), 0);
+    const larguraLinha = Math.max(...linhas.map((l) => l.reduce((t, { s }) => t + s.w + 2 * s.margem, 0)));
+    const alturaTotal = linhas.reduce((t, l) => t + Math.max(...l.map(({ s }) => s.h + 2 * s.margem)), 0);
     const k = Math.min((larguraTela - 60) / larguraLinha, 640 / alturaTotal);
     area.innerHTML = `<div class="previa-pecas previa-pecas-folha">${linhas.map((l) => `<div class="previa-linha">${l.map(({ p, s }) => `
       <figure class="previa-peca">
-        <svg viewBox="0 0 ${s.w.toFixed(2)} ${s.h.toFixed(2)}" style="width:${(s.w * k).toFixed(0)}px;height:${(s.h * k).toFixed(0)}px" role="img" aria-label="${escAttr(p.nome)}">${s.svg}</svg>
+        <svg viewBox="${-s.margem} ${-s.margem} ${(s.w + 2 * s.margem).toFixed(2)} ${(s.h + 2 * s.margem).toFixed(2)}" style="width:${((s.w + 2 * s.margem) * k).toFixed(0)}px;height:${((s.h + 2 * s.margem) * k).toFixed(0)}px" role="img" aria-label="${escAttr(p.nome)}">${s.svg}</svg>
         <figcaption>${escapeHtmlAdmin(p.nome)}${s.temArte ? "" : ' <span class="badge pendente">sem arte</span>'}</figcaption>
       </figure>`).join("")}</div>`).join("")}</div>`;
     nota.textContent = (tamAtual
@@ -1430,7 +1442,7 @@ function perguntarOpcoesEps(resumo) {
           <label>Resolução das artes
             <select name="dpi"><option value="600">600 dpi (original)</option><option value="300">300 dpi (arquivo ~4× menor)</option><option value="150">150 dpi (prova)</option></select></label>
           <label>Contorno do molde
-            <select name="molde"><option value="frente">Por cima da arte (linha de corte visível)</option><option value="fundo">Por baixo da arte</option><option value="nenhum">Não incluir</option></select></label>
+            <select name="molde"><option value="frente">Por cima da arte (faca de 3 mm por fora)</option><option value="fundo">Por baixo da arte</option><option value="nenhum">Não incluir</option></select></label>
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
           <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
           <button type="submit" class="primario">Gerar</button>
@@ -1560,7 +1572,7 @@ async function baixarEpsDeTesteLayout() {
     const rec = await carregarRecursosDoTime(time, [m.tam], [layoutPeca], 150, avisoProducao);
     const { blocos, avisos } = EPS.montarBlocos(moldesConfig, layoutConfig, time,
       [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: true, sangriaMm: (layoutConfig.folha || {}).sangriaMm, pecas: [layoutPeca], nomePeca: nomePecaProducao, nomeTime: time.nome });
-    const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 20, espacoMm: 10, rotacao: "0" });
+    const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 26, espacoMm: 10, rotacao: "0" });
     avisoProducao("");
     if (!folhas.length) { alert(avisos.join("\n") || "Nada para gerar."); return; }
     baixarBlob(slugify(`teste-${time.nome}-${nomePecaProducao(layoutPeca)}-${m.tam}`) + ".eps",

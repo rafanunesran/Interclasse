@@ -526,8 +526,11 @@ arquivo à parte), num `.zip` quando há mais de um. O encaixe é por "melhor es
 
 - EPS enviados (moldes, brasão e logo) entram **intactos**, embutidos no arquivo.
 - A arte, o brasão, o logo e os textos de cada peça ficam **recortados no contorno do molde**
-  (com a sangria escolhida); a linha de corte do molde vai por cima (ou por baixo/fora, conforme
-  a opção).
+  (com a sangria escolhida).
+- A **faca** (linha de corte) tem sempre **3 mm de espessura, toda para fora** do contorno do
+  molde — não cobre a arte nem o marcador. Vai por cima ou por baixo da arte (ou fica de fora),
+  conforme a opção. A **distância entre peças** conta a partir da borda de fora da faca. Um molde
+  sem contorno lido sai com a linha do próprio EPS (o aviso manda **Reler contornos**).
 - As artes PNG são lidas **linha a linha** (uma arte de 600 dpi não caberia na memória do
   navegador inteira) e convertidas para **CMYK** com a fórmula simples (K = 1 − máx(R,G,B)); a
   transparência vira máscara (menos de 50% de opacidade não imprime). Cada arte entra **uma vez**

@@ -245,6 +245,7 @@ const EPS = (function () {
     };
 
     const tentar = (f, w, h) => {
+      // w/h já incluem a borda (faca) dos dois lados.
       // Cada bloco "ocupa" w+espaço × h+espaço (o espaço fica à direita e embaixo).
       const W = w + espaco, H = h + espaco;
       let melhor = null;
@@ -281,11 +282,14 @@ const EPS = (function () {
 
     const avisos = [];
     ordem.forEach(({ b }) => {
-      if (b.w + 2 * espaco > larguraMm && (!gira90 || b.h + 2 * espaco > larguraMm)) {
+      // `borda`: folga em volta da peça (a faca de 3 mm fica por fora dela).
+      const bd = Math.max(0, b.borda || 0);
+      const bw = b.w + 2 * bd, bh = b.h + 2 * bd;
+      if (bw + 2 * espaco > larguraMm && (!gira90 || bh + 2 * espaco > larguraMm)) {
         avisos.push(`Uma peça (${b.rotulo || ""}, ${b.w.toFixed(0)} mm) é mais larga que a folha (${larguraMm} mm).`);
       }
-      const opcoesRot = [{ rot: 0, w: b.w, h: b.h }];
-      if (gira90) opcoesRot.push({ rot: 90, w: b.h, h: b.w });
+      const opcoesRot = [{ rot: 0, w: bw, h: bh }];
+      if (gira90) opcoesRot.push({ rot: 90, w: bh, h: bw });
       let feito = false;
       for (let fi = 0; fi <= folhas.length && !feito; fi++) {
         const f = folhas[fi] || novaFolha();
@@ -299,12 +303,12 @@ const EPS = (function () {
         });
         if (!escolha && f.blocos.length === 0) {
           // Não cabe nem numa folha vazia: vai assim mesmo (com aviso acima).
-          escolha = { m: { x: espaco, y: espaco, W: b.w + espaco, H: b.h + espaco }, o: opcoesRot[0] };
+          escolha = { m: { x: espaco, y: espaco, W: bw + espaco, H: bh + espaco }, o: opcoesRot[0] };
         }
         if (escolha) {
           const { m, o } = escolha;
           ocupar(f, m.x, m.y, m.W, m.H);
-          f.blocos.push({ bloco: b, x: m.x, y: m.y, w: o.w, h: o.h, rot: o.rot });
+          f.blocos.push({ bloco: b, x: m.x + bd, y: m.y + bd, w: o.w - 2 * bd, h: o.h - 2 * bd, rot: o.rot });
           f.alturaMm = Math.max(f.alturaMm, m.y + m.H);
           feito = true;
         }
@@ -524,8 +528,9 @@ const EPS = (function () {
   // lateral esquerda, na vertical (lendo de baixo para cima), também a 1 mm
   // da borda e com 4 mm.
   const MARCADOR_ALTURA_MM = 4;
-  // Espessura da linha de corte desenhada por cima (a partir do contorno).
-  const LINHA_CORTE_MM = 0.3;
+  // Faca (linha de corte) desenhada a partir do contorno: 3 mm de espessura,
+  // toda para FORA do molde — não cobre a arte nem o marcador.
+  const LINHA_CORTE_MM = 3;
   const MARCADOR_MARGEM_MM = 1;
 
   function textoDoMarcador(nomeTime, tamanho, nomePeca) {
@@ -617,7 +622,12 @@ const EPS = (function () {
 
         const ops = [];
         const opMolde = { tipo: "eps", chave: "molde:" + pecaId + ":" + cam.tamanho, x: 0, y: 0, w: tam.w, h: tam.h };
-        if (posMolde === "fundo") ops.push(opMolde);
+        // Faca a partir do contorno (3 mm por fora); sem contorno lido, vai o
+        // EPS do molde como veio (com a espessura de linha do arquivo).
+        const faca = molde.contorno
+          ? { tipo: "linha", comandos: comandosDoContorno(molde.contorno), cmyk: [0, 0, 0, 100], mm: LINHA_CORTE_MM, fora: true }
+          : opMolde;
+        if (posMolde === "fundo") ops.push(faca);
 
         // Tudo o que é arte (imagem, brasão, logo, textos) é recortado no
         // formato do molde, quando o contorno dele é conhecido.
@@ -675,21 +685,20 @@ const EPS = (function () {
           }
         }
 
-        // Linha de corte por cima: com o contorno conhecido, ela é desenhada a
-        // partir dele (linha fina preta) — o EPS do molde costuma trazer um
-        // fundo branco preenchido (Corel) que taparia a arte inteira.
-        if (posMolde === "frente") {
-          if (molde.contorno) {
-            ops.push({ tipo: "linha", comandos: comandosDoContorno(molde.contorno), cmyk: [0, 0, 0, 100], mm: LINHA_CORTE_MM });
-          } else {
-            ops.push(opMolde);
-          }
+        // Faca por cima: com o contorno conhecido, ela é desenhada a partir
+        // dele — o EPS do molde costuma trazer um fundo branco preenchido
+        // (Corel) que taparia a arte inteira.
+        if (posMolde === "frente") ops.push(faca);
+        if (posMolde !== "nenhum" && !molde.contorno) {
+          avisar(`O molde de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" ${cam.tamanho} está sem contorno — a faca saiu com a espessura do próprio arquivo, não com 3 mm (aba Tamanhos → Reler contornos).`);
         }
         const h = tam.h;
         const contorno = recortar
           ? contornoComSangria(comandosDoContorno(molde.contorno), tam.w, tam.h, op.sangriaMm == null ? 2 : Number(op.sangriaMm))
           : null;
-        blocos.push({ w: tam.w, h, ops, contorno, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
+        // `borda`: a faca passa do molde; o encaixe reserva essa folga em volta.
+        const borda = posMolde !== "nenhum" && molde.contorno ? LINHA_CORTE_MM : 0;
+        blocos.push({ w: tam.w, h, ops, contorno, borda, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
       });
     });
     return { blocos, avisos };
@@ -872,7 +881,14 @@ const EPS = (function () {
           escrever("grestore\n");
           recortando = false;
         }
-        if (op.tipo === "linha") {
+        if (op.tipo === "linha" && op.fora) {
+          // Faca só por fora: recorta o lado de fora do contorno (retângulo
+          // grande + contorno, eoclip) e traça com o dobro da espessura.
+          const m = op.mm + 1;
+          const fora = `${X(-m)} ${Y(-m)} m ${X(b.w + m)} ${Y(-m)} l ${X(b.w + m)} ${Y(hb + m)} l ${X(-m)} ${Y(hb + m)} l h\n`;
+          escrever(`gsave newpath\n${fora}${caminho(op.comandos)}eoclip newpath\n${caminho(op.comandos)}` +
+            `${cmykPs(op.cmyk)} setcmykcolor ${num(op.mm * 2 * k)} setlinewidth 1 setlinejoin stroke grestore\n`);
+        } else if (op.tipo === "linha") {
           escrever(`gsave newpath\n${caminho(op.comandos)}${cmykPs(op.cmyk)} setcmykcolor ` +
             `${num(op.mm * k)} setlinewidth 1 setlinejoin stroke grestore\n`);
         } else if (op.tipo === "caminho") {
