@@ -25,7 +25,8 @@ const PECAS_PRODUCAO = [
   { id: "mangaEsq", nome: "Manga esquerda" },
   { id: "mangaDir", nome: "Manga direita" },
   { id: "detalheMangaEsq", nome: "Detalhe da manga esquerda" },
-  { id: "detalheMangaDir", nome: "Detalhe da manga direita" }
+  { id: "detalheMangaDir", nome: "Detalhe da manga direita" },
+  { id: "gola", nome: "Gola" }
 ];
 
 function nomePecaProducao(id) {

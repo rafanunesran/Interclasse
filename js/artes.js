@@ -58,6 +58,12 @@ function limparParaFirestore(obj) {
 
 const arred1 = (v) => Math.round(v * 10) / 10;
 
+// Brasão (do time) e logo (da empresa) são caixas de imagem: mantêm a
+// proporção e não têm estilo de texto.
+function ehCaixaImagem(el) {
+  return el.tipo === "brasao" || el.tipo === "logo";
+}
+
 // Fontes (opentype) já lidas, por arquivo.
 const fontesLidas = {};
 function obterFonte(ref) {
@@ -100,6 +106,7 @@ let salvarLayoutTimer = null;
 function escutarLayout() {
   if (layoutIniciado) return;
   layoutIniciado = true;
+  escutarLogoEmpresa();
   db.collection("config").doc("layout").onSnapshot(
     (doc) => {
       // Enquanto há uma gravação pendente, a cópia local é a mais nova.
@@ -107,6 +114,7 @@ function escutarLayout() {
       const d = doc.exists ? doc.data() : {};
       layoutConfig = { pecas: d.pecas || {}, folha: d.folha || {} };
       renderizarEditorLayout();
+      if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
     },
     (erro) => console.error("Erro ao carregar o layout:", erro)
   );
@@ -141,6 +149,75 @@ function estadoSalvarLayout(texto) {
 }
 
 // ============================================================
+// LOGO DA EMPRESA (Configurações)
+// ============================================================
+// Um EPS só, o mesmo para todos os times, usado como detalhe das camisetas
+// (ex.: a assinatura no peito ou na manga). Fica em config/geral.logoEmpresa
+// e entra no layout como uma caixa, igual ao brasão ("+ Logo" na aba Artes).
+
+let logoEmpresa = null;
+
+function escutarLogoEmpresa() {
+  db.collection("config").doc("geral").onSnapshot(
+    (doc) => {
+      const antes = JSON.stringify(logoEmpresa);
+      logoEmpresa = (doc.exists && doc.data().logoEmpresa) || null;
+      renderizarLogoEmpresa();
+      renderizarEditorLayout();
+      if (antes !== JSON.stringify(logoEmpresa) && typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+    },
+    (erro) => console.error("Erro ao carregar o logo da empresa:", erro)
+  );
+}
+
+// Caixa inicial do logo: pequena, no peito à esquerda, na proporção do EPS.
+function caixaLogoInicial(b) {
+  const w = b.w * 0.14;
+  const dim = logoEmpresa && logoEmpresa.bbox ? EPS.tamanhoMmDoBbox(logoEmpresa.bbox) : { w: 1, h: 1 };
+  return { x: b.w * 0.18, y: b.h * 0.2, w, h: (w * dim.h) / dim.w };
+}
+
+function renderizarLogoEmpresa() {
+  const el = document.getElementById("logoEmpresaBloco");
+  if (!el) return;
+  const l = logoEmpresa;
+  const dim = l && l.bbox ? EPS.tamanhoMmDoBbox(l.bbox) : null;
+  el.innerHTML = `
+    <div class="logo-empresa">
+      <div class="logo-empresa-previa">${l && l.previaUrl
+        ? `<img src="${escAttr(l.previaUrl)}" alt="Logo da empresa" />`
+        : `<span>${l ? "EPS enviado (sem prévia)" : "Nenhum logo"}</span>`}</div>
+      <div>
+        ${l ? `<p><strong>${escapeHtmlAdmin(l.nomeArquivo || "logo.eps")}</strong>${dim ? ` · ${dim.w.toFixed(0)} × ${dim.h.toFixed(0)} mm` : ""}</p>` : ""}
+        <button type="button" class="secundario" data-logo="enviar">${l ? "Trocar logo" : "Enviar logo (EPS)"}</button>
+        ${l ? '<button type="button" class="perigo" data-logo="remover">Remover</button>' : ""}
+      </div>
+    </div>`;
+  el.querySelector('[data-logo="enviar"]').onclick = async () => {
+    if (!exigirDriveProducao()) return;
+    const file = await escolherArquivos(".eps,.ps,application/postscript");
+    if (!file) return;
+    try {
+      const dados = await enviarEpsComPrevia(file, "logo-empresa", 600);
+      await db.collection("config").doc("geral").set({ logoEmpresa: limparParaFirestore(dados) }, { merge: true });
+      if (dados.semPrevia) alert("O logo foi enviado, mas a prévia não pôde ser desenhada. Ele aparece como uma caixa no editor.");
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Não foi possível enviar o logo.");
+    } finally {
+      avisoProducao("");
+    }
+  };
+  const rem = el.querySelector('[data-logo="remover"]');
+  if (rem) {
+    rem.onclick = async () => {
+      if (!confirm("Remover o logo da empresa? As caixas de logo do layout ficam vazias até enviar outro.")) return;
+      await db.collection("config").doc("geral").update({ logoEmpresa: firebase.firestore.FieldValue.delete() });
+    };
+  }
+}
+
+// ============================================================
 // ARQUIVOS DE PRODUÇÃO DO TIME (time aberto → aba Arquivos de produção)
 // ============================================================
 
@@ -158,7 +235,7 @@ function pendenciasProducao(time) {
   const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id]);
   if (!temArte) falta.push("arte das peças");
   const usaTexto = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo !== "brasao"));
+    (l.elementos || []).some((e) => !ehCaixaImagem(e)));
   const usaBrasao = Object.values(layoutConfig.pecas || {}).some((l) =>
     (l.elementos || []).some((e) => e.tipo === "brasao"));
   if (usaTexto && !p.fonte) falta.push("fonte");
@@ -369,7 +446,7 @@ async function enviarArquivoProducao(timeId, slot) {
 // É só desenho na tela (SVG com as miniaturas do Drive); a folha de verdade
 // continua saindo na aba Produção.
 
-const previaTime = { modo: "arte", tam: "", cor: "#ffffff" };
+const previaTime = { modo: "arte", tam: "", vista: "cena" };
 const amostraPrevia = { nomeCamiseta: "JOÃO PEDRO", nome: "João Pedro Silva", numero: "10" };
 
 // Tamanhos com molde em alguma peça, na ordem da tabela de tamanhos.
@@ -387,7 +464,9 @@ function tamanhoDaPrevia() {
 
 // Uma peça como SVG, em milímetros: { w, h, svg, temArte }. null quando a
 // peça não tem nem molde nem arte (não há o que mostrar).
-function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde) {
+// `semRecorte`: sem o recorte no formato do molde (o mockup usa a peça
+// inteira; quem dá o formato é a foto).
+function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte) {
   const prod = producaoDoTime(time);
   const arte = prod.pecas && prod.pecas[pecaId];
   const moldes = moldesConfig.pecas[pecaId] || {};
@@ -409,6 +488,9 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde) {
 
   const n = (v) => Number(v).toFixed(2);
   const partes = [];
+  // Recorte no formato do molde (a arte, o brasão, o logo e os textos).
+  const idClip = "pc" + Math.random().toString(36).slice(2, 8);
+  const recorte = !semRecorte && molde && molde.contorno ? molde.contorno : "";
   if (arte && arte.previaUrl) {
     const c = EPS.caixaArte(arte, base, dim);
     partes.push(`<image href="${escAttr(urlPreviaGrande(arte.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
@@ -419,9 +501,10 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde) {
   const elementos = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
   elementos.forEach((el) => {
     const c = EPS.caixaEfetiva(el, tam, base, dim, ajusteDoTime(timeId, pecaId, el.id));
-    if (el.tipo === "brasao") {
-      if (prod.brasao && prod.brasao.previaUrl) {
-        partes.push(`<image href="${escAttr(urlPreviaGrande(prod.brasao.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
+    if (ehCaixaImagem(el)) {
+      const img = el.tipo === "logo" ? logoEmpresa : prod.brasao;
+      if (img && img.previaUrl) {
+        partes.push(`<image href="${escAttr(urlPreviaGrande(img.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
           `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="xMidYMid meet" />`);
       } else if (comMolde) {
         partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
@@ -442,91 +525,96 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde) {
     }
   });
 
+  let svg = recorte
+    ? `<clipPath id="${idClip}"><path d="${escAttr(recorte)}" /></clipPath><g clip-path="url(#${idClip})">${partes.join("")}</g>`
+    : partes.join("");
   if (comMolde && molde && molde.previaUrl) {
-    partes.push(`<image href="${escAttr(urlPreviaGrande(molde.previaUrl))}" x="0" y="0" ` +
-      `width="${n(dim.w)}" height="${n(dim.h)}" preserveAspectRatio="none" />`);
+    svg += `<image href="${escAttr(urlPreviaGrande(molde.previaUrl))}" x="0" y="0" ` +
+      `width="${n(dim.w)}" height="${n(dim.h)}" preserveAspectRatio="none" />`;
   }
-  return { w: dim.w, h: dim.h, svg: partes.join(""), temArte: !!arte };
+  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte };
 }
 
-// Camiseta vetorial (frente e costas lado a lado) com as peças "vestidas":
-// cada peça é escalada para a área do corpo/manga e recortada no formato.
-const MOCKUP_FORMAS = {
-  corpoFrente: "M190,18 Q250,82 310,18 L398,44 L398,450 Q250,458 102,450 L102,44 Z",
-  corpoCostas: "M190,18 Q250,38 310,18 L398,44 L398,450 Q250,458 102,450 L102,44 Z",
-  mangaEsq: "M102,44 L18,160 L76,198 L102,164 Z",
-  mangaDir: "M398,44 L482,160 L424,198 L398,164 Z",
-  golaFrente: "M186,15 Q250,90 314,15",
-  golaCostas: "M186,15 Q250,44 314,15"
-};
+// ---------------- Mockup nas fotos base (js/mockup.js) ----------------
 
-function mockupSvg(time, timeId, tam, amostra, cor) {
-  const peca = (id) => pecaEmSvg(time, timeId, id, tam, amostra, false);
-  const uid = "mk" + Math.random().toString(36).slice(2, 8);
-  const n = (v) => Number(v).toFixed(2);
+// As miniaturas do Drive entram na peça como data: URL — o navegador não
+// carrega imagens de fora dentro de um SVG desenhado no canvas, e assim o
+// mockup pode ser baixado em PNG.
+const dataUrlsDrive = {};
+function dataUrlDoDrive(url) {
+  const m = /[?&]id=([^&"]+)/.exec(url);
+  if (!m || !driveScriptUrl) return Promise.resolve(url);
+  const id = m[1];
+  if (!dataUrlsDrive[id]) {
+    dataUrlsDrive[id] = baixarArquivoDrive(driveScriptUrl, id).then((bytes) => {
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+      return "data:image/png;base64," + btoa(bin);
+    }).catch((e) => {
+      delete dataUrlsDrive[id];
+      throw e;
+    });
+  }
+  return dataUrlsDrive[id];
+}
 
-  // Corpo: a largura do molde ocupa a largura da camiseta, a partir do ombro.
-  const vestirCorpo = (p) => {
-    if (!p) return "";
-    const s = 296 / p.w;
-    return `<g transform="translate(102 16) scale(${n(s)})">${p.svg}</g>`;
-  };
-  // Manga: cobre a área da manga (a sobra é recortada pelo formato).
-  const vestirManga = (p, x, y, w, h) => {
-    if (!p) return "";
-    const s = Math.max(w / p.w, h / p.h);
-    return `<g transform="translate(${n(x + (w - p.w * s) / 2)} ${n(y + (h - p.h * s) / 2)}) scale(${n(s)})">${p.svg}</g>`;
-  };
+async function embutirImagens(svg) {
+  const hrefs = [...new Set([...svg.matchAll(/href="([^"]+)"/g)].map((m) => m[1]))];
+  let saida = svg;
+  for (const h of hrefs) {
+    const url = h.replace(/&amp;/g, "&");
+    const dados = await dataUrlDoDrive(url).catch(() => url);
+    saida = saida.split(`href="${h}"`).join(`href="${dados}"`);
+  }
+  return saida;
+}
 
-  const vista = (dx, lado) => {
-    const frente = lado === "frente";
-    const corpo = frente ? MOCKUP_FORMAS.corpoFrente : MOCKUP_FORMAS.corpoCostas;
-    // De frente, a manga à esquerda de quem olha é a direita de quem veste.
-    const mEsqTela = frente ? peca("mangaDir") : peca("mangaEsq");
-    const mDirTela = frente ? peca("mangaEsq") : peca("mangaDir");
-    const id = `${uid}-${lado}`;
-    return `
-      <g transform="translate(${dx} 0)">
-        <defs>
-          <clipPath id="${id}-c"><path d="${corpo}" /></clipPath>
-          <clipPath id="${id}-e"><path d="${MOCKUP_FORMAS.mangaEsq}" /></clipPath>
-          <clipPath id="${id}-d"><path d="${MOCKUP_FORMAS.mangaDir}" /></clipPath>
-        </defs>
-        <path d="${MOCKUP_FORMAS.mangaEsq}" fill="${cor}" />
-        <g clip-path="url(#${id}-e)">${vestirManga(mEsqTela, 18, 44, 84, 154)}</g>
-        <path d="${MOCKUP_FORMAS.mangaDir}" fill="${cor}" />
-        <g clip-path="url(#${id}-d)">${vestirManga(mDirTela, 398, 44, 84, 154)}</g>
-        <path d="${corpo}" fill="${cor}" />
-        <g clip-path="url(#${id}-c)">${vestirCorpo(peca(frente ? "frente" : "costas"))}</g>
-        <path d="${corpo}" fill="url(#${uid}-sombra)" />
-        <path d="${MOCKUP_FORMAS.mangaEsq}" fill="url(#${uid}-sombra-m)" />
-        <path d="${MOCKUP_FORMAS.mangaDir}" fill="url(#${uid}-sombra-m)" />
-        <path d="${frente ? MOCKUP_FORMAS.golaFrente : MOCKUP_FORMAS.golaCostas}" fill="none" stroke="${cor}" stroke-width="10" stroke-linecap="round" />
-        <path d="${frente ? MOCKUP_FORMAS.golaFrente : MOCKUP_FORMAS.golaCostas}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1.2" />
-        <g fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.4" stroke-linejoin="round">
-          <path d="${corpo}" /><path d="${MOCKUP_FORMAS.mangaEsq}" /><path d="${MOCKUP_FORMAS.mangaDir}" />
-        </g>
-        <text x="250" y="486" text-anchor="middle" class="mockup-rotulo">${frente ? "Frente" : "Costas"}</text>
-      </g>`;
-  };
+// Peça plana (SVG em mm) → canvas com `pxMax` no lado maior.
+async function pecaEmCanvas(p, pxMax) {
+  const k = pxMax / Math.max(p.w, p.h);
+  const W = Math.max(1, Math.round(p.w * k)), H = Math.max(1, Math.round(p.h * k));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${p.w.toFixed(2)} ${p.h.toFixed(2)}" preserveAspectRatio="none">${await embutirImagens(p.svg)}</svg>`;
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await img.decode();
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  c.getContext("2d").drawImage(img, 0, 0, W, H);
+  return c;
+}
 
-  return `<svg class="mockup-svg" viewBox="0 0 1020 500" role="img" aria-label="Mockup da camiseta de ${escAttr(time.nome)}">
-    <defs>
-      <linearGradient id="${uid}-sombra" x1="0" x2="1" y1="0" y2="0">
-        <stop offset="0" stop-color="#000" stop-opacity=".14" />
-        <stop offset=".18" stop-color="#000" stop-opacity="0" />
-        <stop offset=".5" stop-color="#fff" stop-opacity=".08" />
-        <stop offset=".82" stop-color="#000" stop-opacity="0" />
-        <stop offset="1" stop-color="#000" stop-opacity=".14" />
-      </linearGradient>
-      <linearGradient id="${uid}-sombra-m" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0" stop-color="#000" stop-opacity="0" />
-        <stop offset="1" stop-color="#000" stop-opacity=".12" />
-      </linearGradient>
-    </defs>
-    ${vista(0, "frente")}
-    ${vista(520, "costas")}
-  </svg>`;
+// Cor média (css) do que está desenhado no canvas — para a faixa da gola.
+function corMedia(canvas) {
+  try {
+    const d = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 16) {
+      if (d[i + 3] < 128) continue;
+      r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+    }
+    return n ? `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})` : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+// Todas as peças do time prontas para o mockup: { pecaId: { canvas, cor } }.
+async function pecasParaMockup(time, timeId, tam, amostra) {
+  const saida = {};
+  // Nome e número precisam da fonte do time já carregada.
+  const f = producaoDoTime(time).fonte;
+  if (f && f.partes) {
+    const fonte = await obterFonte(f.partes).catch(() => null);
+    if (fonte) fontesProntas[chaveArquivoDrive(f.partes)] = fonte;
+  }
+  for (const id of ["frente", "costas", "mangaEsq", "mangaDir", "gola"]) {
+    const p = pecaEmSvg(time, timeId, id, tam, amostra, false, true);
+    if (!p || !p.svg) continue;
+    const canvas = await pecaEmCanvas(p, id === "frente" || id === "costas" ? 900 : 520);
+    saida[id] = { canvas, cor: id === "gola" ? corMedia(canvas) : "" };
+  }
+  return saida;
 }
 
 // Bloco completo da prévia: controles + desenho.
@@ -546,17 +634,31 @@ function criarPreviaArteTime(timeId, time) {
         `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>` : ""}
       <label>Apelido <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraPrevia.nomeCamiseta)}" /></label>
       <label>Número <input type="text" data-amostra="numero" value="${escAttr(amostraPrevia.numero)}" class="input-curto" /></label>
-      <label class="${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup>Cor da camiseta <input type="color" data-previa="cor" value="${escAttr(previaTime.cor)}" /></label>
+      <div class="segmentado ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup role="tablist" aria-label="Vista do mockup">
+        <button type="button" data-vista="cena" class="${previaTime.vista === "cena" ? "ativo" : ""}">Cena</button>
+        <button type="button" data-vista="frente" class="${previaTime.vista === "frente" ? "ativo" : ""}">Frente</button>
+        <button type="button" data-vista="costas" class="${previaTime.vista === "costas" ? "ativo" : ""}">Costas</button>
+      </div>
+      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>⬇ Baixar PNG</button>
     </div>
     <div class="previa-area"></div>
     <p class="pix-ajuda previa-nota"></p>`;
 
   const area = wrap.querySelector(".previa-area");
   const nota = wrap.querySelector(".previa-nota");
+  let desenhoMockup = 0;   // descarta desenhos antigos quando algo muda no meio
+  let ultimoMockup = null;
 
+  let esperandoFonte = false;
   const desenhar = () => {
     const tamAtual = tamanhoDaPrevia();
     const prod = producaoDoTime(time);
+    // A fonte do time ainda não chegou: desenha de novo quando chegar.
+    if (prod.fonte && prod.fonte.partes && !fonteProntaDoTime(time) && !esperandoFonte) {
+      esperandoFonte = true;
+      obterFonte(prod.fonte.partes).then(() => setTimeout(() => { esperandoFonte = false; desenhar(); }, 0))
+        .catch(() => { esperandoFonte = false; });
+    }
     const temArquivos = PECAS_PRODUCAO.some((p) => prod.pecas && prod.pecas[p.id]);
     const semFonte = prod.fonte ? "" : " Sem a fonte do time, o nome e o número aparecem só como caixas tracejadas.";
 
@@ -566,10 +668,29 @@ function criarPreviaArteTime(timeId, time) {
         nota.textContent = "Envie as artes das peças acima para ver o mockup montado com os arquivos de produção.";
         return;
       }
-      area.innerHTML = mockupSvg(time, timeId, tamAtual, amostraPrevia, previaTime.cor || "#ffffff");
-      nota.textContent = temArquivos
-        ? `Simulação aproximada, montada com as artes${tamAtual ? " do tamanho " + tamAtual : ""}. Os detalhes da manga não entram no mockup.`
-        : "Ainda sem as artes das peças: o mockup mostra só a camiseta com o nome e o número de teste.";
+      const vez = ++desenhoMockup;
+      area.innerHTML = '<div class="mockup-carregando">Montando o mockup…</div>';
+      nota.textContent = "";
+      pecasParaMockup(time, timeId, tamAtual, amostraPrevia)
+        .then((pecas) => Mockup.renderizar(previaTime.vista, pecas))
+        .then((canvas) => {
+          if (vez !== desenhoMockup) return;
+          canvas.className = "mockup-canvas";
+          canvas.setAttribute("role", "img");
+          canvas.setAttribute("aria-label", `Mockup da camiseta de ${time.nome}`);
+          area.innerHTML = "";
+          area.appendChild(canvas);
+          ultimoMockup = canvas;
+          nota.textContent = temArquivos
+            ? `Simulação na foto, montada com as artes${tamAtual ? " do tamanho " + tamAtual : ""}. Os detalhes da manga não aparecem no mockup.`
+            : "Ainda sem as artes das peças: o mockup mostra só o nome e o número de teste.";
+        })
+        .catch((e) => {
+          console.error(e);
+          if (vez !== desenhoMockup) return;
+          area.innerHTML = '<div class="vazio-lista"><p>Não foi possível montar o mockup.</p></div>';
+          nota.textContent = e.message || "";
+        });
       return;
     }
 
@@ -583,15 +704,20 @@ function criarPreviaArteTime(timeId, time) {
       nota.textContent = "";
       return;
     }
-    // Mesma escala para todas as peças: a manga fica do tamanho certo perto do corpo.
-    const alturaMax = Math.max(...pecas.map(({ s }) => s.h));
+    // Como a folha do molde: gola em cima, mangas no meio, frente e costas
+    // embaixo — todas na MESMA escala (a manga do tamanho certo perto do corpo).
+    const linhas = [["gola"], ["mangaEsq", "mangaDir", "detalheMangaEsq", "detalheMangaDir"], ["frente", "costas"]]
+      .map((ids) => pecas.filter(({ p }) => ids.includes(p.id)))
+      .filter((l) => l.length);
     const larguraTela = Math.max(280, area.clientWidth || 800);
-    const k = Math.min(280 / alturaMax, (larguraTela - 40) / pecas.reduce((t, { s }) => t + s.w, 0) * 1.6);
-    area.innerHTML = `<div class="previa-pecas">${pecas.map(({ p, s }) => `
+    const larguraLinha = Math.max(...linhas.map((l) => l.reduce((t, { s }) => t + s.w, 0)));
+    const alturaTotal = linhas.reduce((t, l) => t + Math.max(...l.map(({ s }) => s.h)), 0);
+    const k = Math.min((larguraTela - 60) / larguraLinha, 640 / alturaTotal);
+    area.innerHTML = `<div class="previa-pecas previa-pecas-folha">${linhas.map((l) => `<div class="previa-linha">${l.map(({ p, s }) => `
       <figure class="previa-peca">
         <svg viewBox="0 0 ${s.w.toFixed(2)} ${s.h.toFixed(2)}" style="width:${(s.w * k).toFixed(0)}px;height:${(s.h * k).toFixed(0)}px" role="img" aria-label="${escAttr(p.nome)}">${s.svg}</svg>
         <figcaption>${escapeHtmlAdmin(p.nome)}${s.temArte ? "" : ' <span class="badge pendente">sem arte</span>'}</figcaption>
-      </figure>`).join("")}</div>`;
+      </figure>`).join("")}</div>`).join("")}</div>`;
     nota.textContent = (tamAtual
       ? `Peças no molde do tamanho ${tamAtual}, com o layout da aba Artes.`
       : "Sem moldes de corte: as artes aparecem no tamanho do arquivo.") + semFonte;
@@ -601,13 +727,29 @@ function criarPreviaArteTime(timeId, time) {
     b.onclick = () => {
       previaTime.modo = b.dataset.modo;
       wrap.querySelectorAll("[data-modo]").forEach((x) => x.classList.toggle("ativo", x === b));
-      wrap.querySelector("[data-so-mockup]").classList.toggle("oculto", previaTime.modo !== "mockup");
+      wrap.querySelectorAll("[data-so-mockup]").forEach((x) => x.classList.toggle("oculto", previaTime.modo !== "mockup"));
       desenhar();
     };
   });
   const selTam = wrap.querySelector('[data-previa="tam"]');
   if (selTam) selTam.onchange = () => { previaTime.tam = selTam.value; desenhar(); };
-  wrap.querySelector('[data-previa="cor"]').oninput = (ev) => { previaTime.cor = ev.target.value; desenhar(); };
+  wrap.querySelectorAll("[data-vista]").forEach((b) => {
+    b.onclick = () => {
+      previaTime.vista = b.dataset.vista;
+      wrap.querySelectorAll("[data-vista]").forEach((x) => x.classList.toggle("ativo", x === b));
+      desenhar();
+    };
+  });
+  wrap.querySelector("[data-baixar-mockup]").onclick = () => {
+    if (!ultimoMockup) return;
+    try {
+      ultimoMockup.toBlob((blob) => {
+        if (blob) baixarBlob(`mockup-${slugify(time.nome) || "time"}-${previaTime.vista}.png`, blob);
+      }, "image/png");
+    } catch (e) {
+      alert("Não foi possível baixar o mockup: " + (e.message || e));
+    }
+  };
   wrap.querySelectorAll("[data-amostra]").forEach((inp) => {
     inp.oninput = () => { amostraPrevia[inp.dataset.amostra] = inp.value; desenhar(); };
   });
@@ -698,6 +840,7 @@ function renderizarEditorLayout() {
           <label>Número <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" style="width:60px" /></label>
           <span class="arte-botoes-add">
             ${layoutModo ? "" : `<button type="button" class="secundario" data-add="brasao">+ Brasão</button>
+            <button type="button" class="secundario" data-add="logo" title="Logo da empresa (enviado em Configurações)">+ Logo</button>
             <button type="button" class="secundario" data-add="nome">+ Nome</button>
             <button type="button" class="secundario" data-add="numero">+ Número</button>`}
             <button type="button" class="secundario" data-l="teste">⬇ EPS de teste</button>
@@ -772,6 +915,7 @@ function caminhoSvg(comandos, s) {
 
 function rotuloElementoLayout(el) {
   if (el.tipo === "brasao") return "Brasão";
+  if (el.tipo === "logo") return "Logo da empresa";
   if (el.tipo === "numero") return "Número";
   return el.campo === "nomeCompleto" ? "Nome completo" : "Nome na camiseta";
 }
@@ -798,9 +942,14 @@ function renderizarPalcoLayout() {
   const arte = prod.pecas && prod.pecas[layoutPeca];
   if (arte && arte.previaUrl) {
     const c = EPS.caixaArte(arte, base, dim);
+    // Recortada no formato do molde, como vai sair na folha.
+    const idClip = "lc" + Math.random().toString(36).slice(2, 8);
+    const clip = m.molde.contorno ? `<clipPath id="${idClip}"><path d="${escAttr(m.molde.contorno)}" /></clipPath>` : "";
     palco.insertAdjacentHTML("beforeend",
-      `<img class="layout-arte" src="${escAttr(urlPreviaGrande(arte.previaUrl))}" alt="" draggable="false"
-        style="left:${c.x * s}px;top:${c.y * s}px;width:${c.w * s}px;height:${c.h * s}px" />`);
+      `<svg class="layout-arte" viewBox="0 0 ${dim.w.toFixed(2)} ${dim.h.toFixed(2)}" preserveAspectRatio="none"
+        style="left:0;top:0;width:${dim.w * s}px;height:${dim.h * s}px">${clip}
+        <image href="${escAttr(urlPreviaGrande(arte.previaUrl))}" x="${c.x.toFixed(2)}" y="${c.y.toFixed(2)}"
+          width="${c.w.toFixed(2)}" height="${c.h.toFixed(2)}" preserveAspectRatio="none"${clip ? ` clip-path="url(#${idClip})"` : ""} /></svg>`);
   }
   if (m.molde.previaUrl) {
     palco.insertAdjacentHTML("beforeend",
@@ -817,10 +966,11 @@ function renderizarPalcoLayout() {
     div.style.top = c.y * s + "px";
     div.style.width = c.w * s + "px";
     div.style.height = c.h * s + "px";
-    if (el.tipo === "brasao") {
-      div.innerHTML = prod.brasao && prod.brasao.previaUrl
-        ? `<img src="${escAttr(urlPreviaGrande(prod.brasao.previaUrl))}" alt="" draggable="false" style="object-fit:contain" />`
-        : '<span class="arte-el-rotulo">Brasão</span>';
+    if (ehCaixaImagem(el)) {
+      const img = el.tipo === "logo" ? logoEmpresa : prod.brasao;
+      div.innerHTML = img && img.previaUrl
+        ? `<img src="${escAttr(urlPreviaGrande(img.previaUrl))}" alt="" draggable="false" style="object-fit:contain" />`
+        : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : "Brasão"}</span>`;
     } else if (fonte) {
       const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el);
       const contorno = el.contornoMm > 0
@@ -862,7 +1012,7 @@ function ligarArrasteLayout(div, alca, el) {
       const dx = (e.clientX - x0) / m.s, dy = (e.clientY - y0) / m.s;
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
-        atual = { x: ini.x, y: ini.y, w, h: el.tipo === "brasao" ? w / prop : Math.max(2, ini.h + dy) };
+        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
       }
@@ -924,10 +1074,11 @@ function adicionarElementoLayout(tipo) {
   const b = m.base;
   const caixa = tipo === "numero" ? { x: b.w * 0.3, y: b.h * 0.3, w: b.w * 0.4, h: b.h * 0.28 }
     : tipo === "nome" ? { x: b.w * 0.2, y: b.h * 0.18, w: b.w * 0.6, h: b.h * 0.07 }
-      : { x: b.w * 0.6, y: b.h * 0.15, w: b.w * 0.18, h: b.w * 0.2 };
+      : tipo === "logo" ? caixaLogoInicial(b)
+        : { x: b.w * 0.6, y: b.h * 0.15, w: b.w * 0.18, h: b.w * 0.2 };
   ["x", "y", "w", "h"].forEach((k) => (caixa[k] = arred1(caixa[k])));
   const el = { id: novoIdLayout("e"), tipo, caixa };
-  if (tipo !== "brasao") {
+  if (tipo !== "brasao" && tipo !== "logo") {
     Object.assign(el, {
       campo: tipo === "nome" ? "nomeCamiseta" : "numero",
       corCmyk: [0, 0, 0, 100], contornoMm: 0, contornoCmyk: [0, 0, 0, 0],
@@ -979,7 +1130,7 @@ function renderizarPainelLayout() {
       ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
     </div>`;
 
-  if (!layoutModo && el.tipo !== "brasao") {
+  if (!layoutModo && !ehCaixaImagem(el)) {
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
       ["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number((v || [])[i]) || 0}" /></label>`).join("") +
@@ -1011,7 +1162,7 @@ function renderizarPainelLayout() {
   box.querySelectorAll("[data-cx]").forEach((inp) => {
     inp.onchange = () => {
       const nova = { ...c, [inp.dataset.cx]: Number(inp.value) || 0 };
-      if (el.tipo === "brasao" && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
+      if (ehCaixaImagem(el) && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
         const prop = c.w / c.h;
         if (inp.dataset.cx === "w") nova.h = nova.w / prop; else nova.w = nova.h * prop;
       }
@@ -1091,6 +1242,12 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
     const bytes = await baixarArquivoDrive(driveScriptUrl, ref);
     return { bytes: EPS.extrairPostScript(bytes), bbox: bbox || EPS.lerBoundingBox(bytes) };
   };
+  const usaLogo = Object.values(layoutConfig.pecas || {}).some((l) =>
+    (l.elementos || []).some((e) => e.tipo === "logo"));
+  if (usaLogo && logoEmpresa) {
+    aviso("Carregando o logo da empresa…");
+    rec.eps.logo = await lerEps(logoEmpresa.partes || logoEmpresa.epsId, logoEmpresa.bbox);
+  }
   if (prod.brasao) {
     aviso("Carregando o brasão…");
     rec.eps.brasao = await lerEps(prod.brasao.partes || prod.brasao.epsId, prod.brasao.bbox);
@@ -1161,6 +1318,7 @@ function perguntarOpcoesEps(resumo) {
         <form>
           <label>Largura da folha / rolo (cm)<input type="number" name="larguraCm" min="10" step="0.5" value="${escAttr(f.larguraCm || 150)}" required /></label>
           <label>Distância entre peças (mm)<input type="number" name="espacoMm" min="0" step="0.5" value="${escAttr(f.espacoMm == null ? 10 : f.espacoMm)}" required /></label>
+          <label>Sangria para fora da linha de corte (mm)<input type="number" name="sangriaMm" min="0" max="20" step="0.5" value="${escAttr(f.sangriaMm == null ? 2 : f.sangriaMm)}" /></label>
           <label>Girar as peças para aproveitar melhor?
             <select name="rotacao">
               <option value="0">Não girar (fornecedor não permite)</option>
@@ -1187,6 +1345,7 @@ function perguntarOpcoesEps(resumo) {
       fechar({
         larguraCm: Number(form.larguraCm.value) || 150,
         espacoMm: Math.max(0, Number(form.espacoMm.value) || 0),
+        sangriaMm: Math.max(0, Number(form.sangriaMm.value) || 0),
         rotacao: form.rotacao.value,
         dpi: Number(form.dpi.value) || 600,
         molde: form.molde.value,
@@ -1248,7 +1407,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
       avisoProducao(`${rotuloTime}: montando a folha…`);
       await esperarTela();
       const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutConfig, time, g.camisetas, rec,
-        { molde: op.molde, etiqueta: op.etiqueta, pecas: pecasIds, nomePeca: nomePecaProducao });
+        { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao });
       avB.forEach((a) => avisos.push(`${rotuloTime}: ${a}`));
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
         larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: op.alturaMaxCm * 10
@@ -1297,7 +1456,7 @@ async function baixarEpsDeTesteLayout() {
   try {
     const rec = await carregarRecursosDoTime(time, [m.tam], [layoutPeca], 150, avisoProducao);
     const { blocos, avisos } = EPS.montarBlocos(moldesConfig, layoutConfig, time,
-      [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: false, pecas: [layoutPeca], nomePeca: nomePecaProducao });
+      [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: false, sangriaMm: (layoutConfig.folha || {}).sangriaMm, pecas: [layoutPeca], nomePeca: nomePecaProducao });
     const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 20, espacoMm: 10, rotacao: "0" });
     avisoProducao("");
     if (!folhas.length) { alert(avisos.join("\n") || "Nada para gerar."); return; }

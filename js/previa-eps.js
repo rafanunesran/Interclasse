@@ -81,5 +81,42 @@ const PreviaEps = (function () {
     return new Blob([png], { type: "image/png" });
   }
 
-  return { carregar, gerar };
+  // Converte o EPS num PDF sem compressão (os desenhos ficam com operadores
+  // simples, seja qual for o programa que gerou o EPS). É daí que se lê o
+  // contorno do molde (EPS.contornoDePdf).
+  async function pdfSemCompressao(bytesEps) {
+    const { fabrica, modulo } = await carregar();
+    const gs = await fabrica({
+      noInitialRun: true,
+      print: () => {},
+      printErr: () => {},
+      instantiateWasm: (imports, ok) => {
+        WebAssembly.instantiate(modulo, imports).then((inst) => ok(inst));
+        return {};
+      }
+    });
+    gs.FS.writeFile("/in.eps", bytesEps);
+    const rc = gs.callMain([
+      "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET", "-dEPSCrop",
+      "-sDEVICE=pdfwrite", "-dCompressPages=false", "-dCompressFonts=false",
+      "-sOutputFile=/out.pdf", "/in.eps"
+    ]);
+    let pdf = null;
+    try {
+      pdf = gs.FS.readFile("/out.pdf");
+    } catch (e) {
+      pdf = null;
+    }
+    if (rc !== 0 || !pdf || !pdf.length) throw new Error("O Ghostscript não conseguiu ler o contorno deste EPS.");
+    return pdf;
+  }
+
+  // Contorno do molde (texto "M x y L ... Z" em mm) ou null.
+  async function contorno(bytesEps) {
+    const pdf = await pdfSemCompressao(bytesEps);
+    const inflar = window.pako && window.pako.inflate ? (d) => window.pako.inflate(d) : null;
+    return EPS.contornoDePdf(pdf, inflar);
+  }
+
+  return { carregar, gerar, contorno };
 })();

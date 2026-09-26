@@ -441,13 +441,19 @@ do tamanho dela, a **arte do time** adaptada ao tamanho, o **brasão** e o nome/
 
 ### 1. Moldes de corte (aba **Tamanhos**)
 
-Um **EPS por peça em cada tamanho** — Frente, Costas, Manga esquerda/direita e Detalhe da manga
-esquerda/direita —, no tamanho real (lido do `%%BoundingBox`). Em **Enviar vários**, escolha
-todos de uma vez: o site reconhece a peça e o tamanho pelo nome do arquivo (`costas-M.eps`,
-`manga esq GG.eps`, `detalhe manga dir P.eps`). A **prévia** de cada molde é desenhada pelo
+Um **EPS por peça em cada tamanho** — Frente, Costas, Manga esquerda/direita, Detalhe da manga
+esquerda/direita e **Gola** —, no tamanho real (lido do `%%BoundingBox`). Em **Enviar vários**,
+escolha todos de uma vez: o site reconhece a peça e o tamanho pelo nome do arquivo
+(`costas-M.eps`, `manga esq GG.eps`, `detalhe manga dir P.eps`, `gola M.eps`). A **prévia** de cada molde é desenhada pelo
 próprio site (Ghostscript no navegador, ~16 MB baixados só na primeira vez); se não der, a
 célula oferece enviar um PNG. Escolha o **tamanho base** (padrão: M) — é nele que o layout é
 marcado e é para ele que as artes são feitas.
+
+O site também lê o **contorno** de cada molde (a linha de corte: o maior desenho do EPS,
+convertido pelo Ghostscript num PDF simples — funciona com EPS do Corel, do Illustrator...). É
+com ele que a arte é **recortada no formato da peça**. Moldes enviados antes disso aparecem com
+"⚠️ sem contorno": use **Ler contornos** no topo da tabela. Sem contorno, a arte daquela peça sai
+retangular (a geração avisa).
 
 ### 2. Arquivos do time (aba **Inicial** → abra o time → **Arquivos de produção**)
 
@@ -461,7 +467,8 @@ O selo mostra **pronto ✓** ou o que falta. Arquivos grandes vão ao Drive em p
 
 ### 3. Layout (aba **Artes**)
 
-Em cima do molde de cada peça, marque o **brasão** e as caixas do **nome** e do **número**
+Em cima do molde de cada peça, marque o **brasão**, o **logo da empresa** e as caixas do **nome** e
+do **número**
 (arrastar, alça do canto ou X/Y/largura/altura em mm). A caixa é o **limite**: nome ou número
 comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No texto: cor **CMYK**,
 **contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do
@@ -471,11 +478,28 @@ O layout **geral** vale para todos os times. Em **Editando**, escolha um time pa
 próprio** dele (só a posição; **Voltar ao layout geral** desfaz). **⬇ EPS de teste** baixa a peça
 aberta com o apelido e o número de teste, usando os arquivos do time.
 
+### Logo da empresa (aba **Configurações**)
+
+O seu logo em **EPS**, o mesmo para todos os times, para usar como detalhe das camisetas. Na
+aba Artes, **+ Logo** coloca uma caixa dele em qualquer peça (proporção mantida, ajuste por time
+como o brasão). O EPS entra intacto na folha.
+
+### Prévia do time (time aberto → Arquivos de produção)
+
+- **Arte (sem simulação)**: as peças planas, no formato do molde e com a arte recortada, como na
+  folha de corte — gola em cima, mangas no meio, frente e costas embaixo.
+- **Mockup**: a arte **vestida numa foto** de camiseta branca num manequim (vistas **Cena**, com a
+  frente e as costas, **Frente** e **Costas**). Cada peça é deformada para a perspectiva da foto e
+  multiplicada pelas sombras do tecido, então as dobras continuam aparecendo; a gola recebe a
+  cor da arte da gola. **Baixar PNG** salva a imagem para mandar ao cliente. As fotos base ficam
+  em `img/mockup/` e as regiões (corpo, mangas, gola) de cada foto em `js/mockup.js`.
+
 ### Gerar (aba **Produção**)
 
 **Folhas EPS (CMYK)** na leva (ou **Folha EPS** no bloco de um modelo) pergunta:
 
 - **largura da folha/rolo** e **distância entre peças**;
+- a **sangria** para fora da linha de corte (padrão 2 mm; 0 = a arte para exatamente no contorno);
 - se o fornecedor deixa **girar** as peças (90° quando aproveitar melhor) ou não;
 - a **resolução** das artes (600 dpi original, 300 ou 150 para prova);
 - contorno do molde por cima/por baixo/fora, altura máxima por folha e a etiqueta
@@ -487,7 +511,10 @@ arquivo à parte), num `.zip` quando há mais de um. O encaixe é por "melhor es
 
 ### Como o arquivo é feito
 
-- EPS enviados (moldes e brasão) entram **intactos**, embutidos no arquivo.
+- EPS enviados (moldes, brasão e logo) entram **intactos**, embutidos no arquivo.
+- A arte, o brasão, o logo e os textos de cada peça ficam **recortados no contorno do molde**
+  (com a sangria escolhida); a linha de corte do molde vai por cima (ou por baixo/fora, conforme
+  a opção).
 - As artes PNG são lidas **linha a linha** (uma arte de 600 dpi não caberia na memória do
   navegador inteira) e convertidas para **CMYK** com a fórmula simples (K = 1 − máx(R,G,B)); a
   transparência vira máscara (menos de 50% de opacidade não imprime). Cada arte entra **uma vez**

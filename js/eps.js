@@ -320,6 +320,172 @@ const EPS = (function () {
     return { folhas: folhas.filter((f) => f.blocos.length), avisos };
   }
 
+  // ---------------- Contorno do molde ----------------
+  // O EPS do molde (Corel, Illustrator...) passa pelo Ghostscript e vira um
+  // PDF sem compressão: aí os desenhos chegam com os operadores simples do
+  // PDF (m, l, c, v, y, re, h, cm, q/Q), seja qual for o programa de origem.
+  // O contorno da peça é o maior caminho do arquivo (a linha de corte); os
+  // piquetes e marcas pequenas ficam de fora.
+  //
+  // Devolve o contorno como texto "M x y L x y C x1 y1 x2 y2 x y ... Z", em
+  // mm, com origem no canto de CIMA à esquerda do molde (y para baixo) — ou
+  // null quando não acha nada que pareça a peça.
+  //
+  // `inflar` (opcional, ex. pako.inflate) descomprime os fluxos que o
+  // Ghostscript comprimir mesmo assim (formulários/XObjects).
+  function contornoDePdf(bytes, inflar) {
+    const texto = textoDeBytes(bytes, 0, bytes.length);
+    const mb = texto.match(/\/MediaBox\s*\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]/);
+    if (!mb) return null;
+    const [mx1, my1, mx2, my2] = mb.slice(1, 5).map(Number);
+    const larg = mx2 - mx1, alt = my2 - my1;
+
+    const subcaminhos = [];
+    const re = /<<((?:(?!>>)[\s\S])*)>>\s*stream\r?\n([\s\S]*?)endstream/g;
+    let m;
+    while ((m = re.exec(texto))) {
+      const dic = m[1];
+      if (/\/Subtype\s*\/(?!Form\b)|\/Type\s*\/(XRef|ObjStm|Metadata)|\/Length1|\/FontFile/.test(dic)) continue;
+      let fluxo = m[2];
+      if (/\/Filter/.test(dic)) {
+        if (!inflar || !/\/FlateDecode/.test(dic) || /\/DecodeParms|\[\s*\/\w+\s+\//.test(dic)) continue;
+        try {
+          const b = new Uint8Array(fluxo.length);
+          for (let i = 0; i < fluxo.length; i++) b[i] = fluxo.charCodeAt(i) & 0xff;
+          fluxo = textoDeBytes(inflar(b), 0, Infinity);
+        } catch (e) {
+          continue;
+        }
+      }
+      lerConteudoPdf(fluxo, subcaminhos);
+    }
+    if (!subcaminhos.length) return null;
+
+    const area = (s) => (s.x2 - s.x1) * (s.y2 - s.y1);
+    const maior = subcaminhos.reduce((a, b) => (area(b) > area(a) ? b : a));
+    // Tem que ocupar boa parte do molde, senão não é o contorno.
+    if (area(maior) < 0.4 * larg * alt) return null;
+
+    const f = (v) => String(Math.round(v * 100) / 100);
+    const X = (v) => f((v - mx1) / PT_POR_MM);
+    const Y = (v) => f((my2 - v) / PT_POR_MM);
+    return maior.cmds.map((c) => {
+      if (c[0] === "M" || c[0] === "L") return `${c[0]} ${X(c[1])} ${Y(c[2])}`;
+      if (c[0] === "C") return `C ${X(c[1])} ${Y(c[2])} ${X(c[3])} ${Y(c[4])} ${X(c[5])} ${Y(c[6])}`;
+      return "Z";
+    }).join(" ");
+  }
+
+  // Lê um fluxo de conteúdo de PDF e junta os subcaminhos desenhados (já na
+  // coordenada da página), cada um com a sua caixa.
+  function lerConteudoPdf(fluxo, saida) {
+    const tokens = fluxo.match(/\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|\[|\]|\/[^\s/\[\]()<>]+|[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?|[A-Za-z'"*]+\*?/g) || [];
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const pilha = [];
+    let pilhaNum = [];
+    let atual = null;
+    let caminho = [];
+    let px = 0, py = 0;
+    const tp = (x, y) => [ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]];
+    const novo = () => {
+      atual = { cmds: [], x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity };
+      caminho.push(atual);
+    };
+    const ponto = (x, y) => {
+      const [X, Y] = tp(x, y);
+      if (X < atual.x1) atual.x1 = X;
+      if (X > atual.x2) atual.x2 = X;
+      if (Y < atual.y1) atual.y1 = Y;
+      if (Y > atual.y2) atual.y2 = Y;
+      return [X, Y];
+    };
+    const pintar = () => {
+      caminho.forEach((s) => { if (s.cmds.length > 1) saida.push(s); });
+      caminho = [];
+      atual = null;
+    };
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      const n = Number(t);
+      if (t !== "" && !isNaN(n) && /^[-+.\d]/.test(t)) { pilhaNum.push(n); continue; }
+      const a = pilhaNum;
+      pilhaNum = [];
+      switch (t) {
+        case "q": pilha.push(ctm.slice()); break;
+        case "Q": ctm = pilha.pop() || [1, 0, 0, 1, 0, 0]; break;
+        case "cm": {
+          if (a.length < 6) break;
+          const [A, B, C, D, E, F] = a.slice(-6);
+          const c = ctm;
+          ctm = [A * c[0] + B * c[2], A * c[1] + B * c[3], C * c[0] + D * c[2], C * c[1] + D * c[3],
+            E * c[0] + F * c[2] + c[4], E * c[1] + F * c[3] + c[5]];
+          break;
+        }
+        case "m": novo(); px = a[0]; py = a[1]; atual.cmds.push(["M", ...ponto(px, py)]); break;
+        case "l": if (!atual) novo(); px = a[0]; py = a[1]; atual.cmds.push(["L", ...ponto(px, py)]); break;
+        case "c":
+          if (!atual) novo();
+          atual.cmds.push(["C", ...ponto(a[0], a[1]), ...ponto(a[2], a[3]), ...ponto(a[4], a[5])]);
+          px = a[4]; py = a[5];
+          break;
+        case "v":
+          if (!atual) novo();
+          atual.cmds.push(["C", ...ponto(px, py), ...ponto(a[0], a[1]), ...ponto(a[2], a[3])]);
+          px = a[2]; py = a[3];
+          break;
+        case "y":
+          if (!atual) novo();
+          atual.cmds.push(["C", ...ponto(a[0], a[1]), ...ponto(a[2], a[3]), ...ponto(a[2], a[3])]);
+          px = a[2]; py = a[3];
+          break;
+        case "re": {
+          const [x, y, w, h] = a.slice(-4);
+          novo();
+          atual.cmds.push(["M", ...ponto(x, y)], ["L", ...ponto(x + w, y)], ["L", ...ponto(x + w, y + h)], ["L", ...ponto(x, y + h)], ["Z"]);
+          break;
+        }
+        case "h": if (atual) atual.cmds.push(["Z"]); break;
+        case "S": case "s": case "f": case "F": case "f*": case "B": case "B*": case "b": case "b*": case "n":
+          pintar();
+          break;
+        case "BI": // imagem embutida: pula até o EI
+          while (i < tokens.length && tokens[i] !== "EI") i++;
+          break;
+        default: break;
+      }
+    }
+  }
+
+  // Texto do contorno ("M x y L ... Z") → comandos { type, x, y, x1... }.
+  function comandosDoContorno(str) {
+    const t = String(str || "").trim().split(/\s+/);
+    const out = [];
+    for (let i = 0; i < t.length;) {
+      const op = t[i++];
+      const n = () => Number(t[i++]);
+      if (op === "M" || op === "L") out.push({ type: op, x: n(), y: n() });
+      else if (op === "C") out.push({ type: "C", x1: n(), y1: n(), x2: n(), y2: n(), x: n(), y: n() });
+      else if (op === "Z") out.push({ type: "Z" });
+      else break;
+    }
+    return out;
+  }
+
+  // Sangria: o contorno um pouco maior (escala a partir do centro, `mm` para
+  // cada lado). Numa peça de 500 mm, 2 mm de sangria erram menos de um
+  // décimo de mm nas curvas fechadas — suficiente para não sobrar branco.
+  function contornoComSangria(cmds, w, h, mm) {
+    if (!(mm > 0)) return cmds;
+    const sx = (w + 2 * mm) / w, sy = (h + 2 * mm) / h;
+    const cx = w / 2, cy = h / 2;
+    return cmds.map((c) => {
+      const n = { type: c.type };
+      ["x", "x1", "x2"].forEach((k) => { if (c[k] != null) n[k] = cx + (c[k] - cx) * sx; });
+      ["y", "y1", "y2"].forEach((k) => { if (c[k] != null) n[k] = cy + (c[k] - cy) * sy; });
+      return n;
+    });
+  }
+
   // ---------------- Montagem das peças ----------------
 
   // Monta os blocos (uma peça de uma camiseta cada) de UM time.
@@ -367,17 +533,28 @@ const EPS = (function () {
         const opMolde = { tipo: "eps", chave: "molde:" + pecaId + ":" + cam.tamanho, x: 0, y: 0, w: tam.w, h: tam.h };
         if (posMolde === "fundo") ops.push(opMolde);
 
+        // Tudo o que é arte (imagem, brasão, logo, textos) é recortado no
+        // formato do molde, quando o contorno dele é conhecido.
+        const recortar = !!molde.contorno;
+        if (!recortar) {
+          avisar(`O molde de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" ${cam.tamanho} está sem contorno — a arte dessa peça saiu retangular (aba Tamanhos → Ler contornos).`);
+        }
         if (arte && arte.larguraPx) {
-          ops.push({ tipo: "imagem", chave: "arte:" + pecaId, ...caixaArte(arte, tamBase, tam) });
+          ops.push({ tipo: "imagem", chave: "arte:" + pecaId, recortar, ...caixaArte(arte, tamBase, tam) });
         }
 
         (lay.elementos || []).forEach((el) => {
           const caixa = caixaEfetiva(el, cam.tamanho, tamBase, tam, (ajustes[pecaId] || {})[el.id]);
-          if (el.tipo === "brasao") {
-            const e = rec.eps && rec.eps.brasao;
-            if (!e) { avisar("O time não tem brasão (EPS) — a caixa do brasão ficou vazia."); return; }
+          if (el.tipo === "brasao" || el.tipo === "logo") {
+            const e = rec.eps && rec.eps[el.tipo];
+            if (!e) {
+              avisar(el.tipo === "logo"
+                ? "Sem logo da empresa (Configurações) — a caixa do logo ficou vazia."
+                : "O time não tem brasão (EPS) — a caixa do brasão ficou vazia.");
+              return;
+            }
             const t = tamanhoMmDoBbox(e.bbox);
-            ops.push({ tipo: "eps", chave: "brasao", ...encaixarProporcional(caixa, t.w, t.h) });
+            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...encaixarProporcional(caixa, t.w, t.h) });
             return;
           }
           if (!rec.fonte) { avisar("O time não tem fonte — nome e número ficaram de fora."); return; }
@@ -387,6 +564,7 @@ const EPS = (function () {
           if (!l.comandos.length) return;
           ops.push({
             tipo: "caminho",
+            recortar,
             comandos: deslocarComandos(l.comandos, caixa.x, caixa.y),
             cmyk: el.corCmyk || [0, 0, 0, 100],
             contorno: el.contornoMm > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: Number(el.contornoMm) } : null
@@ -406,7 +584,10 @@ const EPS = (function () {
             h = tam.h + 1 + ETIQUETA_MM * 1.3;
           }
         }
-        blocos.push({ w: tam.w, h, ops, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
+        const contorno = recortar
+          ? contornoComSangria(comandosDoContorno(molde.contorno), tam.w, tam.h, op.sangriaMm == null ? 2 : Number(op.sangriaMm))
+          : null;
+        blocos.push({ w: tam.w, h, ops, contorno, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
       });
     });
     return { blocos, avisos };
@@ -557,25 +738,40 @@ const EPS = (function () {
       escrever(`gsave ${transf}\n`);
       const X = (v) => num(v * k);
       const Y = (v) => num((hb - v) * k);
+      const caminho = (comandos) => {
+        let s = "";
+        let cx = 0, cy = 0;
+        comandos.forEach((c) => {
+          if (c.type === "M") { s += `${X(c.x)} ${Y(c.y)} m\n`; cx = c.x; cy = c.y; }
+          else if (c.type === "L") { s += `${X(c.x)} ${Y(c.y)} l\n`; cx = c.x; cy = c.y; }
+          else if (c.type === "C") {
+            s += `${X(c.x1)} ${Y(c.y1)} ${X(c.x2)} ${Y(c.y2)} ${X(c.x)} ${Y(c.y)} c\n`;
+            cx = c.x; cy = c.y;
+          } else if (c.type === "Q") {
+            // Quadrática → cúbica (o PostScript só tem a cúbica).
+            const c1x = cx + (2 / 3) * (c.x1 - cx), c1y = cy + (2 / 3) * (c.y1 - cy);
+            const c2x = c.x + (2 / 3) * (c.x1 - c.x), c2y = c.y + (2 / 3) * (c.y1 - c.y);
+            s += `${X(c1x)} ${Y(c1y)} ${X(c2x)} ${Y(c2y)} ${X(c.x)} ${Y(c.y)} c\n`;
+            cx = c.x; cy = c.y;
+          } else if (c.type === "Z") s += "h\n";
+        });
+        return s;
+      };
 
+      // Recorte no formato do molde: as ops marcadas `recortar` (arte,
+      // brasão, logo, textos) ficam dentro de um clip com o contorno.
+      let recortando = false;
       b.ops.forEach((op) => {
+        const querRecorte = !!(op.recortar && b.contorno && b.contorno.length);
+        if (querRecorte && !recortando) {
+          escrever(`gsave newpath\n${caminho(b.contorno)}clip newpath\n`);
+          recortando = true;
+        } else if (!querRecorte && recortando) {
+          escrever("grestore\n");
+          recortando = false;
+        }
         if (op.tipo === "caminho") {
-          let s = "";
-          let cx = 0, cy = 0;
-          op.comandos.forEach((c) => {
-            if (c.type === "M") { s += `${X(c.x)} ${Y(c.y)} m\n`; cx = c.x; cy = c.y; }
-            else if (c.type === "L") { s += `${X(c.x)} ${Y(c.y)} l\n`; cx = c.x; cy = c.y; }
-            else if (c.type === "C") {
-              s += `${X(c.x1)} ${Y(c.y1)} ${X(c.x2)} ${Y(c.y2)} ${X(c.x)} ${Y(c.y)} c\n`;
-              cx = c.x; cy = c.y;
-            } else if (c.type === "Q") {
-              // Quadrática → cúbica (o PostScript só tem a cúbica).
-              const c1x = cx + (2 / 3) * (c.x1 - cx), c1y = cy + (2 / 3) * (c.y1 - cy);
-              const c2x = c.x + (2 / 3) * (c.x1 - c.x), c2y = c.y + (2 / 3) * (c.y1 - c.y);
-              s += `${X(c1x)} ${Y(c1y)} ${X(c2x)} ${Y(c2y)} ${X(c.x)} ${Y(c.y)} c\n`;
-              cx = c.x; cy = c.y;
-            } else if (c.type === "Z") s += "h\n";
-          });
+          const s = caminho(op.comandos);
           if (op.contorno) {
             // Contorno por fora: traço com o dobro da espessura por baixo do
             // preenchimento — só a metade de fora fica visível.
@@ -617,6 +813,7 @@ const EPS = (function () {
           escrever("\n%%EndDocument\nEndEPSF\n");
         }
       });
+      if (recortando) escrever("grestore\n");
       escrever("grestore\n");
     });
 
@@ -636,6 +833,9 @@ const EPS = (function () {
     encaixarProporcional,
     empacotar,
     montarBlocos,
+    contornoDePdf,
+    comandosDoContorno,
+    contornoComSangria,
     estimarTamanho,
     ascii85,
     escreverEps

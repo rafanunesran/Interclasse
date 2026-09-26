@@ -30,6 +30,7 @@ function escutarMoldes() {
       moldesConfig = { tamanhoBase: d.tamanhoBase || "", baseAutomatica: d.baseAutomatica === true, pecas: d.pecas || {} };
       renderizarMoldes();
       if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
+      if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
     },
     (erro) => console.error("Erro ao carregar os moldes:", erro)
   );
@@ -88,7 +89,9 @@ function avisoProducao(texto) {
 
 // Envia um EPS (molde ou brasão) e a prévia dele. Devolve os dados para
 // guardar: { epsId, partes, bbox, previaUrl, nomeArquivo, semPrevia }.
-async function enviarEpsComPrevia(file, prefixo, larguraPrevia) {
+// `comContorno`: é um molde — lê também o contorno da peça, para recortar a
+// arte no formato dele.
+async function enviarEpsComPrevia(file, prefixo, larguraPrevia, comContorno) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const bbox = EPS.lerBoundingBox(bytes); // valida antes de enviar
   avisoProducao(`Enviando ${file.name}…`);
@@ -105,6 +108,16 @@ async function enviarEpsComPrevia(file, prefixo, larguraPrevia) {
     console.warn("Prévia do EPS não gerada:", e);
     dados.semPrevia = true;
   }
+  if (comContorno) {
+    try {
+      avisoProducao(`Lendo o contorno de ${file.name}…`);
+      dados.contorno = (await PreviaEps.contorno(EPS.extrairPostScript(bytes))) || "";
+    } catch (e) {
+      console.warn("Contorno do molde não lido:", e);
+      dados.contorno = "";
+    }
+    if (!dados.contorno) dados.semContorno = true;
+  }
   return dados;
 }
 
@@ -114,12 +127,13 @@ function urlPreviaGrande(url) {
 }
 
 // ---------------- Reconhecer peça e tamanho pelo nome do arquivo ----------------
-// "costas-M.eps", "Manga Esq GG.eps", "detalhe_manga_dir_P.eps"...
+// "costas-M.eps", "Manga Esq GG.eps", "detalhe_manga_dir_P.eps", "gola M.eps"...
 
 function pecaPeloNome(nome) {
   const n = " " + normalizarTexto(nome).replace(/[^a-z0-9]+/g, " ") + " ";
   const esq = /\besq|esquerd/.test(n);
   const dir = /\bdir|direit/.test(n);
+  if (/\bgola/.test(n)) return "gola";
   if (/detalhe/.test(n)) return esq ? "detalheMangaEsq" : dir ? "detalheMangaDir" : "";
   if (/manga/.test(n)) return esq ? "mangaEsq" : dir ? "mangaDir" : "";
   if (/frente|frontal/.test(n)) return "frente";
@@ -143,10 +157,12 @@ function renderizarMoldes() {
   const tamanhos = TODOS_TAMANHOS;
   const total = PECAS_PRODUCAO.length * tamanhos.length;
   const feitos = PECAS_PRODUCAO.reduce((s, p) => s + tamanhos.filter((t) => moldeDe(p.id, t)).length, 0);
+  const semContorno = PECAS_PRODUCAO.reduce((s, p) =>
+    s + tamanhos.filter((t) => { const m = moldeDe(p.id, t); return m && !m.contorno; }).length, 0);
 
   elMoldesCorte.innerHTML = `
     <p>Um <strong>EPS por peça em cada tamanho</strong>, no tamanho real. É ele que vai para a folha de impressão e é nele que a arte de cada time é adaptada. A prévia é desenhada automaticamente.</p>
-    <p class="pix-ajuda">Dica: em <strong>Enviar vários</strong>, escolha todos os arquivos de uma vez — o site reconhece a peça e o tamanho pelo nome (ex.: <code>costas-M.eps</code>, <code>manga esq GG.eps</code>, <code>detalhe manga dir P.eps</code>).</p>
+    <p class="pix-ajuda">Dica: em <strong>Enviar vários</strong>, escolha todos os arquivos de uma vez — o site reconhece a peça e o tamanho pelo nome (ex.: <code>costas-M.eps</code>, <code>manga esq GG.eps</code>, <code>detalhe manga dir P.eps</code>, <code>gola M.eps</code>).</p>
     <div class="moldes-topo">
       <button type="button" class="primario" data-acao="varios">Enviar vários</button>
       <label>Tamanho base (onde o layout é marcado)
@@ -154,6 +170,7 @@ function renderizarMoldes() {
           `<option value="${escAttr(t)}"${moldesConfig.tamanhoBase === t ? " selected" : ""}>${escapeHtmlAdmin(t)}</option>`).join("")}</select>
       </label>
       <span class="badge">${feitos}/${total} moldes</span>
+      ${semContorno ? `<button type="button" class="secundario" data-acao="contornos" title="Lê o formato das peças já enviadas, para recortar a arte no molde">Ler contornos (${semContorno})</button>` : ""}
     </div>
     <div class="moldes-tabela-wrap"><table class="moldes-tabela">
       <thead><tr><th>Tamanho</th>${PECAS_PRODUCAO.map((p) => `<th>${escapeHtmlAdmin(p.nome)}</th>`).join("")}</tr></thead>
@@ -161,6 +178,8 @@ function renderizarMoldes() {
     </table></div>`;
 
   elMoldesCorte.querySelector('[data-acao="varios"]').onclick = enviarVariosMoldes;
+  const btnContornos = elMoldesCorte.querySelector('[data-acao="contornos"]');
+  if (btnContornos) btnContornos.onclick = lerContornosPendentes;
   elMoldesCorte.querySelector('[data-acao="base"]').onchange = async (ev) => {
     moldesConfig.tamanhoBase = ev.target.value;
     moldesConfig.baseAutomatica = false;
@@ -185,7 +204,7 @@ function celulaMolde(pecaId, tam) {
     : `<button type="button" class="link-inline" data-molde="${escAttr(chave)}|previa">sem prévia — enviar PNG</button>`;
   return `<td class="molde-celula" title="${escAttr(m.nomeArquivo || "")}">
     ${img}
-    <div class="molde-medida">${dim.w.toFixed(0)} × ${dim.h.toFixed(0)} mm</div>
+    <div class="molde-medida">${dim.w.toFixed(0)} × ${dim.h.toFixed(0)} mm${m.contorno ? "" : ' · <span title="Sem o contorno, a arte não é recortada no formato do molde (fica retangular)">⚠️ sem contorno</span>'}</div>
     <div class="molde-acoes">
       <button type="button" class="secundario" data-molde="${escAttr(chave)}|enviar">Trocar</button>
       <button type="button" class="perigo" data-molde="${escAttr(chave)}|remover" title="Remover">×</button>
@@ -225,7 +244,7 @@ async function enviarMolde(pecaId, tam, file) {
   moldesEnviando = `${pecaId}|${tam}`;
   renderizarMoldes();
   try {
-    const dados = await enviarEpsComPrevia(file, `molde-${pecaId}-${tam}`, 1200);
+    const dados = await enviarEpsComPrevia(file, `molde-${pecaId}-${tam}`, 1200, true);
     moldesConfig.pecas[pecaId] = moldesConfig.pecas[pecaId] || {};
     moldesConfig.pecas[pecaId][tam] = dados;
     // Sem escolha do usuário, o base é o M (tamanho do meio, onde as artes
@@ -252,7 +271,7 @@ async function enviarVariosMoldes() {
   plano.filter((x) => !x.peca || !x.tam).forEach((x) => naoReconhecidos.push(x.f.name));
   const validos = plano.filter((x) => x.peca && x.tam);
   if (!validos.length) {
-    alert("Nenhum arquivo reconhecido. O nome precisa ter a peça (frente, costas, manga esq/dir, detalhe manga esq/dir) e o tamanho (ex.: costas-M.eps).");
+    alert("Nenhum arquivo reconhecido. O nome precisa ter a peça (frente, costas, manga esq/dir, detalhe manga esq/dir, gola) e o tamanho (ex.: costas-M.eps).");
     return;
   }
   if (!confirm(`Enviar ${validos.length} molde(s)?\n\n` + validos.map((x) =>
@@ -275,4 +294,39 @@ async function enviarVariosMoldes() {
     (semPrevia.length ? `\n\nSem prévia (envie um PNG na célula): ${semPrevia.join(", ")}` : "") +
     (falhas.length ? `\n\nFalharam:\n${falhas.join("\n")}` : "") +
     (naoReconhecidos.length ? `\n\nNão reconhecidos:\n${naoReconhecidos.join("\n")}` : ""));
+}
+
+// Moldes enviados antes da leitura do contorno (ou em que ela falhou): baixa
+// cada EPS e tenta de novo.
+async function lerContornosPendentes() {
+  if (!exigirDriveProducao()) return;
+  const lista = [];
+  PECAS_PRODUCAO.forEach((p) => TODOS_TAMANHOS.forEach((t) => {
+    const m = moldeDe(p.id, t);
+    if (m && !m.contorno) lista.push({ p, t, m });
+  }));
+  let ok = 0;
+  const falhas = [];
+  for (let i = 0; i < lista.length; i++) {
+    const { p, t, m } = lista[i];
+    avisoProducao(`Lendo contornos ${i + 1} de ${lista.length}: ${p.nome} ${t}…`);
+    try {
+      const bytes = await baixarArquivoDrive(driveScriptUrl, m.partes || m.epsId);
+      const c = await PreviaEps.contorno(EPS.extrairPostScript(bytes));
+      if (c) {
+        m.contorno = c;
+        delete m.semContorno;
+        ok++;
+      } else {
+        m.semContorno = true;
+        falhas.push(`${p.nome} ${t}`);
+      }
+    } catch (e) {
+      falhas.push(`${p.nome} ${t}: ${e.message || e}`);
+    }
+  }
+  await gravarMoldes();
+  avisoProducao("");
+  alert(`${ok} contorno(s) lido(s).` + (falhas.length
+    ? `\n\nSem contorno (a arte dessas peças fica retangular):\n${falhas.join("\n")}` : ""));
 }
