@@ -2885,3 +2885,12 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .campo-deslizante input[type="range"] { flex: 1; accent-color: var(--acento, var(--azul)); height: auto !important; padding: 0 !important; background: transparent !important; border: 0 !important; }
 .campo-deslizante input[type="number"] { width: 64px !important; flex: 0 0 64px; }
 .efeito-sub { margin: 8px 0 4px; }
+
+/* Lupa do conta-gotas: pixels ampliados em volta do mouse. */
+.lupa-conta-gotas {
+  position: fixed; z-index: 2000; pointer-events: none; padding: 6px; border-radius: 12px;
+  background: #1a1b20; border: 1px solid #34353d; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.lupa-conta-gotas canvas { display: block; width: 99px; height: 99px; border-radius: 8px; image-rendering: pixelated; }
+.lupa-cor { display: flex; align-items: center; gap: 6px; margin-top: 6px; font: 600 12px ui-monospace, monospace; color: #e5e7eb; }
+.lupa-cor i { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #4b5563; display: inline-block; }

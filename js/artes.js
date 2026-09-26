@@ -1518,17 +1518,22 @@ function renderizarEditorLayout() {
   });
   // Clique no fundo do palco solta a seleção.
   const palcoFundo = elEditorLayout.querySelector(".estudio-palco-fundo");
+  // Conta-gotas: lupa com o pixel embaixo do mouse.
+  palcoFundo.addEventListener("pointermove", mostrarLupaContaGotas);
+  palcoFundo.addEventListener("pointerleave", () => {
+    const lupa = document.querySelector(".lupa-conta-gotas");
+    if (lupa) lupa.remove();
+  });
+
   palcoFundo.addEventListener("pointerdown", async (ev) => {
     if (contaGotasAlvo) {
       ev.preventDefault();
-      const palco = document.getElementById("layoutPalco");
-      const m = medidasLayout();
-      if (!palco || !m) return;
-      const r = palco.getBoundingClientRect();
+      const pt = mmDoPonteiro(ev);
+      if (!pt) return;
       const chave = contaGotasAlvo;
       estadoSalvarLayout("Lendo a cor…");
       try {
-        const hex = await corNoPontoDaPeca((ev.clientX - r.left) / m.s, (ev.clientY - r.top) / m.s);
+        const hex = await corNoPontoDaPeca(pt.x, pt.y);
         sairContaGotas();
         gravarEstiloElemento(layoutElSel, chave, hexParaCmyk(hex));
         estadoSalvarLayout(`Cor ${hex.toUpperCase()} aplicada`);
@@ -1910,36 +1915,94 @@ document.addEventListener("keydown", (ev) => {
 // (arte, brasão, logo ou texto, como aparece na prévia) vai para o campo.
 let contaGotasAlvo = ""; // estilo que vai receber a cor ("corCmyk", ...)
 
+let contaGotasDesenho = null; // Promise do canvas da peça (alta resolução)
+
 function entrarContaGotas(chave) {
   contaGotasAlvo = chave;
+  contaGotasDesenho = desenharPecaParaContaGotas();
+  contaGotasDesenho.catch(() => {});
   const fundo = elEditorLayout && elEditorLayout.querySelector(".estudio-palco-fundo");
   if (fundo) fundo.classList.add("modo-conta-gotas");
   document.querySelectorAll("[data-conta-gotas]").forEach((b) => b.classList.toggle("ativo", b.dataset.contaGotas === chave));
-  estadoSalvarLayout("Conta-gotas: clique num ponto da arte (Esc cancela)");
+  estadoSalvarLayout("Conta-gotas: passe o mouse na arte e clique no pixel (Esc cancela)");
 }
 
 function sairContaGotas() {
   contaGotasAlvo = "";
+  contaGotasDesenho = null;
   const fundo = elEditorLayout && elEditorLayout.querySelector(".estudio-palco-fundo");
   if (fundo) fundo.classList.remove("modo-conta-gotas");
+  const lupa = document.querySelector(".lupa-conta-gotas");
+  if (lupa) lupa.remove();
   document.querySelectorAll("[data-conta-gotas]").forEach((b) => b.classList.remove("ativo"));
   estadoSalvarLayout("");
 }
 
-// Cor (hex) num ponto da peça, em mm — desenha a peça como na prévia (arte,
-// brasão, logo, textos) num canvas e lê o pixel.
-async function corNoPontoDaPeca(xMm, yMm) {
+// A peça como aparece no palco (arte recortada no molde, brasão, logo e
+// textos), desenhada num canvas grande: cada pixel da tela cai num pixel
+// próprio do desenho, sem misturar com os vizinhos.
+async function desenharPecaParaContaGotas() {
   const m = medidasLayout();
   const time = timeDaPrevia();
-  const p = time && pecaEmSvg(time, layoutModo || layoutTimePrevia, layoutPeca, m.tam, amostraLayout, false, true);
+  const p = time && m && pecaEmSvg(time, layoutModo || layoutTimePrevia, layoutPeca, m.tam, amostraLayout, false, false);
   if (!p) throw new Error("Escolha um time com arte (\"Prévia com a arte de\") para pegar a cor da arte.");
-  const canvas = await pecaEmCanvas(p, 1200);
-  const k = canvas.width / p.w;
-  const px = Math.min(canvas.width - 1, Math.max(0, Math.round(xMm * k)));
-  const py = Math.min(canvas.height - 1, Math.max(0, Math.round(yMm * k)));
-  const d = canvas.getContext("2d").getImageData(px, py, 1, 1).data;
-  if (d[3] < 10) throw new Error("Nesse ponto não há arte (é o fundo). Clique em cima do desenho.");
-  return "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
+  const canvas = await pecaEmCanvas(p, 3000);
+  return { canvas, ctx: canvas.getContext("2d", { willReadFrequently: true }), k: canvas.width / p.w };
+}
+
+// Pixel (hex e alfa) do desenho num ponto da peça, em mm.
+function pixelDoDesenho(d, xMm, yMm) {
+  const px = Math.min(d.canvas.width - 1, Math.max(0, Math.floor(xMm * d.k)));
+  const py = Math.min(d.canvas.height - 1, Math.max(0, Math.floor(yMm * d.k)));
+  const v = d.ctx.getImageData(px, py, 1, 1).data;
+  return { px, py, alfa: v[3], hex: "#" + [v[0], v[1], v[2]].map((c) => c.toString(16).padStart(2, "0")).join("") };
+}
+
+// Ponto do mouse → mm da peça.
+function mmDoPonteiro(ev) {
+  const palco = document.getElementById("layoutPalco");
+  const m = medidasLayout();
+  if (!palco || !m) return null;
+  const r = palco.getBoundingClientRect();
+  return { x: (ev.clientX - r.left) / m.s, y: (ev.clientY - r.top) / m.s };
+}
+
+async function corNoPontoDaPeca(xMm, yMm) {
+  const d = await (contaGotasDesenho || desenharPecaParaContaGotas());
+  const px = pixelDoDesenho(d, xMm, yMm);
+  if (px.alfa < 10) throw new Error("Nesse ponto não há arte (é o fundo). Clique em cima do desenho.");
+  return px.hex;
+}
+
+// Lupa que acompanha o mouse: mostra os pixels em volta, ampliados, com o
+// pixel que vai ser pego marcado no meio, e o código da cor.
+async function mostrarLupaContaGotas(ev) {
+  if (!contaGotasAlvo || !contaGotasDesenho) return;
+  const pt = mmDoPonteiro(ev);
+  let lupa = document.querySelector(".lupa-conta-gotas");
+  if (!lupa) {
+    lupa = document.createElement("div");
+    lupa.className = "lupa-conta-gotas";
+    lupa.innerHTML = '<canvas width="99" height="99"></canvas><span class="lupa-cor"><i></i><b></b></span>';
+    document.body.appendChild(lupa);
+  }
+  lupa.style.left = ev.clientX + 18 + "px";
+  lupa.style.top = ev.clientY + 18 + "px";
+  let d;
+  try { d = await contaGotasDesenho; } catch (e) { lupa.remove(); estadoSalvarLayout(e.message); return; }
+  if (!pt || !contaGotasAlvo) return;
+  const px = pixelDoDesenho(d, pt.x, pt.y);
+  const c = lupa.querySelector("canvas").getContext("2d");
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = "#fff";
+  c.fillRect(0, 0, 99, 99);
+  // 11 × 11 pixels, cada um com 9 × 9 na lupa.
+  c.drawImage(d.canvas, px.px - 5, px.py - 5, 11, 11, 0, 0, 99, 99);
+  c.strokeStyle = "#ff5b22";
+  c.lineWidth = 2;
+  c.strokeRect(45, 45, 9, 9);
+  lupa.querySelector("i").style.background = px.alfa < 10 ? "transparent" : px.hex;
+  lupa.querySelector("b").textContent = px.alfa < 10 ? "sem arte" : px.hex.toUpperCase();
 }
 
 // Réguas em mm em cima e à esquerda do palco (traço a cada 10 mm, número a cada 50).

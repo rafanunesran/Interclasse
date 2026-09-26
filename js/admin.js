@@ -53,15 +53,23 @@ let painelIniciado = false;
 // Guarda de acesso: o Firebase mantém a sessão salva no navegador, então
 // quem já entrou continua logado ao recarregar. Se não for a conta admin,
 // volta para a página de login.
+// Roda `f` quando todos os <script> da página já foram carregados.
+function aoCarregarScripts(f) {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => setTimeout(f, 0));
+  else setTimeout(f, 0);
+}
+
 auth.onAuthStateChanged((user) => {
   if (ehContaAdmin(user)) {
     if (elEmailLogado) elEmailLogado.textContent = user.email;
     elPainel.classList.remove("oculto");
     if (!painelIniciado) {
       painelIniciado = true;
-      // Adiado com setTimeout para garantir que as declarações let/const do
-      // restante do arquivo já existam quando rodarem (evita "TDZ").
-      setTimeout(() => {
+      // Só começa depois de TODOS os scripts da página carregarem: entre um
+      // script e outro o navegador pode rodar o login, e o painel desenharia
+      // antes de producao.js/artes.js existirem (erro e editor pela metade).
+      // Também garante que as declarações let/const deste arquivo existam.
+      aoCarregarScripts(() => {
         escutarClientes();
         escutarTimes();
         carregarPainelConfig();
@@ -70,7 +78,7 @@ auth.onAuthStateChanged((user) => {
         // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
         if (typeof escutarMoldes === "function") escutarMoldes();
         if (typeof escutarLayout === "function") escutarLayout();
-      }, 0);
+      });
     }
   } else {
     elPainel.classList.add("oculto");
