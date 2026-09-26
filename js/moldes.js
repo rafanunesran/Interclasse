@@ -134,7 +134,8 @@ function pecaPeloNome(nome) {
   const esq = /\besq|esquerd/.test(n);
   const dir = /\bdir|direit/.test(n);
   if (/\bgola/.test(n)) return "gola";
-  if (/detalhe/.test(n)) return esq ? "detalheMangaEsq" : dir ? "detalheMangaDir" : "";
+  // Detalhe da manga não tem molde (é um elemento na manga): fica de fora.
+  if (/detalhe/.test(n)) return "";
   if (/manga/.test(n)) return esq ? "mangaEsq" : dir ? "mangaDir" : "";
   if (/frente|frontal/.test(n)) return "frente";
   if (/costa/.test(n)) return "costas";
@@ -158,11 +159,11 @@ function renderizarMoldes() {
   const total = PECAS_PRODUCAO.length * tamanhos.length;
   const feitos = PECAS_PRODUCAO.reduce((s, p) => s + tamanhos.filter((t) => moldeDe(p.id, t)).length, 0);
   const semContorno = PECAS_PRODUCAO.reduce((s, p) =>
-    s + tamanhos.filter((t) => { const m = moldeDe(p.id, t); return m && !m.contorno; }).length, 0);
+    s + tamanhos.filter((t) => { const m = moldeDe(p.id, t); return m && (!m.contorno || (p.id !== "gola" && contornoRetangular(m.contorno))); }).length, 0);
 
   elMoldesCorte.innerHTML = `
     <p>Um <strong>EPS por peça em cada tamanho</strong>, no tamanho real. É ele que vai para a folha de impressão e é nele que a arte de cada time é adaptada. A prévia é desenhada automaticamente.</p>
-    <p class="pix-ajuda">Dica: em <strong>Enviar vários</strong>, escolha todos os arquivos de uma vez — o site reconhece a peça e o tamanho pelo nome (ex.: <code>costas-M.eps</code>, <code>manga esq GG.eps</code>, <code>detalhe manga dir P.eps</code>, <code>gola M.eps</code>).</p>
+    <p class="pix-ajuda">Dica: em <strong>Enviar vários</strong>, escolha todos os arquivos de uma vez — o site reconhece a peça e o tamanho pelo nome (ex.: <code>costas-M.eps</code>, <code>manga esq GG.eps</code>, <code>gola M.eps</code>).</p>
     <div class="moldes-topo">
       <button type="button" class="primario" data-acao="varios">Enviar vários</button>
       <label>Tamanho base (onde o layout é marcado)
@@ -170,7 +171,7 @@ function renderizarMoldes() {
           `<option value="${escAttr(t)}"${moldesConfig.tamanhoBase === t ? " selected" : ""}>${escapeHtmlAdmin(t)}</option>`).join("")}</select>
       </label>
       <span class="badge">${feitos}/${total} moldes</span>
-      ${semContorno ? `<button type="button" class="secundario" data-acao="contornos" title="Lê o formato das peças já enviadas, para recortar a arte no molde">Ler contornos (${semContorno})</button>` : ""}
+      ${feitos ? `<button type="button" class="${semContorno ? "primario" : "secundario"}" data-acao="contornos" title="Lê de novo o formato de todas as peças enviadas (corrige as que ficaram quadradas)">Reler contornos${semContorno ? ` (${semContorno} com problema)` : ""}</button>` : ""}
     </div>
     <div class="moldes-tabela-wrap"><table class="moldes-tabela">
       <thead><tr><th>Tamanho</th>${PECAS_PRODUCAO.map((p) => `<th>${escapeHtmlAdmin(p.nome)}</th>`).join("")}</tr></thead>
@@ -204,7 +205,11 @@ function celulaMolde(pecaId, tam) {
     : `<button type="button" class="link-inline" data-molde="${escAttr(chave)}|previa">sem prévia — enviar PNG</button>`;
   return `<td class="molde-celula" title="${escAttr(m.nomeArquivo || "")}">
     ${img}
-    <div class="molde-medida">${dim.w.toFixed(0)} × ${dim.h.toFixed(0)} mm${m.contorno ? "" : ' · <span title="Sem o contorno, a arte não é recortada no formato do molde (fica retangular)">⚠️ sem contorno</span>'}</div>
+    <div class="molde-medida">${dim.w.toFixed(0)} × ${dim.h.toFixed(0)} mm${!m.contorno
+      ? ' · <span title="Sem o contorno, a arte não é recortada no formato do molde (fica retangular)">⚠️ sem contorno</span>'
+      : pecaId !== "gola" && contornoRetangular(m.contorno)
+        ? ' · <span title="O contorno lido é um retângulo: use Reler contornos. Se continuar, o EPS não tem a linha de corte como traço.">⚠️ contorno retangular</span>'
+        : ""}</div>
     <div class="molde-acoes">
       <button type="button" class="secundario" data-molde="${escAttr(chave)}|enviar">Trocar</button>
       <button type="button" class="perigo" data-molde="${escAttr(chave)}|remover" title="Remover">×</button>
@@ -271,7 +276,7 @@ async function enviarVariosMoldes() {
   plano.filter((x) => !x.peca || !x.tam).forEach((x) => naoReconhecidos.push(x.f.name));
   const validos = plano.filter((x) => x.peca && x.tam);
   if (!validos.length) {
-    alert("Nenhum arquivo reconhecido. O nome precisa ter a peça (frente, costas, manga esq/dir, detalhe manga esq/dir, gola) e o tamanho (ex.: costas-M.eps).");
+    alert("Nenhum arquivo reconhecido. O nome precisa ter a peça (frente, costas, manga esq/dir, gola) e o tamanho (ex.: costas-M.eps).");
     return;
   }
   if (!confirm(`Enviar ${validos.length} molde(s)?\n\n` + validos.map((x) =>
@@ -296,14 +301,20 @@ async function enviarVariosMoldes() {
     (naoReconhecidos.length ? `\n\nNão reconhecidos:\n${naoReconhecidos.join("\n")}` : ""));
 }
 
-// Moldes enviados antes da leitura do contorno (ou em que ela falhou): baixa
-// cada EPS e tenta de novo.
+// Contorno que é só um retângulo (4 lados retos): numa manga ou no corpo, é
+// sinal de que o formato não foi lido direito.
+function contornoRetangular(c) {
+  return /^M [-\d.]+ [-\d.]+( L [-\d.]+ [-\d.]+){3,4} Z$/.test(String(c || "").trim());
+}
+
+// Lê de novo o contorno de TODOS os moldes enviados (corrige os que ficaram
+// sem contorno ou quadrados numa versão anterior da leitura).
 async function lerContornosPendentes() {
   if (!exigirDriveProducao()) return;
   const lista = [];
   PECAS_PRODUCAO.forEach((p) => TODOS_TAMANHOS.forEach((t) => {
     const m = moldeDe(p.id, t);
-    if (m && !m.contorno) lista.push({ p, t, m });
+    if (m) lista.push({ p, t, m });
   }));
   let ok = 0;
   const falhas = [];
@@ -317,6 +328,7 @@ async function lerContornosPendentes() {
         m.contorno = c;
         delete m.semContorno;
         ok++;
+        if (p.id !== "gola" && contornoRetangular(c)) falhas.push(`${p.nome} ${t}: contorno retangular (o EPS não tem a linha de corte como traço?)`);
       } else {
         m.semContorno = true;
         falhas.push(`${p.nome} ${t}`);

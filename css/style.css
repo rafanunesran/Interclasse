@@ -2399,3 +2399,6 @@ button.kanban-card-nome:hover { color: var(--azul); text-decoration: underline; 
 /* Mockup nas fotos base (js/mockup.js). */
 .mockup-canvas { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; border-radius: 10px; }
 .mockup-carregando { padding: 60px 16px; text-align: center; color: #6b7280; }
+
+/* Arquivos do time: mangas/detalhe diferentes em cada lado. */
+.producao-opcoes { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 0.85rem; }

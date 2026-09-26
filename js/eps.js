@@ -362,7 +362,14 @@ const EPS = (function () {
     if (!subcaminhos.length) return null;
 
     const area = (s) => (s.x2 - s.x1) * (s.y2 - s.y1);
-    const maior = subcaminhos.reduce((a, b) => (area(b) > area(a) ? b : a));
+    // Fundo: preenchimento do tamanho da página inteira (o Corel costuma pôr
+    // um retângulo branco atrás de tudo) — não é a peça.
+    const ehFundo = (s) => s.modo === "fill" && area(s) >= 0.97 * larg * alt;
+    // A linha de corte é um TRAÇO; só sem traço nenhum vale um preenchimento.
+    const tracos = subcaminhos.filter((s) => s.modo === "traco");
+    const candidatos = tracos.length ? tracos : subcaminhos.filter((s) => !ehFundo(s));
+    if (!candidatos.length) return null;
+    const maior = candidatos.reduce((a, b) => (area(b) > area(a) ? b : a));
     // Tem que ocupar boa parte do molde, senão não é o contorno.
     if (area(maior) < 0.4 * larg * alt) return null;
 
@@ -399,8 +406,10 @@ const EPS = (function () {
       if (Y > atual.y2) atual.y2 = Y;
       return [X, Y];
     };
-    const pintar = () => {
-      caminho.forEach((s) => { if (s.cmds.length > 1) saida.push(s); });
+    // `modo`: "traco" (S/s/B/b — a linha de corte), "fill" (f/F) ou null
+    // (n: caminho de RECORTE, não é desenho — fica de fora).
+    const pintar = (modo) => {
+      if (modo) caminho.forEach((s) => { if (s.cmds.length > 1) { s.modo = modo; saida.push(s); } });
       caminho = [];
       atual = null;
     };
@@ -445,8 +454,14 @@ const EPS = (function () {
           break;
         }
         case "h": if (atual) atual.cmds.push(["Z"]); break;
-        case "S": case "s": case "f": case "F": case "f*": case "B": case "B*": case "b": case "b*": case "n":
-          pintar();
+        case "S": case "s": case "B": case "B*": case "b": case "b*":
+          pintar("traco");
+          break;
+        case "f": case "F": case "f*":
+          pintar("fill");
+          break;
+        case "n":
+          pintar(null);
           break;
         case "BI": // imagem embutida: pula até o EI
           while (i < tokens.length && tokens[i] !== "EI") i++;
@@ -486,6 +501,28 @@ const EPS = (function () {
     });
   }
 
+  // ---------------- Arquivos do time por peça ----------------
+  // Uma arte só serve para as DUAS mangas (menos arquivo no Drive): a manga
+  // direita usa a da esquerda, a não ser que o time tenha ativado "manga
+  // direita com arte diferente" e enviado a dela. O mesmo vale para o
+  // detalhe da manga. `chave` identifica a imagem na folha — a mesma arte
+  // nas duas mangas entra uma vez só no arquivo.
+  function arteDaPeca(prod, pecaId) {
+    const pecas = (prod && prod.pecas) || {};
+    if (pecaId === "mangaDir" && !(prod.mangaDirDiferente && pecas.mangaDir)) {
+      return pecas.mangaEsq ? { arte: pecas.mangaEsq, chave: "arte:mangaEsq" } : null;
+    }
+    return pecas[pecaId] ? { arte: pecas[pecaId], chave: "arte:" + pecaId } : null;
+  }
+
+  function detalheDaPeca(prod, pecaId) {
+    if (!prod) return null;
+    if (pecaId === "mangaDir" && prod.detalheDirDiferente && prod.detalheMangaDir) {
+      return { img: prod.detalheMangaDir, chave: "detalhe:dir" };
+    }
+    return prod.detalheManga ? { img: prod.detalheManga, chave: "detalhe" } : null;
+  }
+
   // ---------------- Marcador da costureira ----------------
   // Cada peça leva, dentro da área de impressão, "Time-Tamanho-Peça"
   // (ex.: 7B-P-Frente), com 4 mm de altura (a altura das maiúsculas) e a
@@ -493,6 +530,8 @@ const EPS = (function () {
   // lateral esquerda, na vertical (lendo de baixo para cima), também a 1 mm
   // da borda e com 4 mm.
   const MARCADOR_ALTURA_MM = 4;
+  // Espessura da linha de corte desenhada por cima (a partir do contorno).
+  const LINHA_CORTE_MM = 0.3;
   const MARCADOR_MARGEM_MM = 1;
 
   function textoDoMarcador(nomeTime, tamanho, nomePeca) {
@@ -570,7 +609,8 @@ const EPS = (function () {
       pecasIds.forEach((pecaId) => {
         const moldesPeca = (moldes.pecas || {})[pecaId] || {};
         const molde = moldesPeca[cam.tamanho];
-        const arte = (prod.pecas || {})[pecaId];
+        const ad = arteDaPeca(prod, pecaId);
+        const arte = ad && ad.arte;
         const lay = ((layout && layout.pecas) || {})[pecaId] || {};
         if (!arte && !(lay.elementos || []).length) return; // peça sem nada deste time
         if (!molde || !molde.bbox) {
@@ -592,11 +632,18 @@ const EPS = (function () {
           avisar(`O molde de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" ${cam.tamanho} está sem contorno — a arte dessa peça saiu retangular (aba Tamanhos → Ler contornos).`);
         }
         if (arte && arte.larguraPx) {
-          ops.push({ tipo: "imagem", chave: "arte:" + pecaId, recortar, ...caixaArte(arte, tamBase, tam) });
+          ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam) });
         }
 
         (lay.elementos || []).forEach((el) => {
           const caixa = caixaEfetiva(el, cam.tamanho, tamBase, tam, (ajustes[pecaId] || {})[el.id]);
+          if (el.tipo === "detalhe") {
+            const d = detalheDaPeca(prod, pecaId);
+            const img = d && rec.imagens && rec.imagens[d.chave];
+            if (!img) { avisar("O time não tem o detalhe da manga (PNG) — a caixa do detalhe ficou vazia."); return; }
+            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...encaixarProporcional(caixa, img.largura, img.altura) });
+            return;
+          }
           if (el.tipo === "brasao" || el.tipo === "logo") {
             const e = rec.eps && rec.eps[el.tipo];
             if (!e) {
@@ -633,7 +680,16 @@ const EPS = (function () {
           }
         }
 
-        if (posMolde === "frente") ops.push(opMolde);
+        // Linha de corte por cima: com o contorno conhecido, ela é desenhada a
+        // partir dele (linha fina preta) — o EPS do molde costuma trazer um
+        // fundo branco preenchido (Corel) que taparia a arte inteira.
+        if (posMolde === "frente") {
+          if (molde.contorno) {
+            ops.push({ tipo: "linha", comandos: comandosDoContorno(molde.contorno), cmyk: [0, 0, 0, 100], mm: LINHA_CORTE_MM });
+          } else {
+            ops.push(opMolde);
+          }
+        }
         const h = tam.h;
         const contorno = recortar
           ? contornoComSangria(comandosDoContorno(molde.contorno), tam.w, tam.h, op.sangriaMm == null ? 2 : Number(op.sangriaMm))
@@ -821,7 +877,10 @@ const EPS = (function () {
           escrever("grestore\n");
           recortando = false;
         }
-        if (op.tipo === "caminho") {
+        if (op.tipo === "linha") {
+          escrever(`gsave newpath\n${caminho(op.comandos)}${cmykPs(op.cmyk)} setcmykcolor ` +
+            `${num(op.mm * k)} setlinewidth 1 setlinejoin stroke grestore\n`);
+        } else if (op.tipo === "caminho") {
           const s = caminho(op.comandos);
           if (op.contorno) {
             // Contorno por fora: traço com o dobro da espessura por baixo do
@@ -884,6 +943,8 @@ const EPS = (function () {
     encaixarProporcional,
     empacotar,
     montarBlocos,
+    arteDaPeca,
+    detalheDaPeca,
     textoDoMarcador,
     marcadorDaPeca,
     contornoDePdf,

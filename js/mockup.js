@@ -12,8 +12,9 @@
 //   3. é recortada pelo `poligono` da região E pela máscara do tecido (os
 //      pixels brancos e pouco saturados da foto — assim o fundo e o manequim
 //      nunca recebem arte);
-//   4. entra em MULTIPLY sobre a foto: o branco da camiseta vira a arte e as
-//      sombras/dobras do tecido continuam lá. Os brilhos voltam por cima.
+//   4. é multiplicada pelo SOMBREADO do tecido (a luminância da foto
+//      dividida pelo branco dele): a arte branca continua branca e as dobras e
+//      sombras escurecem como na foto. Um toque de lustro volta por cima.
 // A gola é uma faixa: recebe a cor média da arte da gola.
 //
 // Coordenadas das regiões em pixels da foto (1024 × 1536). Na vista de
@@ -23,12 +24,13 @@ const MOCKUP_BASE = {
   cena: {
     img: "img/mockup/cena.webp", largura: 1024, altura: 1536,
     regioes: [
-      { peca: "costas", gama: 1,
-        poligono: [[716, 452], [755, 420], [808, 430], [862, 420], [935, 470], [915, 600], [932, 700], [940, 950], [870, 985], [800, 982], [665, 962], [668, 800], [672, 695], [716, 690]] },
-      { peca: "mangaEsq", gama: 1,
-        poligono: [[716, 452], [690, 462], [676, 560], [670, 660], [716, 690]] },
+      // Camiseta de costas, atrás: a manga da camiseta da frente cobre o lado
+      // esquerdo dela (a frente é desenhada depois, por cima). A `caixa` é só
+      // a parte VISÍVEL, para o nome e o número não ficarem escondidos.
+      { peca: "costas", gama: 1, caixa: [700, 416, 942, 990],
+        poligono: [[650, 452], [755, 418], [808, 428], [862, 418], [948, 468], [946, 600], [946, 700], [944, 950], [872, 986], [800, 984], [660, 964], [652, 800], [640, 700], [640, 560]] },
       { peca: "mangaDir", gama: 1,
-        poligono: [[935, 470], [965, 520], [990, 590], [1006, 652], [952, 668], [915, 640], [915, 560]] },
+        poligono: [[930, 466], [965, 520], [990, 590], [1006, 652], [952, 668], [906, 640], [904, 560]] },
       { peca: "gola", tipo: "faixa", largura: 8, caminho: [[755, 422], [808, 432], [862, 421]] },
       { peca: "mangaDir", gama: 1,
         poligono: [[92, 388], [118, 460], [120, 560], [112, 672], [80, 672], [22, 644], [38, 520], [62, 422]] },
@@ -93,20 +95,50 @@ const Mockup = (function () {
     const cb = brilho.getContext("2d");
     const dadosBrilho = cb.createImageData(c.width, c.height);
     const b = dadosBrilho.data;
-    for (let i = 0; i < p.length; i += 4) {
+    // Sombreado: a luminância do tecido dividida pelo "branco" dele (o tom
+    // mais claro comum, percentil 97), para a arte branca continuar branca e
+    // só as dobras e sombras escurecerem.
+    const sombra = document.createElement("canvas");
+    sombra.width = c.width;
+    sombra.height = c.height;
+    const cs = sombra.getContext("2d");
+    const dadosSombra = cs.createImageData(c.width, c.height);
+    const sd = dadosSombra.data;
+    const hist = new Uint32Array(256);
+    const lums = new Uint8Array(p.length / 4);
+    const alfas = new Float32Array(p.length / 4);
+    for (let i = 0, j = 0; i < p.length; i += 4, j++) {
       const mx = Math.max(p[i], p[i + 1], p[i + 2]);
       const sat = mx - Math.min(p[i], p[i + 1], p[i + 2]);
       const a = Math.max(0, Math.min(1, (52 - sat) / 18)) * Math.max(0, Math.min(1, (mx - 135) / 30));
-      // Brilho do tecido (para devolver o "lustro" depois do multiply).
-      const lum = 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+      const lum = Math.round(0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2]);
+      lums[j] = lum;
+      alfas[j] = a;
+      if (a > 0.5) hist[lum]++;
+    }
+    let total = 0;
+    for (let v = 0; v < 256; v++) total += hist[v];
+    let acum = 0, branco = 245;
+    for (let v = 0; v < 256; v++) {
+      acum += hist[v];
+      if (acum >= total * 0.97) { branco = Math.max(180, v); break; }
+    }
+    for (let i = 0, j = 0; i < p.length; i += 4, j++) {
+      const a = alfas[j];
+      const lum = lums[j];
+      const s = Math.min(255, Math.round((lum * 255) / branco));
+      sd[i] = sd[i + 1] = sd[i + 2] = s;
+      sd[i + 3] = 255;
+      // Reflexo: só o que passa do branco de referência (um toque de lustro).
       b[i] = b[i + 1] = b[i + 2] = 255;
-      b[i + 3] = Math.round(255 * a * Math.max(0, Math.min(1, (lum - 226) / 26)) * 0.55);
+      b[i + 3] = Math.round(255 * a * Math.max(0, Math.min(1, (lum - branco) / 10)) * 0.3);
       p[i] = p[i + 1] = p[i + 2] = 255;
       p[i + 3] = Math.round(255 * a);
     }
     ctx.putImageData(dados, 0, 0);
     cb.putImageData(dadosBrilho, 0, 0);
-    return { tecido: c, brilho };
+    cs.putImageData(dadosSombra, 0, 0);
+    return { tecido: c, brilho, sombra };
   }
 
   function carregarFoto(vista) {
@@ -173,8 +205,13 @@ const Mockup = (function () {
     }
   }
 
-  // Caixa da região (com folga): é para onde a peça inteira é esticada.
+  // Caixa da região (com folga): é para onde a peça inteira é esticada. A
+  // região pode trazer a sua própria `caixa` [x1, y1, x2, y2].
   function quadDaRegiao(r) {
+    if (r.caixa) {
+      const [x1, y1, x2, y2] = r.caixa;
+      return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
+    }
     const xs = r.poligono.map((p) => p[0]), ys = r.poligono.map((p) => p[1]);
     const x1 = Math.min(...xs) - 6, x2 = Math.max(...xs) + 6, y1 = Math.min(...ys) - 6, y2 = Math.max(...ys) + 6;
     return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
@@ -210,8 +247,9 @@ const Mockup = (function () {
     return m;
   }
 
-  // Monta o mockup de uma vista. `pecas` = { pecaId: { canvas, cor } } — o
-  // canvas é a peça plana; a cor (css) é usada na faixa da gola. Devolve o
+  // Monta o mockup de uma vista. `pecas` = { pecaId: { canvas, fundo, cor } }
+  // — o canvas é a peça plana; `fundo`, a mesma peça só com a arte (sem
+  // textos); a cor (css) é usada na faixa da gola. Devolve o
   // canvas no tamanho da foto.
   async function renderizar(vista, pecas) {
     const base = MOCKUP_BASE[vista];
@@ -235,11 +273,18 @@ const Mockup = (function () {
         cc.fillRect(0, 0, w, h);
       } else {
         if (!p.canvas) return;
+        // Com `caixa` própria, a arte esticada na região inteira vai por baixo
+        // (preenche as bordas que ficam fora da caixa).
+        if (r.caixa) deformar(cc, p.fundo || p.canvas, quadDaRegiao({ poligono: r.poligono }), r.gama);
         deformar(cc, p.canvas, quadDaRegiao(r), r.gama);
       }
+      // Arte × sombreado do tecido, só dentro da região — e por cima da foto
+      // (a camiseta da frente, desenhada depois, cobre a de trás).
+      cc.globalCompositeOperation = "multiply";
+      cc.drawImage(foto.sombra, 0, 0);
       cc.globalCompositeOperation = "destination-in";
       cc.drawImage(mascara, 0, 0);
-      ctx.globalCompositeOperation = "multiply";
+      ctx.globalCompositeOperation = "source-over";
       ctx.drawImage(camada, 0, 0);
       cu.drawImage(mascara, 0, 0);
     });

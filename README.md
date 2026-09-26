@@ -441,10 +441,10 @@ do tamanho dela, a **arte do time** adaptada ao tamanho, o **brasão** e o nome/
 
 ### 1. Moldes de corte (aba **Tamanhos**)
 
-Um **EPS por peça em cada tamanho** — Frente, Costas, Manga esquerda/direita, Detalhe da manga
-esquerda/direita e **Gola** —, no tamanho real (lido do `%%BoundingBox`). Em **Enviar vários**,
+Um **EPS por peça em cada tamanho** — Frente, Costas, Manga esquerda, Manga direita (cada manga
+tem a sua faca de corte) e **Gola** —, no tamanho real (lido do `%%BoundingBox`). Em **Enviar vários**,
 escolha todos de uma vez: o site reconhece a peça e o tamanho pelo nome do arquivo
-(`costas-M.eps`, `manga esq GG.eps`, `detalhe manga dir P.eps`, `gola M.eps`). A **prévia** de cada molde é desenhada pelo
+(`costas-M.eps`, `manga esq GG.eps`, `manga dir P.eps`, `gola M.eps`). A **prévia** de cada molde é desenhada pelo
 próprio site (Ghostscript no navegador, ~16 MB baixados só na primeira vez); se não der, a
 célula oferece enviar um PNG. Escolha o **tamanho base** (padrão: M) — é nele que o layout é
 marcado e é para ele que as artes são feitas.
@@ -452,14 +452,21 @@ marcado e é para ele que as artes são feitas.
 O site também lê o **contorno** de cada molde (a linha de corte: o maior desenho do EPS,
 convertido pelo Ghostscript num PDF simples — funciona com EPS do Corel, do Illustrator...). É
 com ele que a arte é **recortada no formato da peça**. Moldes enviados antes disso aparecem com
-"⚠️ sem contorno": use **Ler contornos** no topo da tabela. Sem contorno, a arte daquela peça sai
+"⚠️ sem contorno" ou "⚠️ contorno retangular": use **Reler contornos** no topo da tabela (relê
+todos os moldes). O contorno é a **linha de corte traçada** do EPS; o fundo preenchido do tamanho
+da página e os caminhos de recorte são ignorados. Sem contorno, a arte daquela peça sai
 retangular (a geração avisa).
 
-### 2. Arquivos do time (aba **Inicial** → abra o time → **Arquivos de produção**)
+### 2. Arquivos do time (time aberto → **Arquivos de produção**)
 
 - A **arte de cada peça em PNG 600 dpi**, feita para o molde do tamanho base. O tamanho real
   vem do dpi do arquivo. Nos outros tamanhos a arte cresce/diminui na proporção do molde,
   centralizada. PNG 8 bits (RGB/RGBA, com transparência), sem entrelaçamento.
+- **Mangas**: uma arte só serve para **as duas** (menos arquivo no Drive). Se a manga direita
+  for diferente, marque **"Manga direita com arte diferente"** e envie a dela.
+- **Detalhe da manga** (PNG): um elemento posicionado na manga, como o brasão (bandeira,
+  símbolo da turma...). Também um só para as duas mangas; **"Detalhe diferente na manga
+  direita"** libera um segundo arquivo.
 - O **brasão em EPS** (entra intacto, vetorial).
 - A **fonte** (`.ttf`/`.otf`) do nome e do número.
 
@@ -467,8 +474,8 @@ O selo mostra **pronto ✓** ou o que falta. Arquivos grandes vão ao Drive em p
 
 ### 3. Layout (aba **Artes**)
 
-Em cima do molde de cada peça, marque o **brasão**, o **logo da empresa** e as caixas do **nome** e
-do **número**
+Em cima do molde de cada peça, marque o **brasão**, o **logo da empresa**, o **detalhe da manga**
+(**+ Detalhe**) e as caixas do **nome** e do **número**
 (arrastar, alça do canto ou X/Y/largura/altura em mm). A caixa é o **limite**: nome ou número
 comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No texto: cor **CMYK**,
 **contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do

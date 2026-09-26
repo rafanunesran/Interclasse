@@ -16,16 +16,15 @@ const COL_CLIENTES = "clientes";
 const COL_PRODUCAO = "producao";
 const SUB_ITENS_PRODUCAO = "itens";
 
-// Peças da camiseta na produção. Cada time envia a arte (PNG 600 dpi) de cada
-// peça; na aba Tamanhos fica o molde de corte (EPS) de cada peça em cada
+// Peças da camiseta na produção (o "detalhe da manga" não é peça: é um
+// elemento posicionado na manga, como o brasão). Cada time envia a arte
+// (PNG 600 dpi) de cada peça — uma arte só serve para as duas mangas; na aba Tamanhos fica o molde de corte (EPS) de cada peça em cada
 // tamanho; na aba Artes, o layout (brasão, nome e número) de cada peça.
 const PECAS_PRODUCAO = [
   { id: "frente", nome: "Frente" },
   { id: "costas", nome: "Costas" },
   { id: "mangaEsq", nome: "Manga esquerda" },
   { id: "mangaDir", nome: "Manga direita" },
-  { id: "detalheMangaEsq", nome: "Detalhe da manga esquerda" },
-  { id: "detalheMangaDir", nome: "Detalhe da manga direita" },
   { id: "gola", nome: "Gola" }
 ];
 
