@@ -257,6 +257,13 @@ cores no mesmo arquivo:
 - **Aba Produção (levas):** o goleiro vira uma variação do modelo, `<arte> — goleiro`, e
   ganha o seu próprio CSV no *Baixar CSVs por modelo*.
 - **CSVs de conferência:** coluna `Goleiro` (Sim/Nao) em todos eles.
+- **Artes do goleiro:** no time aberto, as abas *Arquivos de produção* e *Editar arte* têm
+  o seletor **Camiseta comum | 🧤 Goleiro**. Em *Goleiro* dá para enviar artes das peças,
+  detalhe da manga, brasão e fonte próprios dele e ajustar posição, cores e o que aparece
+  só na camiseta do goleiro. **O que não for enviado ou mudado usa o da camiseta comum**
+  (o espaço aparece apagado, com "Usa o da camiseta comum"). A prévia/mockup mostra a
+  variante escolhida, e a folha EPS dos goleiros (`...-goleiros.eps`) já sai com ela. Fica
+  em `producao.goleiro` do time, no mesmo formato de `producao`.
 
 > A marca fica no campo `goleiro` da camiseta. Camisetas cadastradas antes desta versão
 > entram como "não goleiro", sem nada a corrigir.

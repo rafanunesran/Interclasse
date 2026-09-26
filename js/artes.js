@@ -253,7 +253,100 @@ function producaoDoTime(time) {
   return (time && time.producao) || {};
 }
 
-// O que falta para o time poder gerar a folha.
+// ---------------- Variante goleiro ----------------
+// O goleiro veste outra camiseta: o time pode enviar artes, brasão, detalhe
+// e fonte próprios dele e ajustar a arte à parte (producao.goleiro, com o
+// mesmo formato). O que o goleiro não tiver usa o da camiseta comum.
+// Nas abas "Arquivos de produção" e "Editar arte" um seletor escolhe qual
+// variante está sendo mexida (o mesmo nas duas abas).
+const varianteGoleiroTime = {}; // timeId -> true quando mostra a do goleiro
+
+function editandoGoleiro(timeId) {
+  return !!varianteGoleiroTime[timeId];
+}
+
+function producaoGoleiroPropria(prod) {
+  return (prod && prod.goleiro) || {};
+}
+
+// O goleiro tem algum arquivo ou ajuste próprio?
+function temVarianteGoleiro(time) {
+  const g = producaoGoleiroPropria(producaoDoTime(time));
+  return !!(Object.keys(g.pecas || {}).length || g.brasao || g.fonte || g.detalheManga || g.detalheMangaDir ||
+    Object.keys(g.layoutAjustes || {}).length);
+}
+
+// Ajuste do goleiro por cima do da comum: a posição vem inteira de um ou do
+// outro; o estilo mistura (o do goleiro ganha); "oculto" do goleiro ganha.
+function mesclarAjusteGoleiro(comum, gol) {
+  if (!gol) return comum;
+  const m = { ...(comum || {}) };
+  if (gol.base || gol.tamanhos) {
+    delete m.base;
+    delete m.tamanhos;
+    if (gol.base) m.base = gol.base;
+    if (gol.tamanhos) m.tamanhos = gol.tamanhos;
+  }
+  if (gol.estilo) m.estilo = { ...(m.estilo || {}), ...gol.estilo };
+  if ("oculto" in gol) m.oculto = gol.oculto;
+  return m;
+}
+
+// Os arquivos e ajustes que valem para a camiseta do goleiro.
+function producaoDoGoleiro(prod) {
+  const p = prod || {};
+  const g = producaoGoleiroPropria(p);
+  const saida = { ...p, pecas: { ...(p.pecas || {}), ...(g.pecas || {}) } };
+  delete saida.goleiro;
+  ["brasao", "fonte", "detalheManga", "detalheMangaDir"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
+  const ajustes = {};
+  const pecasAj = new Set([...Object.keys(p.layoutAjustes || {}), ...Object.keys(g.layoutAjustes || {})]);
+  pecasAj.forEach((pecaId) => {
+    const c = (p.layoutAjustes || {})[pecaId] || {};
+    const gl = (g.layoutAjustes || {})[pecaId] || {};
+    const porPeca = {};
+    new Set([...Object.keys(c), ...Object.keys(gl)]).forEach((elId) => {
+      porPeca[elId] = mesclarAjusteGoleiro(c[elId], gl[elId]);
+    });
+    ajustes[pecaId] = porPeca;
+  });
+  saida.layoutAjustes = ajustes;
+  return saida;
+}
+
+// O time "vestido" de goleiro (ou o próprio time), para a prévia, o editor e
+// a folha EPS — que leem tudo de time.producao.
+function timeNaVariante(time, goleiro) {
+  if (!time || !goleiro) return time;
+  return { ...time, producao: producaoDoGoleiro(producaoDoTime(time)) };
+}
+
+// Seletor "Camiseta comum | Goleiro" das abas do pedido.
+function criarSeletorVariante(timeId) {
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  const gol = editandoGoleiro(timeId);
+  const wrap = document.createElement("div");
+  wrap.className = "seletor-variante";
+  wrap.innerHTML = `
+    <div class="segmentado" role="tablist" aria-label="Variante da camiseta">
+      <button type="button" data-variante="" class="${gol ? "" : "ativo"}" aria-selected="${!gol}">Camiseta comum</button>
+      <button type="button" data-variante="goleiro" class="${gol ? "ativo" : ""}" aria-selected="${gol}">🧤 Goleiro${temVarianteGoleiro(time) ? " ●" : ""}</button>
+    </div>
+    <span class="pix-ajuda">${gol
+      ? "Arquivos e ajustes só da camiseta do goleiro. O que não for enviado ou mudado aqui usa o da camiseta comum."
+      : "Arquivos e ajustes da camiseta de todos. Troque para “Goleiro” para enviar artes diferentes para ele."}</span>`;
+  wrap.querySelectorAll("[data-variante]").forEach((b) => {
+    b.onclick = () => {
+      varianteGoleiroTime[timeId] = !!b.dataset.variante;
+      layoutElSel = "";
+      if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+    };
+  });
+  return wrap;
+}
+
+// O que falta para o time poder gerar a folha (na variante do goleiro, passe
+// timeNaVariante(time, true)).
 function pendenciasProducao(time) {
   const p = producaoDoTime(time);
   const falta = [];
@@ -279,17 +372,24 @@ async function gravarProducaoTime(timeId, producao) {
 }
 
 function criarBlocoProducaoTime(timeId, time) {
-  const prod = producaoDoTime(time);
+  const gol = editandoGoleiro(timeId);
+  const comum = producaoDoTime(time);
+  const propria = gol ? producaoGoleiroPropria(comum) : comum;
+  const prod = gol ? producaoDoGoleiro(comum) : comum;
   const bloco = document.createElement("details");
-  bloco.className = "producao-time";
+  bloco.className = "producao-time" + (gol ? " variante-goleiro" : "");
   bloco.open = !!blocoProducaoAberto[timeId];
   bloco.addEventListener("toggle", () => (blocoProducaoAberto[timeId] = bloco.open));
 
   const nArtes = PECAS_PRODUCAO.filter((x) => EPS.arteDaPeca(prod, x.id)).length;
-  const falta = pendenciasProducao(time);
-  bloco.innerHTML = `<summary>🎨 Arquivos de produção <span class="badge ${falta.length ? "pendente" : "pago"}">` +
+  const falta = pendenciasProducao(gol ? timeNaVariante(time, true) : time);
+  const nProprios = gol ? Object.keys(propria.pecas || {}).length +
+    ["brasao", "fonte", "detalheManga", "detalheMangaDir"].filter((k) => propria[k]).length : 0;
+  bloco.innerHTML = `<summary>${gol ? "🧤 Arquivos do goleiro" : "🎨 Arquivos de produção"} <span class="badge ${falta.length ? "pendente" : "pago"}">` +
     `${falta.length ? "falta " + escapeHtmlAdmin(falta.join(", ")) : "pronto ✓"}</span>` +
-    ` <span class="pix-ajuda">${nArtes}/${PECAS_PRODUCAO.length} artes${prod.brasao ? " · brasão" : ""}${prod.fonte ? " · fonte" : ""}</span></summary>`;
+    ` <span class="pix-ajuda">${gol
+      ? `${nProprios} arquivo(s) próprio(s) — o resto usa o da camiseta comum`
+      : `${nArtes}/${PECAS_PRODUCAO.length} artes${prod.brasao ? " · brasão" : ""}${prod.fonte ? " · fonte" : ""}`}</span></summary>`;
 
   const grade = document.createElement("div");
   grade.className = "producao-grade";
@@ -299,30 +399,39 @@ function criarBlocoProducaoTime(timeId, time) {
     info: `${a.larguraPx} × ${a.alturaPx} px · ${a.dpi || "?"} dpi · ` +
       `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm`
   } : null;
+  const infoBrasao = (b) => b ? { previa: b.previaUrl, info: b.nomeArquivo || "EPS" } : null;
+  const infoFonte = (f) => f ? { info: f.nome } : null;
+  // Na variante do goleiro, um espaço sem arquivo próprio mostra (apagado) o
+  // da camiseta comum, que é o que vai ser usado.
+  const slot = (id, titulo, proprio, daComum, formato) => {
+    const herdado = gol && !proprio && daComum ? daComum : null;
+    grade.appendChild(criarSlotProducao(timeId, id, titulo, proprio, formato, herdado));
+  };
   // Uma arte serve para as duas mangas; a da direita só aparece quando o
   // time ativa "manga direita com arte diferente".
   PECAS_PRODUCAO.forEach((peca) => {
-    if (peca.id === "mangaDir" && !prod.mangaDirDiferente) return;
-    const titulo = peca.id === "mangaEsq" && !prod.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
-    grade.appendChild(criarSlotProducao(timeId, `arte:${peca.id}`, titulo, infoPng(prod.pecas && prod.pecas[peca.id]), "PNG 600 dpi"));
+    if (peca.id === "mangaDir" && !comum.mangaDirDiferente) return;
+    const titulo = peca.id === "mangaEsq" && !comum.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
+    slot(`arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
+      infoPng(comum.pecas && comum.pecas[peca.id]), "PNG 600 dpi");
   });
-  grade.appendChild(criarSlotProducao(timeId, "detalhe", prod.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
-    infoPng(prod.detalheManga), "PNG 600 dpi"));
-  if (prod.detalheDirDiferente) {
-    grade.appendChild(criarSlotProducao(timeId, "detalhe:dir", "Detalhe da manga direita", infoPng(prod.detalheMangaDir), "PNG 600 dpi"));
+  slot("detalhe", comum.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
+    infoPng(propria.detalheManga), infoPng(comum.detalheManga), "PNG 600 dpi");
+  if (comum.detalheDirDiferente) {
+    slot("detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "PNG 600 dpi");
   }
-  grade.appendChild(criarSlotProducao(timeId, "brasao", "Brasão", prod.brasao
-    ? { previa: prod.brasao.previaUrl, info: prod.brasao.nomeArquivo || "EPS" } : null, "EPS"));
-  grade.appendChild(criarSlotProducao(timeId, "fonte", "Fonte", prod.fonte
-    ? { info: prod.fonte.nome } : null, ".ttf / .otf"));
+  slot("brasao", "Brasão", infoBrasao(propria.brasao), infoBrasao(comum.brasao), "EPS");
+  slot("fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
   bloco.appendChild(grade);
 
   // Mangas e detalhe diferentes em cada lado (padrão: um arquivo para as duas).
+  // Valem para as duas variantes.
   const opcoes = document.createElement("div");
   opcoes.className = "producao-opcoes";
   opcoes.innerHTML = `
-    <label class="checkbox-inline"><input type="checkbox" data-op="mangaDirDiferente" ${prod.mangaDirDiferente ? "checked" : ""} /> Manga direita com arte diferente</label>
-    <label class="checkbox-inline"><input type="checkbox" data-op="detalheDirDiferente" ${prod.detalheDirDiferente ? "checked" : ""} /> Detalhe diferente na manga direita</label>`;
+    <label class="checkbox-inline"><input type="checkbox" data-op="mangaDirDiferente" ${comum.mangaDirDiferente ? "checked" : ""} /> Manga direita com arte diferente</label>
+    <label class="checkbox-inline"><input type="checkbox" data-op="detalheDirDiferente" ${comum.detalheDirDiferente ? "checked" : ""} /> Detalhe diferente na manga direita</label>
+    ${gol ? '<span class="pix-ajuda">(vale para a camiseta comum e a do goleiro)</span>' : ""}`;
   opcoes.querySelectorAll("[data-op]").forEach((inp) => {
     inp.onchange = async () => {
       const p = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
@@ -337,25 +446,30 @@ function criarBlocoProducaoTime(timeId, time) {
   const btnLayout = document.createElement("button");
   btnLayout.type = "button";
   btnLayout.className = "secundario";
-  btnLayout.textContent = "Editar arte deste time";
+  btnLayout.textContent = gol ? "Editar arte do goleiro" : "Editar arte deste time";
   btnLayout.onclick = () => abrirLayoutDoTime(timeId);
   rodape.appendChild(btnLayout);
-  const nAjustes = Object.values(prod.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-  if (nAjustes) rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes} ajuste(s) próprio(s) — aba "Editar arte"</span>`);
+  const nAjustes = Object.values(propria.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
+  if (nAjustes) rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes} ajuste(s) próprio(s)${gol ? " do goleiro" : ""} — aba "Editar arte"</span>`);
   bloco.appendChild(rodape);
   return bloco;
 }
 
-function criarSlotProducao(timeId, slot, titulo, atual, formato) {
+// `herdado`: na variante do goleiro, o arquivo da comum que vale no lugar.
+function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
+  const gol = editandoGoleiro(timeId);
   const div = document.createElement("div");
-  div.className = "producao-slot" + (atual ? " ok" : "");
-  const andamento = enviandoProducao[`${timeId}|${slot}`];
+  div.className = "producao-slot" + (atual ? " ok" : "") + (herdado ? " herdado" : "");
+  const andamento = enviandoProducao[chaveEnvio(timeId, slot, gol)];
+  const mostrar = atual || herdado;
   div.innerHTML = `
     <div class="producao-slot-titulo">${escapeHtmlAdmin(titulo)}</div>
-    <div class="producao-slot-previa">${atual && atual.previa
-      ? `<img src="${escAttr(atual.previa)}" alt="" loading="lazy" />`
-      : `<span>${atual ? "✓" : escapeHtmlAdmin(formato)}</span>`}</div>
-    <div class="producao-slot-info">${andamento ? escapeHtmlAdmin(andamento) : atual ? escapeHtmlAdmin(atual.info || "") : "—"}</div>`;
+    <div class="producao-slot-previa">${mostrar && mostrar.previa
+      ? `<img src="${escAttr(mostrar.previa)}" alt="" loading="lazy" />`
+      : `<span>${mostrar ? "✓" : escapeHtmlAdmin(formato)}</span>`}</div>
+    <div class="producao-slot-info">${andamento ? escapeHtmlAdmin(andamento)
+      : atual ? escapeHtmlAdmin(atual.info || "")
+        : herdado ? "Usa o da camiseta comum" : "—"}</div>`;
   const acoes = document.createElement("div");
   acoes.className = "producao-slot-acoes";
   const env = document.createElement("button");
@@ -363,22 +477,26 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato) {
   env.className = "secundario";
   env.textContent = atual ? "Trocar" : "Enviar";
   env.disabled = !!andamento;
-  env.onclick = () => enviarArquivoProducao(timeId, slot);
+  env.onclick = () => enviarArquivoProducao(timeId, slot, gol);
   acoes.appendChild(env);
   if (atual) {
     const rem = document.createElement("button");
     rem.type = "button";
     rem.className = "perigo";
     rem.textContent = "×";
-    rem.title = "Remover";
+    rem.title = gol ? "Remover (volta a usar o da camiseta comum)" : "Remover";
     rem.onclick = async () => {
-      if (!confirm(`Remover ${titulo.toLowerCase()} deste time?`)) return;
+      if (!confirm(gol
+        ? `Remover ${titulo.toLowerCase()} do goleiro? Ele volta a usar o da camiseta comum.`
+        : `Remover ${titulo.toLowerCase()} deste time?`)) return;
       const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
-      if (slot === "brasao") delete prod.brasao;
-      else if (slot === "fonte") delete prod.fonte;
-      else if (slot === "detalhe") delete prod.detalheManga;
-      else if (slot === "detalhe:dir") delete prod.detalheMangaDir;
-      else if (prod.pecas) delete prod.pecas[slot.slice(5)];
+      const alvo = gol ? (prod.goleiro = prod.goleiro || {}) : prod;
+      if (slot === "brasao") delete alvo.brasao;
+      else if (slot === "fonte") delete alvo.fonte;
+      else if (slot === "detalhe") delete alvo.detalheManga;
+      else if (slot === "detalhe:dir") delete alvo.detalheMangaDir;
+      else if (alvo.pecas) delete alvo.pecas[slot.slice(5)];
+      limparGoleiroVazio(prod);
       await gravarProducaoTime(timeId, prod);
     };
     acoes.appendChild(rem);
@@ -387,8 +505,21 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato) {
   return div;
 }
 
-function marcarEnvio(timeId, slot, texto) {
-  const k = `${timeId}|${slot}`;
+function chaveEnvio(timeId, slot, goleiro) {
+  return `${timeId}|${goleiro ? "goleiro:" : ""}${slot}`;
+}
+
+// Tira o que ficou vazio em producao.goleiro (para não sobrar lixo no banco).
+function limparGoleiroVazio(prod) {
+  const g = prod.goleiro;
+  if (!g) return;
+  if (g.pecas && !Object.keys(g.pecas).length) delete g.pecas;
+  if (g.layoutAjustes && !Object.keys(g.layoutAjustes).length) delete g.layoutAjustes;
+  if (!Object.keys(g).length) delete prod.goleiro;
+}
+
+function marcarEnvio(timeId, slot, texto, goleiro) {
+  const k = chaveEnvio(timeId, slot, goleiro);
   if (texto) enviandoProducao[k] = texto; else delete enviandoProducao[k];
   if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
 }
@@ -428,21 +559,22 @@ async function miniaturaDaArte(bytes, info) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-async function enviarArquivoProducao(timeId, slot) {
+async function enviarArquivoProducao(timeId, slot, goleiro) {
   if (!exigirDriveProducao()) return;
   const accept = slot === "brasao" ? ".eps,.ps,application/postscript"
     : slot === "fonte" ? ".ttf,.otf,font/ttf,font/otf" : "image/png";
   const file = await escolherArquivos(accept);
   if (!file) return;
-  const pref = `${slugify(estadoTimes[timeId].time.nome) || timeId}-${slot.replace(":", "-")}`;
+  const pref = `${slugify(estadoTimes[timeId].time.nome) || timeId}${goleiro ? "-goleiro" : ""}-${slot.replace(":", "-")}`;
+  const marcar = (texto) => marcarEnvio(timeId, slot, texto, goleiro);
   try {
     let dados;
     if (slot === "brasao") {
-      marcarEnvio(timeId, slot, "enviando…");
+      marcar("enviando…");
       dados = await enviarEpsComPrevia(file, pref, 600);
       if (dados.semPrevia) alert("O brasão foi enviado, mas a prévia não pôde ser desenhada. Ele aparece como uma caixa no editor.");
     } else if (slot === "fonte") {
-      marcarEnvio(timeId, slot, "enviando…");
+      marcar("enviando…");
       const bytes = new Uint8Array(await file.arrayBuffer());
       const opentype = await carregarLib("opentype");
       opentype.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)); // valida
@@ -454,10 +586,10 @@ async function enviarArquivoProducao(timeId, slot) {
       const info = PngStream.lerCabecalho(bytes); // valida (8 bits, sem entrelaçamento)
       if (info.dpi && info.dpi !== 600 &&
           !confirm(`Este PNG está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return;
-      marcarEnvio(timeId, slot, "enviando 0%…");
+      marcar("enviando 0%…");
       const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
-        (f) => marcarEnvio(timeId, slot, `enviando ${Math.round(f * 100)}%…`));
-      marcarEnvio(timeId, slot, "gerando miniatura…");
+        (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
+      marcar("gerando miniatura…");
       let previaUrl = "";
       try {
         const mini = await miniaturaDaArte(bytes, info);
@@ -472,13 +604,14 @@ async function enviarArquivoProducao(timeId, slot) {
       };
     }
     const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
-    if (slot === "brasao") prod.brasao = dados;
-    else if (slot === "fonte") prod.fonte = dados;
-    else if (slot === "detalhe") prod.detalheManga = dados;
-    else if (slot === "detalhe:dir") prod.detalheMangaDir = dados;
+    const alvo = goleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+    if (slot === "brasao") alvo.brasao = dados;
+    else if (slot === "fonte") alvo.fonte = dados;
+    else if (slot === "detalhe") alvo.detalheManga = dados;
+    else if (slot === "detalhe:dir") alvo.detalheMangaDir = dados;
     else {
-      prod.pecas = prod.pecas || {};
-      prod.pecas[slot.slice(5)] = dados;
+      alvo.pecas = alvo.pecas || {};
+      alvo.pecas[slot.slice(5)] = dados;
     }
     await gravarProducaoTime(timeId, prod);
   } catch (e) {
@@ -486,7 +619,7 @@ async function enviarArquivoProducao(timeId, slot) {
     alert(e.message || "Não foi possível enviar o arquivo.");
   } finally {
     avisoProducao("");
-    marcarEnvio(timeId, slot, "");
+    marcar("");
   }
 }
 
@@ -561,7 +694,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   const fonte = fonteProntaDoTime(time);
   const elementos = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
   (soArte === true ? [] : elementos).forEach((elGeral) => {
-    const ajTime = ajusteDoTime(timeId, pecaId, elGeral.id);
+    const ajTime = ajusteDaProducao(prod, pecaId, elGeral.id);
     const el = EPS.elementoDoTime(elGeral, ajTime);
     if (!el) return; // oculto neste time
     const c = EPS.caixaEfetiva(el, tam, base, dim, ajTime);
@@ -852,7 +985,9 @@ function atualizarStatusPreviaCliente(timeId) {
 }
 
 // Bloco completo da prévia: controles + desenho.
-function criarPreviaArteTime(timeId, time) {
+function criarPreviaArteTime(timeId, timeComum) {
+  // Com o seletor em "Goleiro", a prévia mostra a camiseta do goleiro.
+  const time = timeNaVariante(timeComum, editandoGoleiro(timeId));
   const wrap = document.createElement("div");
   wrap.className = "previa-arte";
   const tams = tamanhosDaPrevia();
@@ -1013,6 +1148,7 @@ let editorPedido = null;    // { container, timeId } da aba "Editar arte"
 let editorTravado = false;  // desenhando no pedido?
 let layoutModoArtes = "";   // o que a aba Artes estava editando
 let layoutModo = "";        // "" = layout geral; timeId = ajuste daquele time
+let layoutGoleiro = false;  // no pedido: editando a variante do goleiro?
 let layoutTimePrevia = "";  // time cuja arte/fonte aparece na prévia (modo geral)
 let layoutPeca = "costas";
 let layoutTam = "";
@@ -1050,8 +1186,10 @@ function escolherAlvoDoEditor() {
     if (!editorTravado) layoutModoArtes = layoutModo;
     layoutModo = editorPedido.timeId;
     layoutTimePrevia = editorPedido.timeId;
-  } else if (editorTravado) {
-    layoutModo = layoutModoArtes;
+    layoutGoleiro = editandoGoleiro(editorPedido.timeId);
+  } else {
+    if (editorTravado) layoutModo = layoutModoArtes;
+    layoutGoleiro = false;
   }
   editorTravado = noPedido;
 }
@@ -1070,7 +1208,7 @@ function timesParaLayout() {
 
 function timeDaPrevia() {
   const id = layoutModo || layoutTimePrevia;
-  return id && estadoTimes[id] ? estadoTimes[id].time : null;
+  return id && estadoTimes[id] ? timeNaVariante(estadoTimes[id].time, layoutModo && layoutGoleiro) : null;
 }
 
 function tamanhosComMolde(pecaId) {
@@ -1111,7 +1249,9 @@ function renderizarEditorLayout() {
         <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
       <span id="layoutEstadoSalvar" class="pix-ajuda"></span>
     </div>
-    ${layoutModo ? `<p class="aviso">Ajustes próprios de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para este time. O que não for mudado aqui segue o layout geral (aba Artes).</p>` : ""}
+    ${!layoutModo ? "" : layoutGoleiro
+      ? `<p class="aviso">🧤 Ajustes do <strong>goleiro</strong> de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para a camiseta do goleiro. O que não for mudado aqui segue a camiseta comum deste time.</p>`
+      : `<p class="aviso">Ajustes próprios de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para este time. O que não for mudado aqui segue o layout geral (aba Artes).</p>`}
     <nav class="fin-subabas layout-pecas">${PECAS_PRODUCAO.map((p) =>
       `<button type="button" class="fin-subaba${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}</button>`).join("")}</nav>
     <div class="arte-area">
@@ -1173,14 +1313,32 @@ function medidasLayout() {
   return { tam, molde, dim, base, s, ehBase: tam === moldesConfig.tamanhoBase || !mb };
 }
 
-function ajusteDoTime(timeId, pecaId, elId) {
-  const t = timeId && estadoTimes[timeId] && estadoTimes[timeId].time;
-  const aj = t && t.producao && t.producao.layoutAjustes;
+function ajusteDaProducao(prod, pecaId, elId) {
+  const aj = prod && prod.layoutAjustes;
   return aj && aj[pecaId] && aj[pecaId][elId];
 }
 
+// Ajuste que vale no time (na variante do goleiro: o dele por cima do da comum).
+function ajusteDoTime(timeId, pecaId, elId, goleiro) {
+  const t = timeId && estadoTimes[timeId] && estadoTimes[timeId].time;
+  if (!t) return undefined;
+  const prod = producaoDoTime(t);
+  return ajusteDaProducao(goleiro ? producaoDoGoleiro(prod) : prod, pecaId, elId);
+}
+
+// O que vale no editor (time e variante abertos).
+function ajusteNoEditor(pecaId, elId) {
+  return ajusteDoTime(layoutModo, pecaId, elId, layoutGoleiro);
+}
+
+// Só o ajuste próprio do goleiro (sem o da comum), no editor.
+function ajusteProprioGoleiro(pecaId, elId) {
+  const t = layoutModo && estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
+  return layoutGoleiro && t ? ajusteDaProducao(producaoGoleiroPropria(producaoDoTime(t)), pecaId, elId) : undefined;
+}
+
 function caixaNoEditor(el, m) {
-  return EPS.caixaEfetiva(el, m.tam, m.base, m.dim, ajusteDoTime(layoutModo, layoutPeca, el.id));
+  return EPS.caixaEfetiva(el, m.tam, m.base, m.dim, ajusteNoEditor(layoutPeca, el.id));
 }
 
 function cmykParaCss(c) {
@@ -1249,7 +1407,7 @@ function renderizarPalcoLayout() {
 
   const fonte = fonteProntaDoTime(time);
   elementosDaPeca(layoutPeca).forEach((elGeral) => {
-    const ajTime = ajusteDoTime(layoutModo, layoutPeca, elGeral.id);
+    const ajTime = ajusteNoEditor(layoutPeca, elGeral.id);
     // Oculto neste time: aparece apagado (dá para selecionar e mostrar de novo).
     const el = EPS.elementoDoTime(elGeral, ajTime) || elGeral;
     const oculto = !!(ajTime && ajTime.oculto);
@@ -1309,7 +1467,7 @@ function ligarArrasteLayout(div, alca, el) {
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        const livre = EPS.imagemLivre(EPS.elementoDoTime(el, ajusteDoTime(layoutModo, layoutPeca, el.id)) || el);
+        const livre = EPS.imagemLivre(EPS.elementoDoTime(el, ajusteNoEditor(layoutPeca, el.id)) || el);
         atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
@@ -1343,15 +1501,23 @@ function gravarCaixaLayout(el, m, caixa) {
   if (layoutModo) {
     const time = estadoTimes[layoutModo].time;
     const prod = limparParaFirestore(producaoDoTime(time));
-    prod.layoutAjustes = prod.layoutAjustes || {};
-    const porPeca = prod.layoutAjustes[layoutPeca] = prod.layoutAjustes[layoutPeca] || {};
+    const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+    alvo.layoutAjustes = alvo.layoutAjustes || {};
+    const porPeca = alvo.layoutAjustes[layoutPeca] = alvo.layoutAjustes[layoutPeca] || {};
     const aj = porPeca[el.id] = porPeca[el.id] || {};
+    // Primeira mudança de posição do goleiro: parte da posição da comum (a
+    // posição vale inteira de um ou do outro — ver mesclarAjusteGoleiro).
+    if (layoutGoleiro && !aj.base && !aj.tamanhos) {
+      const daComum = ajusteDaProducao(producaoDoTime(time), layoutPeca, el.id) || {};
+      if (daComum.base) aj.base = limparParaFirestore(daComum.base);
+      if (daComum.tamanhos) aj.tamanhos = limparParaFirestore(daComum.tamanhos);
+    }
     if (m.ehBase) aj.base = c;
     else {
       aj.tamanhos = aj.tamanhos || {};
       aj.tamanhos[m.tam] = c;
     }
-    gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout("✓ Salvo no time"))
+    gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
       .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
     return;
   }
@@ -1410,7 +1576,8 @@ function renderizarPainelLayout() {
     <h4>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
     <ul class="arte-lista-el">${els.map((e) =>
       `<li class="${e.id === layoutElSel ? "ativo" : ""}" data-id="${escAttr(e.id)}">${escapeHtmlAdmin(rotuloElementoLayout(e))}` +
-      `${seloAjusteTime(ajusteDoTime(layoutModo, layoutPeca, e.id))}</li>`).join("") ||
+      `${seloAjusteTime(ajusteNoEditor(layoutPeca, e.id))}` +
+      `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">🧤 goleiro</span>' : ""}</li>`).join("") ||
       `<li class="pix-ajuda">Nada nesta peça${layoutModo ? " no layout geral" : " — use + Brasão / + Nome / + Número"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
     <div id="layoutPainelEl"></div>`;
   painel.querySelectorAll("li[data-id]").forEach((li) => {
@@ -1418,7 +1585,11 @@ function renderizarPainelLayout() {
   });
   const m = medidasLayout();
   if (!el || !m) return;
-  const aj = ajusteDoTime(layoutModo, layoutPeca, el.id);
+  const aj = ajusteNoEditor(layoutPeca, el.id);
+  // No goleiro, os botões de "voltar" desfazem só o ajuste dele.
+  const ajProprio = layoutGoleiro ? ajusteProprioGoleiro(layoutPeca, el.id) : aj;
+  const posProprio = !!(ajProprio && (ajProprio.base || ajProprio.tamanhos));
+  const estiloProprio = !!(ajProprio && ajProprio.estilo && Object.keys(ajProprio.estilo).length);
   // Valores que valem para o que está sendo editado: no time, o estilo
   // próprio dele por cima do geral.
   const elT = layoutModo ? (EPS.elementoDoTime(el, aj) || el) : el;
@@ -1428,13 +1599,16 @@ function renderizarPainelLayout() {
   const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
   const ehTexto = !ehCaixaImagem(el);
 
-  let html = `<p class="pix-ajuda">${layoutModo
+  let html = `<p class="pix-ajuda">${layoutGoleiro
+    ? ajProprio ? `O goleiro tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
+      : "Igual à camiseta comum deste time — mudar qualquer coisa aqui cria um ajuste só para o goleiro."
+    : layoutModo
     ? aj ? `Este time tem ajuste próprio${temPosicao ? " de posição" : ""}${temPosicao && temEstilo ? " e" : ""}${temEstilo ? " de estilo" : ""}${aj.oculto ? " (oculto)" : ""}.`
       : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para este time."
     : m.ehBase ? `Posição no tamanho base (${escapeHtmlAdmin(m.tam)}).`
       : el.ajustes && el.ajustes[m.tam] ? `Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.`
         : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`}</p>
-    ${layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> Ocultar neste time</label>` : ""}
+    ${layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> ${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</label>` : ""}
     <div class="arte-grade arte-grade-4">
       <label>X (mm)<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
       <label>Y (mm)<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
@@ -1445,8 +1619,8 @@ function renderizarPainelLayout() {
       <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
     <div class="arte-botoes-el">
       <button type="button" class="secundario" data-acao="centralizar">Centralizar na largura</button>
-      ${layoutModo && aj ? '<button type="button" class="secundario" data-acao="voltarGeral">Voltar ao layout geral</button>' : ""}
-      ${layoutModo && temPosicao && (temEstilo || (aj && aj.oculto)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
+      ${layoutModo && ajProprio ? `<button type="button" class="secundario" data-acao="voltarGeral">${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>` : ""}
+      ${layoutModo && posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
       ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
     </div>`;
 
@@ -1574,15 +1748,20 @@ function gravarAjusteTime(elId, mudar) {
   const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
   if (!time) return Promise.resolve();
   const prod = limparParaFirestore(producaoDoTime(time));
-  prod.layoutAjustes = prod.layoutAjustes || {};
-  const porPeca = prod.layoutAjustes[layoutPeca] = prod.layoutAjustes[layoutPeca] || {};
+  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+  alvo.layoutAjustes = alvo.layoutAjustes || {};
+  const porPeca = alvo.layoutAjustes[layoutPeca] = alvo.layoutAjustes[layoutPeca] || {};
   const aj = porPeca[elId] = porPeca[elId] || {};
   mudar(aj);
   if (aj.estilo && !Object.keys(aj.estilo).length) delete aj.estilo;
-  if (!aj.oculto) delete aj.oculto;
+  // No goleiro, "mostrar" (oculto: false) só precisa ficar gravado quando
+  // a comum esconde o elemento.
+  const comumOculto = !!(ajusteDaProducao(prod, layoutPeca, elId) || {}).oculto;
+  if (!aj.oculto && !(layoutGoleiro && comumOculto && aj.oculto === false)) delete aj.oculto;
   if (!Object.keys(aj).length) delete porPeca[elId];
-  if (!Object.keys(porPeca).length) delete prod.layoutAjustes[layoutPeca];
-  return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout("✓ Salvo no time"))
+  if (!Object.keys(porPeca).length) delete alvo.layoutAjustes[layoutPeca];
+  if (layoutGoleiro) limparGoleiroVazio(prod);
+  return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
     .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
 }
 
@@ -1762,7 +1941,10 @@ async function gerarFolhasEps(linhas, nomeBase) {
   const arquivos = [];
   try {
     for (const g of grupos.values()) {
-      const time = estadoTimes[g.timeId].time;
+      // Goleiros: os arquivos e ajustes do goleiro (o que ele não tiver vem
+      // da camiseta comum).
+      const timeComum = estadoTimes[g.timeId].time;
+      const time = timeNaVariante(timeComum, g.goleiro);
       const rotuloTime = time.nome + (g.goleiro ? " (goleiros)" : "");
       const falta = pendenciasProducao(time);
       if (falta.includes("arte das peças")) {
@@ -1770,7 +1952,9 @@ async function gerarFolhasEps(linhas, nomeBase) {
         continue;
       }
       falta.forEach((x) => avisos.push(`${rotuloTime}: falta ${x}.`));
-      if (g.goleiro) avisos.push(`${rotuloTime}: os goleiros saíram num arquivo à parte, com a mesma arte do time — troque a cor se for o caso.`);
+      if (g.goleiro && !temVarianteGoleiro(timeComum)) {
+        avisos.push(`${rotuloTime}: os goleiros saíram num arquivo à parte, com a mesma arte do time — envie as artes do goleiro em Arquivos de produção → 🧤 Goleiro.`);
+      }
       const pecasIds = pecasDoTime(time);
       const tamanhos = [...new Set(g.camisetas.map((c) => c.tamanho))];
       const rec = await carregarRecursosDoTime(time, tamanhos, pecasIds, op.dpi,

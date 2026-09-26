@@ -2407,3 +2407,10 @@ button.kanban-card-nome:hover { color: var(--azul); text-decoration: underline; 
 
 /* Arquivos do time: mangas/detalhe diferentes em cada lado. */
 .producao-opcoes { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 0.85rem; }
+
+/* Variante goleiro (Arquivos de produção / Editar arte do pedido) */
+.seletor-variante { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 4px 0 12px; }
+.seletor-variante .pix-ajuda { margin: 0; flex: 1 1 220px; }
+.producao-time.variante-goleiro .producao-slot.ok { border-color: #67e8f9; }
+.producao-slot.herdado .producao-slot-previa img { opacity: 0.4; filter: grayscale(0.5); }
+.producao-slot.herdado .producao-slot-info { font-style: italic; }
