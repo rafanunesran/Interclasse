@@ -199,6 +199,7 @@ let assinaturaGaleria = null; // evita remontar (e perder a posição) sem neces
 // dentro da ampliação dá para passar para a próxima com as setas.
 function renderizarGaleria() {
   if (!elGaleria || !elGaleriaTrilho) return;
+  atualizarBotao3D();
 
   const itens = imagensDaGaleria();
   const comMarcaDagua = timeAtual && timeAtual.marcaDagua === true;
@@ -243,6 +244,91 @@ function renderizarGaleria() {
   });
 
   atualizarSetasGaleria();
+}
+
+// ---------------- Ver em 3D ----------------
+// Com a prévia montada no admin (time.previaCliente.texturas), o cliente pode
+// girar a camiseta em 3D. O three.js, os modelos e as texturas só são
+// baixados ao tocar no botão (js/mockup3d.js).
+
+const VERSAO_MOCKUP3D = "20261007a";
+let botao3d = null;
+
+function texturas3D() {
+  const pc = timeAtual && timeAtual.previaCliente;
+  const t = pc && pc.texturas;
+  if (!t || !(t.frente || t.costas) || timeAtual.imagemUrl || timeAtual.arteUrl) return null;
+  return t;
+}
+
+function atualizarBotao3D() {
+  const t = texturas3D();
+  if (!botao3d && t && elGaleria) {
+    botao3d = document.createElement("button");
+    botao3d.type = "button";
+    botao3d.className = "secundario botao-3d";
+    botao3d.textContent = "🔄 Ver em 3D";
+    botao3d.onclick = abrirVer3D;
+    elGaleria.insertAdjacentElement("afterend", botao3d);
+  }
+  if (botao3d) botao3d.classList.toggle("oculto", !t);
+}
+
+function imagemDeBytes(bytes, tipo) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type: tipo }));
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(c);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Textura inválida.")); };
+    img.src = url;
+  });
+}
+
+async function abrirVer3D() {
+  const t = texturas3D();
+  if (!t) return;
+  const fundo = document.createElement("div");
+  fundo.className = "modal-3d";
+  fundo.innerHTML = `<div class="modal-3d-caixa" role="dialog" aria-label="Camiseta em 3D">
+      <button type="button" class="modal-3d-fechar" aria-label="Fechar">✕</button>
+      <div class="modal-3d-palco"></div>
+      ${timeAtual.marcaDagua === true ? '<span class="marca-overlay" aria-hidden="true"></span>' : ""}
+      <p class="modal-3d-aviso">Carregando o 3D…</p>
+    </div>`;
+  document.body.appendChild(fundo);
+  let vivo = null;
+  const fechar = () => { if (vivo) vivo.destruir(); fundo.remove(); document.removeEventListener("keydown", tecla); };
+  const tecla = (ev) => { if (ev.key === "Escape") fechar(); };
+  document.addEventListener("keydown", tecla);
+  fundo.querySelector(".modal-3d-fechar").onclick = fechar;
+  fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(); });
+  const aviso = fundo.querySelector(".modal-3d-aviso");
+  try {
+    const [mod, cfg] = await Promise.all([
+      import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href),
+      carregarConfigGeral()
+    ]);
+    const M = mod.default;
+    if (!M.suportado()) throw new Error("Este aparelho não consegue mostrar o 3D.");
+    if (!cfg.driveScriptUrl) throw new Error("As imagens do 3D não estão disponíveis.");
+    const pecas = { gola: { cor: t.gola || "" } };
+    await Promise.all(["frente", "costas", "mangaEsq", "mangaDir"].filter((id) => t[id]).map(async (id) => {
+      const bytes = await baixarArquivoDrive(cfg.driveScriptUrl, t[id]);
+      pecas[id] = { canvas: await imagemDeBytes(bytes, "image/jpeg") };
+    }));
+    if (!fundo.isConnected) return;
+    vivo = await M.visualizador(fundo.querySelector(".modal-3d-palco"), pecas, { manequim: true });
+    aviso.textContent = "Arraste para girar · dois dedos para aproximar";
+  } catch (e) {
+    console.error(e);
+    aviso.textContent = e.message || "Não foi possível abrir o 3D.";
+  }
 }
 
 // Rola a galeria uma "página" para o lado.

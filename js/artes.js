@@ -759,6 +759,35 @@ async function arteDoClienteEmCanvas(time, timeId, tam) {
   return c;
 }
 
+// ---------------- Mockup 3D (js/mockup3d.js) ----------------
+// Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
+// ou com erro, o mockup em foto (js/mockup.js) continua valendo.
+const VERSAO_MOCKUP3D = "20261007a";
+let promessaMockup3D = null;
+function obterMockup3D() {
+  if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
+  if (!promessaMockup3D) {
+    promessaMockup3D = import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href)
+      .then((m) => m.default)
+      .catch((e) => { promessaMockup3D = null; throw e; });
+  }
+  return promessaMockup3D;
+}
+
+async function renderizarMockup(vista, pecas) {
+  try {
+    const M = await obterMockup3D();
+    if (M.suportado()) return await M.renderizar(vista, pecas);
+  } catch (e) {
+    console.warn("Mockup 3D indisponível; usando o mockup em foto.", e);
+  }
+  return Mockup.renderizar(vista, pecas);
+}
+
+function canvasEmJpeg(canvas) {
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar a imagem."))), "image/jpeg", 0.88));
+}
+
 function canvasEmPng(canvas) {
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar a imagem."))), "image/png"));
 }
@@ -788,7 +817,7 @@ async function publicarPreviaCliente(timeId, opcoes) {
     const pref = `${slugify(time.nome) || timeId}-previa-cliente`;
     const previa = { geradaEmMs: Date.now() };
     const envios = [["cena", "Cena"], ["frente", "Frente"], ["costas", "Costas"]].map(([vista]) => async () => {
-      const canvas = await Mockup.renderizar(vista, pecas);
+      const canvas = await renderizarMockup(vista, pecas);
       return [vista, await canvasEmPng(canvas)];
     });
     envios.push(async () => {
@@ -801,6 +830,14 @@ async function publicarPreviaCliente(timeId, opcoes) {
       const env = await enviarArquivoDrive(driveScriptUrl, new File([blob], chave + ".png", { type: "image/png" }), pref);
       previa[chave] = urlPreviaGrande(env.url);
     }
+    // Texturas das peças para o "Ver em 3D" da página do cliente.
+    const texturas = { gola: (pecas.gola && pecas.gola.cor) || "" };
+    for (const id of ["frente", "costas", "mangaEsq", "mangaDir"]) {
+      if (!pecas[id] || !pecas[id].canvas) continue;
+      const blob = await canvasEmJpeg(pecas[id].canvas);
+      texturas[id] = (await enviarArquivoDrive(driveScriptUrl, new File([blob], "textura-" + id + ".jpg", { type: "image/jpeg" }), pref)).fileId;
+    }
+    previa.texturas = texturas;
     await db.collection(COL_TIMES).doc(timeId).update({ previaCliente: previa });
     if (estadoTimes[timeId]) estadoTimes[timeId].time.previaCliente = previa;
   } catch (e) {
@@ -873,6 +910,7 @@ function criarPreviaArteTime(timeId, time) {
         <button type="button" data-vista="frente" class="${previaTime.vista === "frente" ? "ativo" : ""}">Frente</button>
         <button type="button" data-vista="costas" class="${previaTime.vista === "costas" ? "ativo" : ""}">Costas</button>
       </div>
+      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-girar-3d>🔄 Girar 3D</button>
       <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>⬇ Baixar PNG</button>
     </div>
     <div class="previa-area"></div>
@@ -891,9 +929,11 @@ function criarPreviaArteTime(timeId, time) {
   const nota = wrap.querySelector(".previa-nota");
   let desenhoMockup = 0;   // descarta desenhos antigos quando algo muda no meio
   let ultimoMockup = null;
+  let vivo3d = null;       // visualizador 3D aberto (girar)
 
   let esperandoFonte = false;
   const desenhar = () => {
+    if (vivo3d) { vivo3d.destruir(); vivo3d = null; }
     const tamAtual = tamanhoDaPrevia();
     const prod = producaoDoTime(time);
     // A fonte do time ainda não chegou: desenha de novo quando chegar.
@@ -915,7 +955,7 @@ function criarPreviaArteTime(timeId, time) {
       area.innerHTML = '<div class="mockup-carregando">Montando o mockup…</div>';
       nota.textContent = "";
       pecasParaMockup(time, timeId, tamAtual, amostraPrevia)
-        .then((pecas) => Mockup.renderizar(previaTime.vista, pecas))
+        .then((pecas) => renderizarMockup(previaTime.vista, pecas))
         .then((canvas) => {
           if (vez !== desenhoMockup) return;
           canvas.className = "mockup-canvas";
@@ -925,7 +965,7 @@ function criarPreviaArteTime(timeId, time) {
           area.appendChild(canvas);
           ultimoMockup = canvas;
           nota.textContent = temArquivos
-            ? `Simulação na foto, montada com as artes${tamAtual ? " do tamanho " + tamAtual : ""}. O mockup mostra frente, costas, mangas e gola.`
+            ? `Simulação em 3D, montada com as artes${tamAtual ? " do tamanho " + tamAtual : ""}. Use "Girar 3D" para ver de todos os lados.`
             : "Ainda sem as artes das peças: o mockup mostra só o nome e o número de teste.";
         })
         .catch((e) => {
@@ -983,6 +1023,23 @@ function criarPreviaArteTime(timeId, time) {
       desenhar();
     };
   });
+  wrap.querySelector("[data-girar-3d]").onclick = async () => {
+    const vez = ++desenhoMockup;
+    if (vivo3d) { vivo3d.destruir(); vivo3d = null; }
+    area.innerHTML = '<div class="mockup-carregando">Montando o 3D…</div>';
+    try {
+      const [M, pecas] = await Promise.all([obterMockup3D(), pecasParaMockup(time, timeId, tamanhoDaPrevia(), amostraPrevia)]);
+      if (vez !== desenhoMockup) return;
+      if (!M.suportado()) throw new Error("Este navegador não tem WebGL.");
+      area.innerHTML = '<div class="mockup-3d-vivo"></div>';
+      vivo3d = await M.visualizador(area.firstChild, pecas, { manequim: true });
+      nota.textContent = "Arraste para girar; use a roda do mouse (ou dois dedos) para aproximar.";
+    } catch (e) {
+      console.error(e);
+      area.innerHTML = '<div class="vazio-lista"><p>Não foi possível abrir o 3D.</p></div>';
+      nota.textContent = e.message || "";
+    }
+  };
   wrap.querySelector("[data-baixar-mockup]").onclick = () => {
     if (!ultimoMockup) return;
     try {

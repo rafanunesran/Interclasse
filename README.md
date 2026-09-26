@@ -520,6 +520,24 @@ EPS, a prévia, o mockup e a prévia do cliente já saem com os ajustes (guardad
   cor da arte da gola. **Baixar PNG** salva a imagem para mandar ao cliente. As fotos base ficam
   em `img/mockup/` e as regiões (corpo, mangas, gola) de cada foto em `js/mockup.js`.
 
+### Mockup 3D
+
+O mockup (prévia do time → **Mockup**, e as imagens da prévia do cliente) é montado em **3D** no
+navegador, com modelos gerados no Tripo: a camiseta **gola V** (`img/mockup3d/camiseta-v.glb`) e o
+**manequim** (`img/mockup3d/manequim.glb`, só as pernas; o pescoço é gerado). A arte entra por
+projeção (`js/mockup3d.js`): frente e costas de frente/de trás, mangas em volta do braço (o
+detalhe segue a manga, sem espelhar) e a gola com a cor média da arte da gola.
+
+- **Cena**: duas camisetas vestindo o manequim (frente e costas); **Frente** e **Costas**: só a
+  camiseta. **🔄 Girar 3D** abre a camiseta para girar com o mouse/dedo.
+- Sem WebGL (ou sem internet para o three.js), cai no mockup em foto (`js/mockup.js`).
+- O three.js vem do jsDelivr (import map no `superadmin.html` e no `time.html`) e só é baixado
+  quando o 3D é usado.
+- **Trocar o modelo**: gere o GLB (camiseta branca lisa, simétrica, de frente), rode
+  `node tools/simplificar-glb.mjs entrada.glb img/mockup3d/camiseta-v.glb 0.02` (manequim:
+  `... manequim.glb 0.025 --abaixo-de 0.28`) e ajuste as medidas em `CAL` no topo de
+  `js/mockup3d.js` (altura do molde, eixo das mangas, cava, gola, encaixe no manequim).
+
 ### Prévia para o cliente
 
 Quando o time **não tem simulação nem arte postadas** (os campos de imagem do time), a página do
@@ -534,6 +552,9 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
   layout daquele time (só se o time não tiver imagens postadas). Mudanças no layout geral valem
   para todos os times e não disparam sozinhas: use o botão nos times que quiser atualizar.
 - Imagens postadas à mão sempre têm prioridade.
+- Junto com as imagens vão as **texturas das peças** (`previaCliente.texturas`): a página do pedido
+  mostra o botão **🔄 Ver em 3D**, que abre a camiseta no manequim para o cliente girar (o 3D só é
+  baixado ao tocar no botão; as texturas vêm pelo Apps Script).
 
 ### Gerar (aba **Produção**)
 

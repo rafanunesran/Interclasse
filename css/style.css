@@ -2312,6 +2312,15 @@ main.loja { max-width: 1120px; }
   margin-bottom: 12px;
 }
 .previa-controles label { margin: 0; font-size: 0.8rem; }
+.mockup-3d-vivo { width: 100%; max-width: 560px; height: 620px; margin: 0 auto; border-radius: 12px; overflow: hidden; cursor: grab; background: #e6d6bd; }
+.mockup-3d-vivo:active { cursor: grabbing; }
+.modal-3d { position: fixed; inset: 0; z-index: 1000; background: rgba(20, 16, 12, 0.82); display: flex; align-items: center; justify-content: center; padding: 12px; }
+.modal-3d-caixa { position: relative; width: min(560px, 100%); height: min(760px, 92vh); border-radius: 14px; overflow: hidden; background: #e6d6bd; }
+.modal-3d-palco { position: absolute; inset: 0; touch-action: none; }
+.modal-3d-fechar { position: absolute; top: 8px; right: 8px; z-index: 3; border: 0; border-radius: 50%; width: 40px; height: 40px; font-size: 1.3rem; background: rgba(255, 255, 255, 0.9); cursor: pointer; }
+.modal-3d-aviso { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 2; text-align: center; font-size: 0.8rem; color: #3b2f22; pointer-events: none; }
+.modal-3d .marca-overlay { z-index: 2; pointer-events: none; }
+.botao-3d { display: inline-flex; align-items: center; gap: 6px; margin: 8px auto 0; }
 .previa-cliente { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 12px; }
 .previa-cliente .pix-ajuda { margin: 0; }
 .previa-controles input[type="text"], .previa-controles select { margin-top: 4px; width: 160px; padding: 7px 9px; font-size: 0.9rem; }
