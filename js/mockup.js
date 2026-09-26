@@ -17,7 +17,7 @@
 //      sombras escurecem como na foto. Um toque de lustro volta por cima.
 // A gola é uma faixa: recebe a cor média da arte da gola.
 //
-// As mangas têm `cilindro` (ombro, barra, raio e giro): o molde dá a volta
+// As mangas têm `cilindro` (bordas no ombro e na barra, e o giro): o molde dá a volta
 // no braço e o detalhe segue a manga da foto (ver mapaDoCilindro).
 //
 // Coordenadas das regiões em pixels da foto (1024 × 1536). Na vista de
@@ -29,18 +29,19 @@ const MOCKUP_BASE = {
     regioes: [
       // Camiseta de costas, atrás: a manga da camiseta da frente cobre o lado
       // esquerdo dela (a frente é desenhada depois, por cima). A `caixa` é só
-      // a parte VISÍVEL, para o nome e o número não ficarem escondidos.
-      { peca: "costas", gama: 1, caixa: [700, 416, 942, 990],
+      // parte centrada na coluna (x ≈ 802) e à direita da manga da frente, para
+      // o nome e o número ficarem centralizados nas costas e à vista.
+      { peca: "costas", gama: 1, caixa: [662, 416, 942, 990],
         poligono: [[650, 452], [755, 418], [808, 428], [862, 418], [948, 468], [946, 600], [946, 700], [944, 958], [930, 969], [900, 979], [873, 985], [800, 990], [740, 984], [700, 977], [664, 966], [652, 800], [640, 700], [640, 560]] },
       { peca: "mangaDir", gama: 1,
-        cilindro: { ombro: [940, 460], barra: [962, 662], raio: [32, 53], giro: 20 },
+        cilindro: { topo: [[923, 470], [968, 478]], barra: [[906, 658], [1020, 676]], giro: 20 },
         poligono: [[926, 460], [962, 468], [988, 530], [1008, 600], [1022, 662], [1000, 684], [952, 682], [906, 642], [904, 560]] },
       { peca: "gola", tipo: "faixa", poligono: [[740, 422], [748, 416], [756, 412], [808, 411], [846, 412], [856, 419], [846, 432], [808, 438], [760, 431]] },
       { peca: "mangaDir", gama: 1,
-        cilindro: { ombro: [85, 380], barra: [95, 662], raio: [27, 50], giro: -50 },
+        cilindro: { topo: [[72, 400], [106, 402]], barra: [[44, 654], [114, 682]], giro: -50 },
         poligono: [[78, 380], [92, 384], [118, 460], [120, 560], [112, 672], [80, 672], [22, 644], [38, 520], [62, 422]] },
       { peca: "mangaEsq", gama: 1,
-        cilindro: { ombro: [608, 345], barra: [640, 680], raio: [46, 80], giro: 20 },
+        cilindro: { topo: [[574, 378], [656, 392]], barra: [[558, 708], [721, 664]], giro: 20 },
         poligono: [[596, 334], [640, 350], [650, 376], [682, 468], [702, 560], [720, 658], [642, 694], [560, 696], [550, 560], [562, 420]] },
       { peca: "frente", gama: 1.32,
         poligono: [[92, 388], [84, 370], [160, 330], [242, 288], [250, 330], [266, 366], [300, 398], [378, 352], [424, 318], [455, 262], [603, 344], [562, 420], [550, 560], [562, 692], [566, 900], [584, 1150], [572, 1168], [540, 1180], [500, 1190], [400, 1197], [300, 1189], [200, 1176], [150, 1169], [108, 1153], [104, 900], [112, 672], [120, 560], [118, 460]] },
@@ -54,13 +55,13 @@ const MOCKUP_BASE = {
     img: "img/mockup/frente.webp", largura: 1024, altura: 1536,
     regioes: [
       { peca: "mangaDir", gama: 1,
-        cilindro: { ombro: [188, 352], barra: [168, 724], raio: [72, 101], giro: -20 },
+        cilindro: { topo: [[132, 368], [230, 370]], barra: [[68, 702], [268, 750]], giro: -20 },
         poligono: [[200, 346], [262, 400], [290, 470], [300, 560], [303, 650], [298, 712], [252, 756], [160, 738], [62, 696], [86, 600], [108, 480], [124, 405], [156, 364], [190, 343]] },
       // Abertura da manga (o avesso visível, em sombra): pintada sem a máscara.
       { peca: "mangaDir", interior: true,
         poligono: [[64, 688], [100, 692], [150, 704], [200, 716], [250, 728], [252, 752], [200, 750], [150, 736], [100, 717], [66, 702]] },
       { peca: "mangaEsq", gama: 1,
-        cilindro: { ombro: [835, 350], barra: [878, 720], raio: [40, 69], giro: 30 },
+        cilindro: { topo: [[805, 368], [858, 380]], barra: [[810, 746], [942, 702]], giro: 30 },
         poligono: [[805, 346], [852, 380], [884, 446], [908, 556], [940, 690], [900, 732], [860, 740], [812, 732], [812, 600], [815, 450]] },
       { peca: "frente", gama: 0.69,
         poligono: [[200, 350], [398, 244], [590, 398], [640, 262], [805, 346], [815, 450], [812, 600], [815, 714], [818, 900], [825, 1100], [836, 1372], [700, 1418], [500, 1422], [300, 1417], [248, 1380], [252, 1200], [258, 1000], [264, 850], [258, 726], [303, 650], [300, 560], [290, 470], [262, 400]] },
@@ -74,10 +75,10 @@ const MOCKUP_BASE = {
     img: "img/mockup/costas.webp", largura: 1024, altura: 1536,
     regioes: [
       { peca: "mangaEsq", gama: 1,
-        cilindro: { ombro: [178, 398], barra: [155, 740], raio: [48, 98], giro: -25 },
+        cilindro: { topo: [[140, 420], [197, 420]], barra: [[57, 710], [256, 756]], giro: -25 },
         poligono: [[188, 396], [213, 500], [238, 640], [256, 764], [160, 764], [56, 712], [92, 570], [136, 436]] },
       { peca: "mangaDir", gama: 1,
-        cilindro: { ombro: [840, 398], barra: [880, 740], raio: [45, 90], giro: 25 },
+        cilindro: { topo: [[830, 420], [880, 432]], barra: [[786, 758], [963, 700]], giro: 25 },
         poligono: [[838, 396], [810, 500], [784, 640], [770, 764], [864, 766], [966, 712], [932, 570], [888, 436]] },
       { peca: "costas", gama: 1,
         poligono: [[180, 390], [250, 342], [352, 308], [500, 328], [648, 302], [770, 342], [838, 396], [810, 500], [784, 640], [772, 760], [774, 1000], [786, 1300], [784, 1318], [762, 1342], [700, 1356], [500, 1360], [300, 1352], [240, 1302], [250, 1000], [254, 760], [238, 640], [213, 500]] },
@@ -238,24 +239,25 @@ const Mockup = (function () {
     return (u, v) => [...mapear(quad, gama, u, v), 1];
   }
 
-  // Manga como CILINDRO: o molde plano dá a volta no braço. O meio do molde
-  // (a linha de fora do braço, onde vai o detalhe) fica no ângulo `giro`
-  // (0 = virado para a câmera; −90/+90 = na borda esquerda/direita da
-  // silhueta); v vai do ombro (copa) à barra. Visto de fora com a copa para
-  // cima, o molde não fica espelhado.
+  // Manga como CILINDRO que segue a manga da foto: `topo` e `barra` são as
+  // bordas da silhueta ([esquerda, direita]) na altura do ombro e na barra —
+  // as linhas podem ser inclinadas, e a barra do molde cai na barra da foto.
+  // O meio do molde (a linha de fora do braço, onde vai o detalhe) fica no
+  // ângulo `giro` (0 = virado para a câmera; −90/+90 = borda esquerda/
+  // direita). Visto de fora com a copa para cima, o molde não fica espelhado.
   function mapaDoCilindro(c) {
-    const [sx, sy] = c.ombro, [bx, by] = c.barra;
-    const dx = bx - sx, dy = by - sy, len = Math.hypot(dx, dy) || 1;
-    const nx = dy / len, ny = -dx / len; // perpendicular, para a direita da tela
+    const [tl, tr] = c.topo, [bl, br] = c.barra;
     const giro = ((c.giro || 0) * Math.PI) / 180;
+    const lim = Math.PI / 2;
     return (u, v) => {
+      const lx = tl[0] + (bl[0] - tl[0]) * v, ly = tl[1] + (bl[1] - tl[1]) * v;
+      const rx = tr[0] + (br[0] - tr[0]) * v, ry = tr[1] + (br[1] - tr[1]) * v;
+      const cx = (lx + rx) / 2, cy = (ly + ry) / 2, hx = (rx - lx) / 2, hy = (ry - ly) / 2;
       const psi = giro + (u - 0.5) * 2 * Math.PI;
-      const r = c.raio[0] + (c.raio[1] - c.raio[0]) * v;
       // Um pouco além da silhueta, achatado na borda (sem fresta no contorno).
-      const lim = Math.PI / 2;
       const q = Math.atan2(Math.sin(psi), Math.cos(psi));
-      const d = r * Math.sin(Math.max(-lim, Math.min(lim, q)));
-      return [sx + dx * v + nx * d, sy + dy * v + ny * d, Math.cos(psi) + 0.3];
+      const k = Math.sin(Math.max(-lim, Math.min(lim, q)));
+      return [cx + hx * k, cy + hy * k, Math.cos(psi) + 0.3];
     };
   }
 

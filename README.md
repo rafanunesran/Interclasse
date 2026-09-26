@@ -502,7 +502,7 @@ o resto continua seguindo o layout geral:
 - nos textos (nome e número): **tamanho da letra** (altura das maiúsculas, em mm), **cor** e
   **cor/espessura do contorno** (CMYK), alinhamento, espaço entre letras, maiúsculas e o que
   fazer com texto comprido;
-- nas imagens (brasão, logo, detalhe): **manter proporção** ou esticar;
+- nas imagens (brasão, logo, detalhe): **manter proporção** ou esticar (o **detalhe da manga estica por padrão**, na largura e na altura, para a arte se adaptar à caixa);
 - **Ocultar neste time** (ex.: um time sem o logo) — o elemento aparece apagado no editor.
 
 A lista de elementos mostra os selos *posição do time*, *estilo do time* e *oculto*. **Voltar ao

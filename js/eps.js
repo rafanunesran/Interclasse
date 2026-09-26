@@ -206,6 +206,13 @@ const EPS = (function () {
     return aj.estilo ? { ...el, ...aj.estilo } : el;
   }
 
+  // Imagem esticada na caixa (largura e altura independentes)? O detalhe da
+  // manga estica por padrão (a arte se adapta à caixa); brasão e logo mantêm
+  // a proporção, a não ser que "Manter proporção" seja desmarcado.
+  function imagemLivre(el) {
+    return el.livre != null ? !!el.livre : el.tipo === "detalhe";
+  }
+
   // Encaixa o conteúdo inteiro (w × h) dentro da caixa, sem distorcer.
   function encaixarProporcional(caixa, w, h) {
     const e = Math.min(caixa.w / w, caixa.h / h);
@@ -657,7 +664,7 @@ const EPS = (function () {
             const img = d && rec.imagens && rec.imagens[d.chave];
             if (!img) { avisar("O time não tem o detalhe da manga (PNG) — a caixa do detalhe ficou vazia."); return; }
             // `livre`: a imagem estica na caixa (largura e altura independentes).
-            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...(el.livre ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
+            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
             return;
           }
           if (el.tipo === "brasao" || el.tipo === "logo") {
@@ -669,7 +676,7 @@ const EPS = (function () {
               return;
             }
             const t = tamanhoMmDoBbox(e.bbox);
-            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...(el.livre ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
+            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
             return;
           }
           if (!rec.fonte) { avisar("O time não tem fonte — nome e número ficaram de fora."); return; }
@@ -965,6 +972,7 @@ const EPS = (function () {
     encaixarProporcional,
     empacotar,
     elementoDoTime,
+    imagemLivre,
     montarBlocos,
     arteDaPeca,
     detalheDaPeca,

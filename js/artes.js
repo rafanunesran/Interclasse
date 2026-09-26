@@ -569,7 +569,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
       const url = imagemDaCaixa(el, prod, pecaId);
       if (url) {
         partes.push(`<image href="${escAttr(urlPreviaGrande(url))}" x="${n(c.x)}" y="${n(c.y)}" ` +
-          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${el.livre ? "none" : "xMidYMid meet"}" />`);
+          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${EPS.imagemLivre(el) ? "none" : "xMidYMid meet"}" />`);
       } else if (comMolde) {
         partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
       }
@@ -1265,7 +1265,7 @@ function renderizarPalcoLayout() {
     if (ehCaixaImagem(el)) {
       const url = imagemDaCaixa(el, prod, layoutPeca);
       div.innerHTML = url
-        ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${el.livre ? "fill" : "contain"}" />`
+        ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${EPS.imagemLivre(el) ? "fill" : "contain"}" />`
         : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
     } else if (fonte) {
       const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el);
@@ -1309,7 +1309,7 @@ function ligarArrasteLayout(div, alca, el) {
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        const livre = (EPS.elementoDoTime(el, ajusteDoTime(layoutModo, layoutPeca, el.id)) || el).livre;
+        const livre = EPS.imagemLivre(EPS.elementoDoTime(el, ajusteDoTime(layoutModo, layoutPeca, el.id)) || el);
         atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
@@ -1451,7 +1451,7 @@ function renderizarPainelLayout() {
     </div>`;
 
   if (!ehTexto) {
-    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${elT.livre ? "" : "checked"} /> Manter proporção</label>
+    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> Manter proporção</label>
       <p class="pix-ajuda">Desmarque para esticar ${escapeHtmlAdmin(rotuloElementoLayout(el).toLowerCase())} na largura e na altura, cada uma no seu (a alça do canto e os campos passam a mexer só na medida escolhida).</p>`;
   } else {
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
@@ -1506,7 +1506,7 @@ function renderizarPainelLayout() {
   box.querySelectorAll("[data-cx]").forEach((inp) => {
     inp.onchange = () => {
       const nova = { ...c, [inp.dataset.cx]: Number(inp.value) || 0 };
-      if (!ehTexto && !elT.livre && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
+      if (!ehTexto && !EPS.imagemLivre(elT) && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
         const prop = c.w / c.h;
         if (inp.dataset.cx === "w") nova.h = nova.w / prop; else nova.w = nova.h * prop;
       }
