@@ -502,8 +502,12 @@ como o brasão). O EPS entra intacto na folha.
 - a **sangria** para fora da linha de corte (padrão 2 mm; 0 = a arte para exatamente no contorno);
 - se o fornecedor deixa **girar** as peças (90° quando aproveitar melhor) ou não;
 - a **resolução** das artes (600 dpi original, 300 ou 150 para prova);
-- contorno do molde por cima/por baixo/fora, altura máxima por folha e a etiqueta
-  "nome · nº · tamanho · peça" embaixo de cada peça.
+- contorno do molde por cima/por baixo/fora, altura máxima por folha e o marcador da costureira.
+
+Cada peça leva um **marcador para a costureira** dentro da área de impressão:
+**`Time-Tamanho-Peça`** (ex.: `7B-P-Frente`), com **4 mm** de altura, centralizado a **1 mm da
+base** da peça. Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo
+para cima), também a 1 mm da borda e com 4 mm. Dá para desligar no diálogo.
 
 Sai **um EPS por time** (camisetas avulsas vão para o time do mesmo modelo; os goleiros saem num
 arquivo à parte), num `.zip` quando há mais de um. O encaixe é por "melhor espaço livre"

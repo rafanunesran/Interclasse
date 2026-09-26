@@ -525,6 +525,13 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte) {
     }
   });
 
+  // Marcador da costureira (só na prévia "Arte", como vai sair na folha).
+  if (comMolde && fonte && tam && molde) {
+    const cmds = EPS.marcadorDaPeca(fonte, EPS.textoDoMarcador(time.nome, tam, nomePecaProducao(pecaId)), dim.w, dim.h, pecaId === "gola");
+    if (cmds.length) {
+      partes.push(`<path d="${caminhoSvg(cmds, 1)}" fill="#000" stroke="#fff" stroke-width="0.5" stroke-linejoin="round" paint-order="stroke" />`);
+    }
+  }
   let svg = recorte
     ? `<clipPath id="${idClip}"><path d="${escAttr(recorte)}" /></clipPath><g clip-path="url(#${idClip})">${partes.join("")}</g>`
     : partes.join("");
@@ -1329,7 +1336,7 @@ function perguntarOpcoesEps(resumo) {
           <label>Contorno do molde
             <select name="molde"><option value="frente">Por cima da arte (linha de corte visível)</option><option value="fundo">Por baixo da arte</option><option value="nenhum">Não incluir</option></select></label>
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
-          <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Etiqueta "nome · nº · tamanho · peça" embaixo de cada peça</label>
+          <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
           <button type="submit" class="primario">Gerar</button>
         </form>
       </div>`;
@@ -1407,7 +1414,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
       avisoProducao(`${rotuloTime}: montando a folha…`);
       await esperarTela();
       const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutConfig, time, g.camisetas, rec,
-        { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao });
+        { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
       avB.forEach((a) => avisos.push(`${rotuloTime}: ${a}`));
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
         larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: op.alturaMaxCm * 10
@@ -1456,7 +1463,7 @@ async function baixarEpsDeTesteLayout() {
   try {
     const rec = await carregarRecursosDoTime(time, [m.tam], [layoutPeca], 150, avisoProducao);
     const { blocos, avisos } = EPS.montarBlocos(moldesConfig, layoutConfig, time,
-      [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: false, sangriaMm: (layoutConfig.folha || {}).sangriaMm, pecas: [layoutPeca], nomePeca: nomePecaProducao });
+      [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: true, sangriaMm: (layoutConfig.folha || {}).sangriaMm, pecas: [layoutPeca], nomePeca: nomePecaProducao, nomeTime: time.nome });
     const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 20, espacoMm: 10, rotacao: "0" });
     avisoProducao("");
     if (!folhas.length) { alert(avisos.join("\n") || "Nada para gerar."); return; }

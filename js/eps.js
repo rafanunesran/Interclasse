@@ -486,6 +486,59 @@ const EPS = (function () {
     });
   }
 
+  // ---------------- Marcador da costureira ----------------
+  // Cada peça leva, dentro da área de impressão, "Time-Tamanho-Peça"
+  // (ex.: 7B-P-Frente), com 4 mm de altura (a altura das maiúsculas) e a
+  // 1 mm da base da peça, centralizado. Na gola, que é uma faixa, vai na
+  // lateral esquerda, na vertical (lendo de baixo para cima), também a 1 mm
+  // da borda e com 4 mm.
+  const MARCADOR_ALTURA_MM = 4;
+  const MARCADOR_MARGEM_MM = 1;
+
+  function textoDoMarcador(nomeTime, tamanho, nomePeca) {
+    return [nomeTime, tamanho, nomePeca].map((v) => String(v || "").trim()).filter(Boolean).join("-");
+  }
+
+  function caixaDosComandos(cmds) {
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    cmds.forEach((c) => {
+      ["", "1", "2"].forEach((s) => {
+        const x = c["x" + s], y = c["y" + s];
+        if (x == null) return;
+        if (x < x1) x1 = x;
+        if (x > x2) x2 = x;
+        if (y < y1) y1 = y;
+        if (y > y2) y2 = y;
+      });
+    });
+    return { x1, y1, x2, y2 };
+  }
+
+  // Comandos (mm, relativos ao canto de cima da peça) do marcador.
+  function marcadorDaPeca(fonte, texto, pecaW, pecaH, vertical) {
+    const A = MARCADOR_ALTURA_MM, M = MARCADOR_MARGEM_MM;
+    const comprimento = (vertical ? pecaH : pecaW) - 2 * M;
+    if (!texto || comprimento <= 0) return [];
+    const l = layoutTexto(fonte, texto, { w: comprimento, h: A }, { maiusculas: false, alinhamento: "centro" });
+    if (!l.comandos.length) return [];
+    // A tinta (incluindo as pernas do g, p, q...) fica a exatamente 1 mm da borda.
+    const cx = caixaDosComandos(l.comandos);
+    if (!vertical) return deslocarComandos(l.comandos, M, pecaH - M - cx.y2);
+    // Gira 90° (de baixo para cima): o "chão" das letras vira o lado direito.
+    const gira = (x, y) => [y, pecaH - M - x];
+    const deslocX = M - cx.y1; // a parte de cima das letras encosta a 1 mm da esquerda
+    return l.comandos.map((c) => {
+      const n = { type: c.type };
+      ["", "1", "2"].forEach((s) => {
+        if (c["x" + s] == null) return;
+        const [x, y] = gira(c["x" + s], c["y" + s]);
+        n["x" + s] = x + deslocX;
+        n["y" + s] = y;
+      });
+      return n;
+    });
+  }
+
   // ---------------- Montagem das peças ----------------
 
   // Monta os blocos (uma peça de uma camiseta cada) de UM time.
@@ -510,7 +563,6 @@ const EPS = (function () {
     const avisar = (t) => { if (!avisos.includes(t)) avisos.push(t); };
     const prod = (time && time.producao) || {};
     const ajustes = prod.layoutAjustes || {};
-    const ETIQUETA_MM = 2.4;
     const pecasIds = op.pecas || Object.keys((layout && layout.pecas) || {});
 
     const blocos = [];
@@ -571,19 +623,18 @@ const EPS = (function () {
           });
         });
 
-        if (posMolde === "frente") ops.push(opMolde);
-
-        // Etiqueta pequena embaixo da peça, para a costura separar as peças.
-        let h = tam.h;
+        // Marcador para a costureira, DENTRO da área de impressão:
+        // "Time-Tamanho-Peça" (ex.: 7B-P-Frente), ver marcadorDaPeca().
         if (op.etiqueta !== false && rec.fonteEtiqueta) {
-          const texto = [cam.nomeCamiseta || cam.nome, cam.numero, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId]
-            .filter((v) => String(v || "").trim()).join(" · ");
-          const l = layoutTexto(rec.fonteEtiqueta, texto, { w: tam.w, h: ETIQUETA_MM }, { maiusculas: false, alinhamento: "esquerda" });
-          if (l.comandos.length) {
-            ops.push({ tipo: "caminho", comandos: deslocarComandos(l.comandos, 0, tam.h + 1), cmyk: [0, 0, 0, 100], contorno: null });
-            h = tam.h + 1 + ETIQUETA_MM * 1.3;
+          const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId);
+          const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola");
+          if (cmds.length) {
+            ops.push({ tipo: "caminho", recortar, comandos: cmds, cmyk: [0, 0, 0, 100], contorno: { cmyk: [0, 0, 0, 0], mm: 0.25 } });
           }
         }
+
+        if (posMolde === "frente") ops.push(opMolde);
+        const h = tam.h;
         const contorno = recortar
           ? contornoComSangria(comandosDoContorno(molde.contorno), tam.w, tam.h, op.sangriaMm == null ? 2 : Number(op.sangriaMm))
           : null;
@@ -833,6 +884,8 @@ const EPS = (function () {
     encaixarProporcional,
     empacotar,
     montarBlocos,
+    textoDoMarcador,
+    marcadorDaPeca,
     contornoDePdf,
     comandosDoContorno,
     contornoComSangria,
