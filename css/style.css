@@ -128,6 +128,7 @@ tr.duplicado td { background: #fef3c7; }
 .badge.bloqueado { background: #fee2e2; color: #7f1d1d; }
 .badge.finalizado { background: #e0e7ff; color: #3730a3; }
 .badge.interno { background: #ede9fe; color: #5b21b6; }
+.badge.oculto-loja { background: #e5e7eb; color: #374151; }
 /* Goleiro: camiseta de cor especial, marcada na lista. */
 .badge.goleiro { background: #cffafe; color: #155e75; }
 /* Prof: camiseta de professor, marca só de organização. */
@@ -2196,6 +2197,7 @@ main.loja { max-width: 1120px; }
 .sinal-ajuste { background: #fee2e2; color: #991b1b; }
 .sinal-pix { background: #fef3c7; color: #92400e; }
 .sinal-busca { background: #dbeafe; color: #1e40af; }
+.sinal-oculto { background: #e5e7eb; color: #374151; }
 @media (max-width: 560px) {
   .linha-time { flex-wrap: wrap; }
   .linha-time-sinais { width: 100%; justify-content: flex-start; padding-left: 56px; }

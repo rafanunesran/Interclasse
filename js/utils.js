@@ -227,6 +227,18 @@ function nomeDoCliente(clientes, clienteId) {
   return (c && c.nome) || SEM_CLIENTE_NOME;
 }
 
+// Clientes e times podem ser ocultados pelo Super Admin (campo oculto = true):
+// somem da loja (index.html), mas o link direto do time continua abrindo.
+// Um time some também quando o cliente dele está oculto.
+function timeOcultoNaLoja(time, clientes) {
+  if (time && time.oculto === true) return true;
+  const id = clienteIdDoTime(time);
+  if (!id) return false;
+  const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
+  const c = lista.find((x) => x.id === id);
+  return !!(c && c.oculto === true);
+}
+
 // Um time pertence ao cliente escolhido no filtro? Filtro vazio = todos.
 function timeDoCliente(time, filtro) {
   if (!filtro) return true;

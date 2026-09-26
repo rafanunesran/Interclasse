@@ -392,7 +392,9 @@ function renderizarClientesAdmin() {
     const camisetas = times.reduce((soma, e) => soma + e.alunos.length, 0);
 
     card.innerHTML = `
-      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}</h2>
+      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}${
+        cliente.oculto === true ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}</h2>
+      ${cliente.oculto === true ? '<p class="pix-ajuda">Este cliente e os times dele não aparecem na loja. Os links diretos dos times continuam funcionando.</p>' : ""}
       ${cliente.contato ? `<p>Contato: ${escapeHtmlAdmin(cliente.contato)}</p>` : ""}
       <p>${times.length} time(s) &middot; ${camisetas} camiseta(s) &middot; Link: <code>index.html?cliente=${cliente.id}</code></p>
     `;
@@ -421,6 +423,14 @@ function renderizarClientesAdmin() {
     };
     botoes.appendChild(btnEditar);
 
+    const btnOcultar = document.createElement("button");
+    btnOcultar.className = "secundario";
+    btnOcultar.innerHTML = cliente.oculto === true
+      ? icone("eye") + " Mostrar na loja"
+      : icone("eye-off") + " Ocultar da loja";
+    btnOcultar.onclick = () => alternarClienteOculto(cliente, btnOcultar);
+    botoes.appendChild(btnOcultar);
+
     const btnExcluir = document.createElement("button");
     btnExcluir.className = "perigo";
     btnExcluir.textContent = "Excluir cliente";
@@ -430,6 +440,20 @@ function renderizarClientesAdmin() {
     card.appendChild(botoes);
     elListaClientesAdmin.appendChild(card);
   });
+}
+
+// Ocultar/mostrar o cliente na loja: com ele oculto, nenhum time dele aparece
+// em index.html (os links diretos dos times continuam abrindo).
+async function alternarClienteOculto(cliente, botao) {
+  const ocultar = cliente.oculto !== true;
+  botao.disabled = true;
+  try {
+    await db.collection(COL_CLIENTES).doc(cliente.id).update({ oculto: ocultar });
+  } catch (erro) {
+    console.error(erro);
+    botao.disabled = false;
+    alert("Erro ao salvar. Tente novamente.");
+  }
 }
 
 // Formulário inline de edição do nome/contato do cliente.
@@ -863,6 +887,9 @@ function criarLinhaTime(timeId, termosBusca) {
   if (achado.alunos.length > 0) sinais.push(`<span class="sinal sinal-busca">🔎 ${achado.alunos.length}</span>`);
   if (nAjustes > 0) sinais.push(`<span class="sinal sinal-ajuste" title="Ajustes solicitados">! ${nAjustes}</span>`);
   if (nConfirmar > 0) sinais.push(`<span class="sinal sinal-pix" title="PIX avisado, a confirmar">PIX ${nConfirmar}</span>`);
+  if (timeOcultoNaLoja(time, estadoClientes)) {
+    sinais.push(`<span class="sinal sinal-oculto" title="${time.oculto === true ? "Time oculto na loja" : "Cliente oculto na loja"}">${icone("eye-off")}</span>`);
+  }
 
   linha.innerHTML = `
     <span class="linha-time-avatar">${avatar}</span>
@@ -945,7 +972,8 @@ function renderizarTimeAberto(timeId) {
     <div class="detalhe-titulo">
       <p class="detalhe-cliente">${escapeHtmlAdmin(nomeClienteDoTime(time))}${
         time.modeloCamiseta ? ` · Modelo: ${escapeHtmlAdmin(time.modeloCamiseta)}` : ""}</p>
-      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span></h2>
+      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span>${
+        timeOcultoNaLoja(time, estadoClientes) ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}</h2>
       <p class="linha-time-rep">${representanteCurtoHtml(time)}</p>
     </div>`;
 
@@ -1415,6 +1443,34 @@ function renderizarConfigTime(timeId) {
   blocoPrecos.classList.add("fixo");
   cardPrecos.appendChild(blocoPrecos);
   elListaTimesAdmin.appendChild(cardPrecos);
+
+  // Visibilidade na loja (vale na hora, fora do rascunho da configuração).
+  const clienteOculto = !!(estadoClientes[clienteIdDoTime(time)] && estadoClientes[clienteIdDoTime(time)].oculto === true);
+  const cardVisivel = document.createElement("div");
+  cardVisivel.className = "card";
+  cardVisivel.innerHTML = '<h3 class="titulo-bloco">Visibilidade na loja</h3>' +
+    `<p class="pix-ajuda">${time.oculto === true
+      ? "Este time está <strong>oculto</strong>: não aparece na loja (index.html). O link direto do pedido continua funcionando."
+      : "Este time aparece na loja (index.html). Ocultando, ele some da loja, mas o link direto do pedido continua funcionando."}${
+      clienteOculto ? " <strong>O cliente deste time está oculto</strong>, então ele já não aparece na loja (aba Clientes)." : ""}</p>`;
+  const btnOcultar = document.createElement("button");
+  btnOcultar.type = "button";
+  btnOcultar.className = "secundario";
+  btnOcultar.innerHTML = time.oculto === true
+    ? icone("eye") + " Mostrar na loja"
+    : icone("eye-off") + " Ocultar da loja";
+  btnOcultar.onclick = async () => {
+    btnOcultar.disabled = true;
+    try {
+      await db.collection(COL_TIMES).doc(timeId).update({ oculto: time.oculto !== true });
+    } catch (erro) {
+      console.error(erro);
+      btnOcultar.disabled = false;
+      alert("Erro ao salvar. Tente novamente.");
+    }
+  };
+  cardVisivel.appendChild(btnOcultar);
+  elListaTimesAdmin.appendChild(cardVisivel);
 
   // Zona de perigo.
   const cardPerigo = document.createElement("div");

@@ -140,6 +140,12 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 - **Link do cliente:** `index.html?cliente=ID-DO-CLIENTE` abre a tela inicial já com os
   times daquele cliente — é o link para compartilhar com ele. Sem o parâmetro, a tela
   inicial mostra a lista de clientes para escolher.
+- **Ocultar da loja:** o botão **Ocultar da loja** (aba **Clientes**, no card do cliente,
+  ou time aberto → **Configuração** → *Visibilidade na loja*) tira o cliente — com todos os
+  times dele — ou um time só da loja (`index.html`), inclusive do link
+  `index.html?cliente=...`. Nada é apagado: o painel continua mostrando tudo (com o selo
+  *Oculto na loja*), e o link direto do time (`time.html?id=...`) continua abrindo para
+  quem já o tem. **Mostrar na loja** desfaz.
 - **No Financeiro**, com mais de um cliente na conta, a *Visão geral* ganha o quadro
   **Por cliente** (previsto, recebido, a receber, % e lucro) e a tabela por time ganha a
   coluna do cliente. Os CSVs do Financeiro e o de conferência também trazem o cliente.
