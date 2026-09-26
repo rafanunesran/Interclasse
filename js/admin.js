@@ -843,7 +843,7 @@ function criarLinhaTime(timeId, termosBusca) {
   linha.setAttribute("role", "button");
   linha.setAttribute("aria-label", "Abrir o time " + time.nome);
 
-  const capa = time.imagemUrl || time.arteUrl;
+  const capa = time.imagemUrl || time.arteUrl || (time.previaCliente && time.previaCliente.cena);
   const avatar = capa
     ? `<img src="${escAttr(capa)}" alt="" loading="lazy" />`
     : `<span>${escapeHtmlAdmin((time.nome || "?").trim().charAt(0).toUpperCase())}</span>`;

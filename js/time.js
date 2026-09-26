@@ -173,6 +173,15 @@ function imagensDaGaleria() {
   if (timeAtual && timeAtual.arteUrl) {
     itens.push({ url: timeAtual.arteUrl, legenda: "Arte (sem simulação)", comMarca });
   }
+  // Sem imagens postadas: a prévia montada no admin com as artes de produção
+  // e os mockups (time.previaCliente), com "NOME" e "00" de exemplo.
+  const pc = timeAtual && timeAtual.previaCliente;
+  if (timeAtual && !timeAtual.imagemUrl && !timeAtual.arteUrl && pc) {
+    [["cena", "Simulação na camiseta"], ["frente", "Simulação — frente"], ["costas", "Simulação — costas"], ["arte", "Arte (sem simulação)"]]
+      .forEach(([chave, legenda]) => {
+        if (pc[chave]) itens.push({ url: pc[chave], legenda, comMarca });
+      });
+  }
   // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
   GRUPOS_TAMANHO.filter((g) => g.imagemUrl).forEach((g) => {
     itens.push({

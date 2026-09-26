@@ -503,6 +503,21 @@ como o brasão). O EPS entra intacto na folha.
   cor da arte da gola. **Baixar PNG** salva a imagem para mandar ao cliente. As fotos base ficam
   em `img/mockup/` e as regiões (corpo, mangas, gola) de cada foto em `js/mockup.js`.
 
+### Prévia para o cliente
+
+Quando o time **não tem simulação nem arte postadas** (os campos de imagem do time), a página do
+pedido e o card da loja mostram uma prévia montada com os arquivos de produção: os mockups
+**Cena**, **Frente** e **Costas** e a **arte plana** das peças, com **"NOME"** e **"00"** de
+exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e guardados em
+`previaCliente` no time.
+
+- No bloco da prévia do time (**Arquivos de produção**) há o botão **📤 Publicar prévia para o
+  cliente** e a data da última publicação.
+- Ela também é refeita **sozinha** alguns segundos depois de mudar os arquivos ou os ajustes de
+  layout daquele time (só se o time não tiver imagens postadas). Mudanças no layout geral valem
+  para todos os times e não disparam sozinhas: use o botão nos times que quiser atualizar.
+- Imagens postadas à mão sempre têm prioridade.
+
 ### Gerar (aba **Produção**)
 
 **Folhas EPS (CMYK)** na leva (ou **Folha EPS** no bloco de um modelo) pergunta:

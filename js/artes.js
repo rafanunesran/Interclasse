@@ -275,6 +275,7 @@ async function gravarProducaoTime(timeId, producao) {
   const limpo = limparParaFirestore(producao);
   if (estadoTimes[timeId]) estadoTimes[timeId].time.producao = limpo;
   await db.collection(COL_TIMES).doc(timeId).update({ producao: limpo });
+  agendarPreviaCliente(timeId); // prévia do cliente, se o time não tem imagens postadas
 }
 
 function criarBlocoProducaoTime(timeId, time) {
@@ -701,6 +702,148 @@ async function pecasParaMockup(time, timeId, tam, amostra) {
   return saida;
 }
 
+// ---------------- Prévia para o cliente ----------------
+// Quando o time não tem simulação/arte postadas à mão (imagemUrl/arteUrl),
+// a página do pedido mostra imagens montadas daqui: mockups Cena, Frente e
+// Costas + a arte plana, com "NOME" e "00" de amostra. São PNGs no Drive,
+// gravados em time.previaCliente — o cliente só vê as imagens prontas.
+
+const AMOSTRA_CLIENTE = { nomeCamiseta: "NOME", nome: "NOME", numero: "00" };
+const previaClienteEstado = {}; // timeId → { gerando, deNovo, erro, timer }
+
+function timeTemImagemPostada(time) {
+  return !!(time && (time.imagemUrl || time.arteUrl));
+}
+
+function timeTemArteDeProducao(time) {
+  const pecas = producaoDoTime(time).pecas || {};
+  return !!(pecas.frente || pecas.costas);
+}
+
+// Arte plana (sem simulação): as peças recortadas no molde, arrumadas como
+// na prévia "Arte" (gola, mangas, frente e costas), em fundo branco.
+async function arteDoClienteEmCanvas(time, timeId, tam) {
+  const linhas = [["gola"], ["mangaEsq", "mangaDir"], ["frente", "costas"]]
+    .map((ids) => ids.map((id) => pecaEmSvg(time, timeId, id, tam, AMOSTRA_CLIENTE, false, false)).filter((p) => p && p.svg))
+    .filter((l) => l.length);
+  if (!linhas.length) return null;
+  const GAP = 20; // mm
+  const larguraMm = Math.max(...linhas.map((l) => l.reduce((t, p) => t + p.w, 0) + GAP * (l.length + 1)));
+  const alturaMm = linhas.reduce((t, l) => t + Math.max(...l.map((p) => p.h)), 0) + GAP * (linhas.length + 1);
+  const k = Math.min(3, 2000 / larguraMm); // px por mm
+  const c = document.createElement("canvas");
+  c.width = Math.round(larguraMm * k);
+  c.height = Math.round(alturaMm * k);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  let y = GAP;
+  for (const l of linhas) {
+    const alt = Math.max(...l.map((p) => p.h));
+    const larg = l.reduce((t, p) => t + p.w, 0) + GAP * (l.length - 1);
+    let x = (larguraMm - larg) / 2;
+    for (const p of l) {
+      const pc = await pecaEmCanvas(p, Math.max(p.w, p.h) * k);
+      ctx.drawImage(pc, x * k, (y + (alt - p.h) / 2) * k, p.w * k, p.h * k);
+      x += p.w + GAP;
+    }
+    y += alt + GAP;
+  }
+  return c;
+}
+
+function canvasEmPng(canvas) {
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar a imagem."))), "image/png"));
+}
+
+// Monta e publica a prévia do cliente. Uma geração por time de cada vez; um
+// pedido no meio faz rodar de novo no fim (com os dados mais novos).
+async function publicarPreviaCliente(timeId, opcoes) {
+  const auto = !!(opcoes && opcoes.automatico);
+  const est = previaClienteEstado[timeId] = previaClienteEstado[timeId] || {};
+  if (est.gerando) { est.deNovo = true; return; }
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  if (!time) return;
+  if (!driveScriptUrl) {
+    if (!auto) exigirDriveProducao();
+    return;
+  }
+  if (!timeTemArteDeProducao(time)) {
+    if (!auto) alert("Envie ao menos a arte da frente ou das costas do time para montar a prévia.");
+    return;
+  }
+  est.gerando = true;
+  est.erro = "";
+  atualizarStatusPreviaCliente(timeId);
+  try {
+    const tam = moldesConfig.tamanhoBase || tamanhoDaPrevia();
+    const pecas = await pecasParaMockup(time, timeId, tam, AMOSTRA_CLIENTE);
+    const pref = `${slugify(time.nome) || timeId}-previa-cliente`;
+    const previa = { geradaEmMs: Date.now() };
+    const envios = [["cena", "Cena"], ["frente", "Frente"], ["costas", "Costas"]].map(([vista]) => async () => {
+      const canvas = await Mockup.renderizar(vista, pecas);
+      return [vista, await canvasEmPng(canvas)];
+    });
+    envios.push(async () => {
+      const c = await arteDoClienteEmCanvas(time, timeId, tam);
+      return ["arte", c ? await canvasEmPng(c) : null];
+    });
+    for (const gerar of envios) {
+      const [chave, blob] = await gerar();
+      if (!blob) continue;
+      const env = await enviarArquivoDrive(driveScriptUrl, new File([blob], chave + ".png", { type: "image/png" }), pref);
+      previa[chave] = urlPreviaGrande(env.url);
+    }
+    await db.collection(COL_TIMES).doc(timeId).update({ previaCliente: previa });
+    if (estadoTimes[timeId]) estadoTimes[timeId].time.previaCliente = previa;
+  } catch (e) {
+    console.error("Prévia do cliente:", e);
+    est.erro = e.message || String(e);
+    if (!auto) alert("Não foi possível publicar a prévia do cliente: " + est.erro);
+  } finally {
+    est.gerando = false;
+    atualizarStatusPreviaCliente(timeId);
+    if (est.deNovo) {
+      est.deNovo = false;
+      publicarPreviaCliente(timeId, { automatico: true });
+    }
+  }
+}
+
+// Automático: depois de mudar os arquivos/ajustes do time, se ele não tem
+// imagens postadas à mão. Espera alguns segundos para juntar vários envios.
+function agendarPreviaCliente(timeId) {
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  if (!time || timeTemImagemPostada(time) || !timeTemArteDeProducao(time) || !driveScriptUrl) return;
+  const est = previaClienteEstado[timeId] = previaClienteEstado[timeId] || {};
+  clearTimeout(est.timer);
+  est.timer = setTimeout(() => publicarPreviaCliente(timeId, { automatico: true }), 5000);
+}
+
+function textoStatusPreviaCliente(timeId) {
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  const est = previaClienteEstado[timeId] || {};
+  if (est.gerando) return "Gerando a prévia do cliente…";
+  if (est.erro) return "A última prévia do cliente falhou: " + est.erro;
+  const pc = time && time.previaCliente;
+  const quando = pc && pc.geradaEmMs
+    ? new Date(pc.geradaEmMs).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "";
+  if (timeTemImagemPostada(time)) {
+    return "A página do cliente mostra a simulação/arte postadas" + (quando ? ` (a prévia montada de ${quando} fica guardada).` : ".");
+  }
+  return quando ? `Prévia do cliente publicada em ${quando}.` : "A página do cliente ainda não tem prévia.";
+}
+
+function atualizarStatusPreviaCliente(timeId) {
+  document.querySelectorAll(`[data-previa-cliente-status="${CSS.escape(timeId)}"]`).forEach((el) => {
+    el.textContent = textoStatusPreviaCliente(timeId);
+  });
+  document.querySelectorAll(`[data-publicar-previa="${CSS.escape(timeId)}"]`).forEach((b) => {
+    b.disabled = !!(previaClienteEstado[timeId] || {}).gerando;
+  });
+}
+
 // Bloco completo da prévia: controles + desenho.
 function criarPreviaArteTime(timeId, time) {
   const wrap = document.createElement("div");
@@ -726,7 +869,16 @@ function criarPreviaArteTime(timeId, time) {
       <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>⬇ Baixar PNG</button>
     </div>
     <div class="previa-area"></div>
-    <p class="pix-ajuda previa-nota"></p>`;
+    <p class="pix-ajuda previa-nota"></p>
+    <div class="previa-cliente">
+      <button type="button" class="secundario" data-publicar-previa="${escAttr(timeId)}">📤 Publicar prévia para o cliente</button>
+      <span class="pix-ajuda" data-previa-cliente-status="${escAttr(timeId)}"></span>
+    </div>
+    <p class="pix-ajuda">Sem simulação/arte postadas, a página do pedido mostra os mockups (Cena, Frente, Costas) e a arte montados daqui, com "NOME" e "00" — atualizados sozinhos quando os arquivos do time mudam.</p>`;
+  const btPublicar = wrap.querySelector("[data-publicar-previa]");
+  btPublicar.onclick = () => publicarPreviaCliente(timeId);
+  btPublicar.disabled = !!(previaClienteEstado[timeId] || {}).gerando;
+  wrap.querySelector("[data-previa-cliente-status]").textContent = textoStatusPreviaCliente(timeId);
 
   const area = wrap.querySelector(".previa-area");
   const nota = wrap.querySelector(".previa-nota");

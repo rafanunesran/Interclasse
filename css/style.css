@@ -2309,6 +2309,8 @@ main.loja { max-width: 1120px; }
   margin-bottom: 12px;
 }
 .previa-controles label { margin: 0; font-size: 0.8rem; }
+.previa-cliente { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 12px; }
+.previa-cliente .pix-ajuda { margin: 0; }
 .previa-controles input[type="text"], .previa-controles select { margin-top: 4px; width: 160px; padding: 7px 9px; font-size: 0.9rem; }
 .previa-controles .input-curto { width: 70px; }
 .previa-controles input[type="color"] { display: block; margin-top: 4px; width: 60px; height: 36px; padding: 2px; border: 1px solid var(--cinza-borda); border-radius: 6px; background: #fff; }

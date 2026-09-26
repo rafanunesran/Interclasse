@@ -198,7 +198,7 @@ function criarCardProduto(time) {
     ? '<span class="marca-overlay" aria-hidden="true"></span>'
     : "";
   // No card mostramos a simulação; se o time só tiver a arte, ela serve de capa.
-  const capaUrl = time.imagemUrl || time.arteUrl;
+  const capaUrl = time.imagemUrl || time.arteUrl || (time.previaCliente && time.previaCliente.cena);
   const imagem = capaUrl
     ? `<span class="wrap-imagem"><img class="img-na-marca" src="${escaparHtml(capaUrl).replace(/"/g, "&quot;")}" alt="Camiseta de ${escaparHtml(time.nome)}" loading="lazy" />${marcaOverlay}</span>`
     : `<span class="produto-sem-imagem" style="background:${corDoTime(time.nome)}" aria-hidden="true">👕</span>`;
