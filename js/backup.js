@@ -1,7 +1,7 @@
 // ============================================================
 // ABA BACKUP (Super Admin)
 // ============================================================
-// Os backups são feitos pelo Apps Script (apps-script/Backup.gs): todo dia
+// Os backups são feitos pelo Apps Script (apps-script/Codigo.gs): todo dia
 // ele salva uma cópia de todos os dados do Firestore numa pasta privada do
 // Google Drive. Esta aba lista, baixa e restaura esses backups.
 //
@@ -40,12 +40,12 @@ async function chamarBackup(acao, extra) {
   try {
     dados = await resp.json();
   } catch (e) {
-    throw new Error("O Apps Script não respondeu como esperado. Ele foi atualizado com o Backup.gs? (apps-script/README.md)");
+    throw new Error("O Apps Script não respondeu como esperado. Ele foi atualizado com o Codigo.gs novo? (apps-script/README.md)");
   }
   if (!dados || !dados.ok) {
     const erro = (dados && dados.erro) || "Falha no backup.";
     throw new Error(/Sem imagem/.test(erro)
-      ? "O Apps Script publicado ainda não tem o backup. Atualize-o com o Codigo.gs e o Backup.gs novos (apps-script/README.md)."
+      ? "O Apps Script publicado ainda não tem o backup. Atualize-o com o Codigo.gs e o appsscript.json novos (apps-script/README.md)."
       : erro);
   }
   return dados;
