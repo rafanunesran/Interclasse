@@ -927,6 +927,50 @@ function canvasEmPng(canvas) {
 
 // Monta e publica a prévia do cliente. Uma geração por time de cada vez; um
 // pedido no meio faz rodar de novo no fim (com os dados mais novos).
+// Etiqueta "GOLEIRO" gravada na imagem (canto de cima, à esquerda).
+function carimbarGoleiro(canvas) {
+  const ctx = canvas.getContext("2d");
+  const esc = canvas.width / 1024;
+  const txt = "GOLEIRO";
+  ctx.save();
+  ctx.font = `800 ${Math.round(38 * esc)}px "Segoe UI", Arial, sans-serif`;
+  const w = ctx.measureText(txt).width + 44 * esc, h = 62 * esc, x = 28 * esc, y = 28 * esc, r = 14 * esc;
+  ctx.fillStyle = "rgba(20, 83, 45, 0.92)";
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(txt, x + 22 * esc, y + h / 2 + 2 * esc);
+  ctx.restore();
+  return canvas;
+}
+
+// Imagens (Cena, Frente, Costas, Arte) e texturas 3D de uma variante do
+// time (a comum ou a do goleiro), enviadas ao Drive.
+async function gerarPreviaVariante(timeV, timeId, tam, pref, goleiro) {
+  const pecas = await pecasParaMockup(timeV, timeId, tam, AMOSTRA_CLIENTE);
+  const saida = {};
+  const imagens = ["cena", "frente", "costas"].map((vista) => async () => [vista, await renderizarMockup(vista, pecas)]);
+  imagens.push(async () => ["arte", await arteDoClienteEmCanvas(timeV, timeId, tam)]);
+  for (const gerar of imagens) {
+    const [chave, canvas] = await gerar();
+    if (!canvas) continue;
+    if (goleiro) carimbarGoleiro(canvas);
+    const env = await enviarArquivoDrive(driveScriptUrl, new File([await canvasEmPng(canvas)], chave + ".png", { type: "image/png" }), pref);
+    saida[chave] = urlPreviaGrande(env.url);
+  }
+  // Texturas das peças para o "Ver em 3D" da página do cliente.
+  const texturas = { gola: (pecas.gola && pecas.gola.cor) || "" };
+  for (const id of ["frente", "costas", "mangaEsq", "mangaDir"]) {
+    if (!pecas[id] || !pecas[id].canvas) continue;
+    const blob = await canvasEmJpeg(pecas[id].canvas);
+    texturas[id] = (await enviarArquivoDrive(driveScriptUrl, new File([blob], "textura-" + id + ".jpg", { type: "image/jpeg" }), pref)).fileId;
+  }
+  saida.texturas = texturas;
+  return saida;
+}
+
 async function publicarPreviaCliente(timeId, opcoes) {
   const auto = !!(opcoes && opcoes.automatico);
   const est = previaClienteEstado[timeId] = previaClienteEstado[timeId] || {};
@@ -946,31 +990,13 @@ async function publicarPreviaCliente(timeId, opcoes) {
   atualizarStatusPreviaCliente(timeId);
   try {
     const tam = moldesConfig.tamanhoBase || tamanhoDaPrevia();
-    const pecas = await pecasParaMockup(time, timeId, tam, AMOSTRA_CLIENTE);
     const pref = `${slugify(time.nome) || timeId}-previa-cliente`;
-    const previa = { geradaEmMs: Date.now() };
-    const envios = [["cena", "Cena"], ["frente", "Frente"], ["costas", "Costas"]].map(([vista]) => async () => {
-      const canvas = await renderizarMockup(vista, pecas);
-      return [vista, await canvasEmPng(canvas)];
-    });
-    envios.push(async () => {
-      const c = await arteDoClienteEmCanvas(time, timeId, tam);
-      return ["arte", c ? await canvasEmPng(c) : null];
-    });
-    for (const gerar of envios) {
-      const [chave, blob] = await gerar();
-      if (!blob) continue;
-      const env = await enviarArquivoDrive(driveScriptUrl, new File([blob], chave + ".png", { type: "image/png" }), pref);
-      previa[chave] = urlPreviaGrande(env.url);
+    const previa = { geradaEmMs: Date.now(), ...(await gerarPreviaVariante(time, timeId, tam, pref, false)) };
+    // Variante do goleiro (arquivos/ajustes próprios): as mesmas imagens e o
+    // 3D, marcados "GOLEIRO".
+    if (temVarianteGoleiro(time)) {
+      previa.goleiro = await gerarPreviaVariante(timeNaVariante(time, true), timeId, tam, pref + "-goleiro", true);
     }
-    // Texturas das peças para o "Ver em 3D" da página do cliente.
-    const texturas = { gola: (pecas.gola && pecas.gola.cor) || "" };
-    for (const id of ["frente", "costas", "mangaEsq", "mangaDir"]) {
-      if (!pecas[id] || !pecas[id].canvas) continue;
-      const blob = await canvasEmJpeg(pecas[id].canvas);
-      texturas[id] = (await enviarArquivoDrive(driveScriptUrl, new File([blob], "textura-" + id + ".jpg", { type: "image/jpeg" }), pref)).fileId;
-    }
-    previa.texturas = texturas;
     await db.collection(COL_TIMES).doc(timeId).update({ previaCliente: previa });
     if (estadoTimes[timeId]) estadoTimes[timeId].time.previaCliente = previa;
   } catch (e) {
@@ -1009,7 +1035,7 @@ function textoStatusPreviaCliente(timeId) {
   if (timeTemImagemPostada(time)) {
     return "A página do cliente mostra a simulação/arte postadas" + (quando ? ` (a prévia montada de ${quando} fica guardada).` : ".");
   }
-  return quando ? `Prévia do cliente publicada em ${quando}.` : "A página do cliente ainda não tem prévia.";
+  return quando ? `Prévia do cliente publicada em ${quando}${pc.goleiro ? " (com a camiseta do goleiro)" : ""}.` : "A página do cliente ainda não tem prévia.";
 }
 
 function atualizarStatusPreviaCliente(timeId) {

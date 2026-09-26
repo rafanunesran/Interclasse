@@ -2320,6 +2320,9 @@ main.loja { max-width: 1120px; }
 .modal-3d-fechar { position: absolute; top: 8px; right: 8px; z-index: 3; border: 0; border-radius: 50%; width: 40px; height: 40px; font-size: 1.3rem; background: rgba(255, 255, 255, 0.9); cursor: pointer; }
 .modal-3d-aviso { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 2; text-align: center; font-size: 0.8rem; color: #3b2f22; pointer-events: none; }
 .modal-3d .marca-overlay { z-index: 2; pointer-events: none; }
+.selo-goleiro { position: absolute; top: 8px; left: 8px; z-index: 2; padding: 3px 9px; border-radius: 999px; background: #14532d; color: #fff; font-size: 0.75rem; font-weight: 700; pointer-events: none; }
+.modal-3d-variantes { position: absolute; top: 10px; left: 10px; z-index: 3; background: rgba(255, 255, 255, 0.92); border-radius: 10px; }
+.modal-3d-selo { top: auto; bottom: 40px; left: 50%; transform: translateX(-50%); font-size: 0.85rem; }
 .botao-3d { display: inline-flex; align-items: center; gap: 6px; margin: 8px auto 0; }
 .previa-cliente { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 12px; }
 .previa-cliente .pix-ajuda { margin: 0; }

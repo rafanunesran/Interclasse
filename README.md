@@ -562,6 +562,10 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
 - Junto com as imagens vão as **texturas das peças** (`previaCliente.texturas`): a página do pedido
   mostra o botão **🔄 Ver em 3D**, que abre a camiseta no manequim para o cliente girar (o 3D só é
   baixado ao tocar no botão; as texturas vêm pelo Apps Script).
+- **Goleiro**: se o time tem a variante do goleiro (arquivos ou ajustes próprios), a prévia também
+  gera as imagens e o 3D da camiseta do goleiro (`previaCliente.goleiro`), com a etiqueta
+  **GOLEIRO** na imagem e a legenda "🧤 Goleiro — …" na galeria; no **Ver em 3D** o cliente troca
+  entre **Camiseta** e **🧤 Goleiro**.
 
 ### Gerar (aba **Produção**)
 

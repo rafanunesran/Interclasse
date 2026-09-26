@@ -177,10 +177,18 @@ function imagensDaGaleria() {
   // e os mockups (time.previaCliente), com "NOME" e "00" de exemplo.
   const pc = timeAtual && timeAtual.previaCliente;
   if (timeAtual && !timeAtual.imagemUrl && !timeAtual.arteUrl && pc) {
-    [["cena", "Simulação na camiseta"], ["frente", "Simulação — frente"], ["costas", "Simulação — costas"], ["arte", "Arte (sem simulação)"]]
-      .forEach(([chave, legenda]) => {
-        if (pc[chave]) itens.push({ url: pc[chave], legenda, comMarca });
-      });
+    const vistas = [["cena", "Simulação na camiseta"], ["frente", "Simulação — frente"], ["costas", "Simulação — costas"], ["arte", "Arte (sem simulação)"]];
+    vistas.forEach(([chave, legenda]) => {
+      if (pc[chave]) itens.push({ url: pc[chave], legenda, comMarca });
+    });
+    // Camiseta do goleiro (quando o time tem uma diferente).
+    const g = pc.goleiro;
+    if (g) {
+      [["cena", "🧤 Goleiro — na camiseta"], ["frente", "🧤 Goleiro — frente"], ["costas", "🧤 Goleiro — costas"], ["arte", "🧤 Goleiro — arte (sem simulação)"]]
+        .forEach(([chave, legenda]) => {
+          if (g[chave]) itens.push({ url: g[chave], legenda, comMarca, goleiro: true });
+        });
+    }
   }
   // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
   GRUPOS_TAMANHO.filter((g) => g.imagemUrl).forEach((g) => {
@@ -235,6 +243,13 @@ function renderizarGaleria() {
       wrap.appendChild(marca);
     }
 
+    if (item.goleiro) {
+      const selo = document.createElement("span");
+      selo.className = "selo-goleiro";
+      selo.textContent = "🧤 Goleiro";
+      wrap.appendChild(selo);
+    }
+
     const legenda = document.createElement("figcaption");
     legenda.textContent = item.legenda;
 
@@ -254,11 +269,11 @@ function renderizarGaleria() {
 const VERSAO_MOCKUP3D = "20261007a";
 let botao3d = null;
 
-function texturas3D() {
+function texturas3D(goleiro) {
   const pc = timeAtual && timeAtual.previaCliente;
-  const t = pc && pc.texturas;
-  if (!t || !(t.frente || t.costas) || timeAtual.imagemUrl || timeAtual.arteUrl) return null;
-  return t;
+  if (!pc || timeAtual.imagemUrl || timeAtual.arteUrl) return null;
+  const t = goleiro ? pc.goleiro && pc.goleiro.texturas : pc.texturas;
+  return t && (t.frente || t.costas) ? t : null;
 }
 
 function atualizarBotao3D() {
@@ -291,12 +306,16 @@ function imagemDeBytes(bytes, tipo) {
 }
 
 async function abrirVer3D() {
-  const t = texturas3D();
-  if (!t) return;
+  if (!texturas3D()) return;
+  const temGoleiro = !!texturas3D(true);
   const fundo = document.createElement("div");
   fundo.className = "modal-3d";
   fundo.innerHTML = `<div class="modal-3d-caixa" role="dialog" aria-label="Camiseta em 3D">
       <button type="button" class="modal-3d-fechar" aria-label="Fechar">✕</button>
+      ${temGoleiro ? `<div class="modal-3d-variantes segmentado" role="tablist" aria-label="Camiseta">
+        <button type="button" data-variante="" class="ativo">Camiseta</button>
+        <button type="button" data-variante="goleiro">🧤 Goleiro</button></div>` : ""}
+      <span class="selo-goleiro modal-3d-selo oculto">🧤 Goleiro</span>
       <div class="modal-3d-palco"></div>
       ${timeAtual.marcaDagua === true ? '<span class="marca-overlay" aria-hidden="true"></span>' : ""}
       <p class="modal-3d-aviso">Carregando o 3D…</p>
@@ -309,26 +328,39 @@ async function abrirVer3D() {
   fundo.querySelector(".modal-3d-fechar").onclick = fechar;
   fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(); });
   const aviso = fundo.querySelector(".modal-3d-aviso");
-  try {
-    const [mod, cfg] = await Promise.all([
-      import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href),
-      carregarConfigGeral()
-    ]);
-    const M = mod.default;
-    if (!M.suportado()) throw new Error("Este aparelho não consegue mostrar o 3D.");
-    if (!cfg.driveScriptUrl) throw new Error("As imagens do 3D não estão disponíveis.");
-    const pecas = { gola: { cor: t.gola || "" } };
-    await Promise.all(["frente", "costas", "mangaEsq", "mangaDir"].filter((id) => t[id]).map(async (id) => {
-      const bytes = await baixarArquivoDrive(cfg.driveScriptUrl, t[id]);
-      pecas[id] = { canvas: await imagemDeBytes(bytes, "image/jpeg") };
-    }));
-    if (!fundo.isConnected) return;
-    vivo = await M.visualizador(fundo.querySelector(".modal-3d-palco"), pecas, { manequim: true });
-    aviso.textContent = "Arraste para girar · dois dedos para aproximar";
-  } catch (e) {
-    console.error(e);
-    aviso.textContent = e.message || "Não foi possível abrir o 3D.";
-  }
+  const palco = fundo.querySelector(".modal-3d-palco");
+  let vez = 0;
+  // Monta (ou troca) a camiseta mostrada: a comum ou a do goleiro.
+  const mostrar = async (goleiro) => {
+    const minha = ++vez;
+    const t = texturas3D(goleiro);
+    fundo.querySelector(".modal-3d-selo").classList.toggle("oculto", !goleiro);
+    fundo.querySelectorAll("[data-variante]").forEach((b) => b.classList.toggle("ativo", !!b.dataset.variante === !!goleiro));
+    aviso.textContent = "Carregando o 3D…";
+    try {
+      const [mod, cfg] = await Promise.all([
+        import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href),
+        carregarConfigGeral()
+      ]);
+      const M = mod.default;
+      if (!M.suportado()) throw new Error("Este aparelho não consegue mostrar o 3D.");
+      if (!cfg.driveScriptUrl) throw new Error("As imagens do 3D não estão disponíveis.");
+      const pecas = { gola: { cor: t.gola || "" } };
+      await Promise.all(["frente", "costas", "mangaEsq", "mangaDir"].filter((id) => t[id]).map(async (id) => {
+        const bytes = await baixarArquivoDrive(cfg.driveScriptUrl, t[id]);
+        pecas[id] = { canvas: await imagemDeBytes(bytes, "image/jpeg") };
+      }));
+      if (!fundo.isConnected || minha !== vez) return;
+      if (vivo) { vivo.destruir(); vivo = null; }
+      vivo = await M.visualizador(palco, pecas, { manequim: true });
+      aviso.textContent = "Arraste para girar · dois dedos para aproximar";
+    } catch (e) {
+      console.error(e);
+      if (minha === vez) aviso.textContent = e.message || "Não foi possível abrir o 3D.";
+    }
+  };
+  fundo.querySelectorAll("[data-variante]").forEach((b) => (b.onclick = () => mostrar(!!b.dataset.variante)));
+  mostrar(false);
 }
 
 // Rola a galeria uma "página" para o lado.
