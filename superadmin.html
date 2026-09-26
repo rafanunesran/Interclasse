@@ -48,6 +48,7 @@
         <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
         <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
         <button type="button" class="aba" data-aba="config">Configurações</button>
+        <button type="button" class="aba" data-aba="backup">Backup</button>
       </nav>
     </div>
 
@@ -263,8 +264,38 @@
         <button id="btnExportarConferencia" class="secundario">Exportar CSV de conferência</button>
       </div>
     </section>
+
+    <!-- ABA: BACKUP (cópia diária dos dados no Google Drive — js/backup.js e apps-script/Backup.gs) -->
+    <section id="aba-backup" class="secao-aba oculto">
+      <div class="card">
+        <h2>Backup dos dados</h2>
+        <p>Todo dia o Apps Script salva uma cópia de <strong>todos</strong> os dados do site (times, camisetas, pagamentos, clientes, preços, configurações, levas de produção e cobranças) na pasta <strong>"Interclasse Backups"</strong> do seu Google Drive. Os backups dos últimos <strong>30 dias</strong> ficam protegidos; os mais antigos <strong>nunca são apagados sozinhos</strong> — só depois que você confirmar aqui.</p>
+        <div id="backupStatus"></div>
+        <div class="lista-acoes">
+          <button type="button" id="btnBackupAgora" class="primario">Fazer backup agora</button>
+          <button type="button" id="btnBackupAtualizar" class="secundario">Atualizar lista</button>
+          <button type="button" id="btnBackupArquivo" class="secundario">Restaurar de um arquivo…</button>
+          <input type="file" id="inputBackupArquivo" accept=".json,application/json" class="oculto" />
+        </div>
+        <p id="msgBackup" class="oculto"></p>
+      </div>
+      <div id="backupAntigos"></div>
+      <div class="card">
+        <h3 class="titulo-bloco">Backups guardados</h3>
+        <div id="backupLista"><p class="pix-ajuda">Abra esta aba para carregar a lista.</p></div>
+      </div>
+    </section>
   </div>
 </main>
+
+<!-- Restaurar um backup: mostra o que tem nele, o escopo e pede confirmação. -->
+<div id="modalRestaurar" class="modal-pix oculto">
+  <div class="modal-pix-conteudo modal-form-conteudo modal-largo">
+    <button id="fecharModalRestaurar" class="modal-pix-fechar" type="button" aria-label="Fechar">×</button>
+    <h3>Restaurar backup</h3>
+    <div id="restaurarCorpo"></div>
+  </div>
+</div>
 
 <!-- Acrescentar uma camiseta à lista de um time, sem sair do painel. É o
      caminho do Super Admin para o nome que faltou: vale mesmo com o pedido
@@ -334,5 +365,6 @@
 <script src="js/previa-eps.js?v=20260926b"></script>
 <script src="js/moldes.js?v=20260926b"></script>
 <script src="js/artes.js?v=20260926b"></script>
+<script src="js/backup.js?v=20260926b"></script>
 </body>
 </html>

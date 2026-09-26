@@ -51,3 +51,57 @@ apague essas partes.
 Se o seu script foi publicado antes dessa função, **atualize-o**: cole o `Codigo.gs` novo, e em
 **Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão → Implantar**. Assim
 a URL continua a mesma e não precisa mudar nada nas Configurações.
+
+## Backup diário dos dados
+
+O mesmo projeto do Apps Script faz, **todo dia**, uma cópia de **todos** os dados do site no
+Firestore — times, camisetas, pagamentos, clientes, preços, tamanhos, configurações, layout,
+levas de produção e cobranças — e salva um arquivo `.json` na pasta **privada**
+**"Interclasse Backups"** do seu Drive (ela não fica pública, ao contrário da pasta das imagens).
+
+**Guarda (nunca apaga sem confirmar):**
+- o script **nunca apaga** um backup sozinho;
+- os backups dos **últimos 30 dias** são protegidos: nem pelo site dá para apagá-los;
+- os com **mais de 30 dias** continuam guardados; você recebe um e-mail de aviso (no máximo um
+  por semana) e decide no **Super Admin → aba Backup**, marcando e confirmando (é preciso
+  digitar `EXCLUIR`). Mesmo assim eles vão para a **lixeira do Drive**, recuperáveis por mais
+  30 dias;
+- se o backup diário falhar, chega um e-mail avisando.
+
+### Ativar (uma vez só)
+
+1. Abra o seu projeto em **https://script.google.com**.
+2. Em **Configurações do projeto** (engrenagem), marque **"Mostrar o arquivo de manifesto
+   appsscript.json no editor"**.
+3. No editor, substitua o conteúdo de `Codigo.gs` e de `appsscript.json` pelos deste repositório,
+   e crie um arquivo novo **`Backup.gs`** (botão **+ → Script**) com o conteúdo de
+   [`Backup.gs`](Backup.gs). Salve.
+4. No topo, escolha a função **`instalarBackupDiario`** e clique em **▶ Executar**. Autorize os
+   acessos pedidos (Drive, Firestore, e-mail e gatilhos). Isso liga o backup todo dia por volta
+   das 3h.
+5. Rode também **`backupAgora`** para fazer o primeiro backup e conferir que funciona (a pasta
+   "Interclasse Backups" aparece no Drive).
+6. **Atualize a implantação** para o site enxergar o backup: **Implantar → Gerenciar
+   implantações → editar (lápis) → Versão: Nova versão → Implantar**. A URL continua a mesma.
+
+> O acesso ao Firestore usa a **sua conta Google**, que precisa ser a dona (ou editora) do
+> projeto Firebase `interclasse-e2854` — é a conta que criou o projeto. Não há chave nem senha
+> no código. Se o `backupAgora` der erro dizendo que a **Cloud Firestore API** não está ativada
+> num projeto com outro número, vá em **Configurações do projeto → Projeto do Google Cloud** e
+> troque para o número do projeto do Firebase (Firebase → Configurações do projeto → "Número do
+> projeto").
+
+### Restaurar
+
+- **Pelo site:** Super Admin → aba **Backup** → **Restaurar…** no backup desejado. Dá para
+  restaurar **tudo** ou **só um time** (com as camisetas dele). É preciso digitar `RESTAURAR`.
+  Antes de gravar, o script faz um backup **"antes de restaurar"** do estado atual — dá para
+  desfazer. Os dados escolhidos voltam a ser como no backup; o que foi criado depois não é
+  apagado.
+- **De um arquivo baixado:** botão **Restaurar de um arquivo…** na mesma aba (útil se o Drive
+  tiver algum problema — por isso vale baixar um backup de vez em quando pelo botão **Baixar**).
+- **Sem o site (emergência):** no editor do Apps Script, abra `Backup.gs`, preencha o nome do
+  arquivo em `restaurarPeloEditor` e rode essa função.
+
+> Os arquivos de arte, moldes e imagens já ficam no seu Drive (pasta "Interclasse Camisetas");
+> o backup guarda as referências a eles. Não apague essa pasta.

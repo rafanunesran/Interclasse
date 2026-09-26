@@ -68,6 +68,15 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
 6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Faltou alguém na lista? O botão **+ Adicionar camiseta** no card do time resolve na hora, mesmo com o pedido fechado. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
 
+## Backup diário (aba Backup)
+
+Todo dia o Apps Script salva uma cópia de **todos os dados** do site na pasta privada
+**"Interclasse Backups"** do seu Google Drive. Os backups dos últimos **30 dias** são protegidos
+e os mais antigos **nunca são apagados sem a sua confirmação**. No **Super Admin → Backup** dá
+para ver a lista, fazer um backup na hora, baixar e **restaurar** (tudo ou só um time; antes de
+restaurar é feito um backup de segurança). Como ativar e restaurar em caso de emergência:
+[`apps-script/README.md`](apps-script/README.md#backup-diário-dos-dados).
+
 ## Contato do representante (WhatsApp)
 
 Cada time pode guardar **quem responde por ele** — nome e WhatsApp — para a organização

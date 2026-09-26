@@ -1781,3 +1781,31 @@ tr.linha-marcada > td { background: #eff6ff; }
 @media (max-width: 600px) {
   .arte-painel { flex-basis: 100%; }
 }
+
+/* ---------------- Aba Backup ---------------- */
+.numeros-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.numero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--cinza-bg);
+  border: 1px solid #e5e7eb;
+  font-size: 0.82rem;
+  color: #374151;
+}
+.numero-chip.ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.numero-chip.alerta { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.lista-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.lista-acoes button { margin: 10px 0 0; }
+.vazio-lista { text-align: center; padding: 28px 16px; color: #6b7280; }
+.vazio-lista p { margin: 4px 0; }
+.titulo-bloco { margin: 0 0 6px; font-size: 1.05rem; }
+.tabela-rolagem { overflow-x: auto; }
+.modal-largo { max-width: 560px; }
+.backup-status { margin: 10px 0 4px; }
+.backup-antigos { border-color: #fde68a; background: #fffbeb; }
+.backup-antigos summary { cursor: pointer; font-weight: 600; color: #92400e; }
+.backup-antigos-lista { list-style: none; padding: 0; margin: 10px 0; }
+.backup-antigos-lista label { margin: 4px 0; font-weight: 400; }
