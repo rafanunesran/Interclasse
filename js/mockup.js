@@ -28,29 +28,38 @@ const MOCKUP_BASE = {
       // esquerdo dela (a frente é desenhada depois, por cima). A `caixa` é só
       // a parte VISÍVEL, para o nome e o número não ficarem escondidos.
       { peca: "costas", gama: 1, caixa: [700, 416, 942, 990],
-        poligono: [[650, 452], [755, 418], [808, 428], [862, 418], [948, 468], [946, 600], [946, 700], [944, 950], [872, 986], [800, 984], [660, 964], [652, 800], [640, 700], [640, 560]] },
+        poligono: [[650, 452], [755, 418], [808, 428], [862, 418], [948, 468], [946, 600], [946, 700], [944, 958], [930, 969], [900, 979], [873, 985], [800, 990], [740, 984], [700, 977], [664, 966], [652, 800], [640, 700], [640, 560]] },
       { peca: "mangaDir", gama: 1,
         poligono: [[926, 460], [962, 468], [988, 530], [1008, 600], [1022, 662], [1000, 684], [952, 682], [906, 642], [904, 560]] },
-      { peca: "gola", tipo: "faixa", largura: 8, caminho: [[755, 422], [808, 432], [862, 421]] },
+      { peca: "gola", tipo: "faixa", poligono: [[740, 422], [748, 416], [756, 412], [808, 411], [846, 412], [856, 419], [846, 432], [808, 438], [760, 431]] },
       { peca: "mangaDir", gama: 1,
         poligono: [[78, 380], [92, 384], [118, 460], [120, 560], [112, 672], [80, 672], [22, 644], [38, 520], [62, 422]] },
       { peca: "mangaEsq", gama: 1,
         poligono: [[596, 334], [640, 350], [650, 376], [682, 468], [702, 560], [720, 658], [642, 694], [560, 696], [550, 560], [562, 420]] },
       { peca: "frente", gama: 1.32,
-        poligono: [[92, 388], [84, 370], [160, 330], [252, 288], [300, 390], [455, 262], [603, 344], [562, 420], [550, 560], [562, 692], [566, 900], [582, 1140], [500, 1204], [300, 1206], [106, 1168], [104, 900], [112, 672], [120, 560], [118, 460]] },
-      { peca: "gola", tipo: "faixa", largura: 12, caminho: [[254, 292], [280, 345], [300, 390], [370, 325], [454, 266]] }
+        poligono: [[92, 388], [84, 370], [160, 330], [242, 288], [250, 330], [266, 366], [300, 398], [378, 352], [424, 318], [455, 262], [603, 344], [562, 420], [550, 560], [562, 692], [566, 900], [584, 1150], [572, 1168], [540, 1180], [500, 1190], [400, 1197], [300, 1189], [200, 1176], [150, 1169], [108, 1153], [104, 900], [112, 672], [120, 560], [118, 460]] },
+      // Lateral da camiseta da frente em sombra (reflete o fundo), sob a manga.
+      { peca: "frente", interior: true,
+        poligono: [[528, 636], [550, 636], [558, 670], [552, 702], [545, 732], [538, 760], [526, 760]] },
+      { peca: "gola", tipo: "faixa", largura: 18, caminho: [[252, 280], [240, 290], [247, 328], [262, 364], [284, 388], [302, 396], [376, 348], [421, 315], [449, 288], [466, 268]] }
     ]
   },
   frente: {
     img: "img/mockup/frente.webp", largura: 1024, altura: 1536,
     regioes: [
       { peca: "mangaDir", gama: 1,
-        poligono: [[200, 346], [262, 400], [290, 470], [300, 560], [303, 650], [298, 712], [252, 756], [160, 738], [62, 696], [86, 600], [108, 480], [124, 405], [160, 368]] },
+        poligono: [[200, 346], [262, 400], [290, 470], [300, 560], [303, 650], [298, 712], [252, 756], [160, 738], [62, 696], [86, 600], [108, 480], [124, 405], [156, 364], [190, 343]] },
+      // Abertura da manga (o avesso visível, em sombra): pintada sem a máscara.
+      { peca: "mangaDir", interior: true,
+        poligono: [[64, 688], [100, 692], [150, 704], [200, 716], [250, 728], [252, 752], [200, 750], [150, 736], [100, 717], [66, 702]] },
       { peca: "mangaEsq", gama: 1,
-        poligono: [[805, 346], [852, 380], [884, 446], [908, 556], [940, 690], [888, 728], [810, 720], [812, 600], [815, 450]] },
+        poligono: [[805, 346], [852, 380], [884, 446], [908, 556], [940, 690], [900, 732], [860, 740], [812, 732], [812, 600], [815, 450]] },
       { peca: "frente", gama: 0.69,
-        poligono: [[200, 350], [398, 244], [590, 398], [640, 262], [805, 346], [815, 450], [812, 600], [815, 714], [818, 900], [825, 1100], [836, 1372], [700, 1414], [500, 1414], [300, 1414], [248, 1380], [252, 1200], [258, 1000], [268, 850], [292, 720], [303, 650], [300, 560], [290, 470], [262, 400]] },
-      { peca: "gola", tipo: "faixa", largura: 14, caminho: [[402, 246], [470, 304], [545, 364], [590, 398], [614, 338], [636, 264]] }
+        poligono: [[200, 350], [398, 244], [590, 398], [640, 262], [805, 346], [815, 450], [812, 600], [815, 714], [818, 900], [825, 1100], [836, 1372], [700, 1418], [500, 1422], [300, 1417], [248, 1380], [252, 1200], [258, 1000], [264, 850], [258, 726], [303, 650], [300, 560], [290, 470], [262, 400]] },
+      // Avesso da barra, visível embaixo à esquerda.
+      { peca: "frente", interior: true,
+        poligono: [[262, 1392], [300, 1404], [380, 1413], [480, 1418], [560, 1418], [588, 1416], [560, 1422], [480, 1428], [380, 1426], [300, 1418], [264, 1405]] },
+      { peca: "gola", tipo: "faixa", largura: 16, caminho: [[400, 246], [470, 302], [540, 354], [586, 394], [608, 362], [628, 316], [642, 262], [650, 248]] }
     ]
   },
   costas: {
@@ -61,8 +70,8 @@ const MOCKUP_BASE = {
       { peca: "mangaDir", gama: 1,
         poligono: [[838, 396], [810, 500], [784, 640], [770, 764], [864, 766], [966, 712], [932, 570], [888, 436]] },
       { peca: "costas", gama: 1,
-        poligono: [[188, 396], [250, 342], [352, 308], [500, 328], [648, 302], [770, 342], [838, 396], [810, 500], [784, 640], [772, 760], [774, 1000], [786, 1300], [700, 1352], [500, 1360], [300, 1352], [240, 1302], [250, 1000], [254, 760], [238, 640], [213, 500]] },
-      { peca: "gola", tipo: "faixa", largura: 16, caminho: [[352, 314], [420, 324], [500, 330], [580, 324], [648, 306]] }
+        poligono: [[180, 390], [250, 342], [352, 308], [500, 328], [648, 302], [770, 342], [838, 396], [810, 500], [784, 640], [772, 760], [774, 1000], [786, 1300], [784, 1318], [762, 1342], [700, 1356], [500, 1360], [300, 1352], [240, 1302], [250, 1000], [254, 760], [238, 640], [213, 500]] },
+      { peca: "gola", tipo: "faixa", poligono: [[370, 300], [392, 290], [500, 289], [628, 289], [650, 299], [642, 316], [580, 322], [500, 332], [420, 324], [368, 316]] }
     ]
   }
 };
@@ -109,8 +118,13 @@ const Mockup = (function () {
     const alfas = new Float32Array(p.length / 4);
     for (let i = 0, j = 0; i < p.length; i += 4, j++) {
       const mx = Math.max(p[i], p[i + 1], p[i + 2]);
-      const sat = mx - Math.min(p[i], p[i + 1], p[i + 2]);
-      const a = Math.max(0, Math.min(1, (52 - sat) / 18)) * Math.max(0, Math.min(1, (mx - 135) / 30));
+      // Tecido = pouco saturado em relação ao próprio brilho (o branco e as
+      // dobras em sombra); o fundo bege e o manequim são bem mais saturados.
+      const rel = mx > 0 ? (mx - Math.min(p[i], p[i + 1], p[i + 2])) / mx : 1;
+      // Nas dobras escuras o tecido reflete o fundo (fica mais "quente"):
+      // aceita um pouco mais de saturação quanto mais escuro.
+      const limite = 0.15 + 0.1 * Math.max(0, Math.min(1, (190 - mx) / 60));
+      const a = Math.max(0, Math.min(1, (limite - rel) / 0.05)) * Math.max(0, Math.min(1, (mx - 50) / 30));
       const lum = Math.round(0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2]);
       lums[j] = lum;
       alfas[j] = a;
@@ -231,9 +245,10 @@ const Mockup = (function () {
     ctx.fillStyle = "#fff";
     ctx.strokeStyle = "#fff";
     ctx.beginPath();
-    const pts = r.tipo === "faixa" ? r.caminho : r.poligono;
+    // Faixa: um caminho com largura (traço) ou, com `poligono`, a área exata.
+    const pts = r.caminho || r.poligono;
     pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    if (r.tipo === "faixa") {
+    if (r.caminho) {
       ctx.lineWidth = r.largura;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
@@ -242,8 +257,12 @@ const Mockup = (function () {
       ctx.closePath();
       ctx.fill();
     }
-    ctx.globalCompositeOperation = "destination-in";
-    ctx.drawImage(foto.tecido, 0, 0);
+    // `interior`: o avesso da peça (abertura da manga, dentro da gola), em
+    // sombra e com o reflexo do fundo — vale o polígono inteiro.
+    if (!r.interior) {
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.drawImage(foto.tecido, 0, 0);
+    }
     return m;
   }
 
@@ -271,6 +290,12 @@ const Mockup = (function () {
         if (!p.cor) return;
         cc.fillStyle = p.cor;
         cc.fillRect(0, 0, w, h);
+      } else if (r.interior) {
+        // O avesso usa a arte na mesma posição da região principal da peça
+        // (a primeira da lista com a mesma peça), só que sem máscara.
+        const principal = base.regioes.find((x) => x.peca === r.peca && !x.interior && x.poligono && x.tipo !== "faixa") || r;
+        if (!p.canvas) return;
+        deformar(cc, p.fundo || p.canvas, quadDaRegiao({ poligono: principal.poligono }), principal.gama);
       } else {
         if (!p.canvas) return;
         // Com `caixa` própria, a arte esticada na região inteira vai por baixo
