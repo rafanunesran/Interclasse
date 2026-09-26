@@ -817,7 +817,7 @@ function renderizarListaTimes() {
       if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
     });
     elArquivados.innerHTML =
-      `<summary>📦 Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
+      `<summary>${icone("archive")} Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
       '<p class="pix-ajuda">Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.</p>';
     elArquivados.appendChild(criarListaDeLinhas(idsArquivados, termosBusca));
     elListaTimesAdmin.appendChild(elArquivados);
@@ -889,8 +889,8 @@ function representanteCurtoHtml(time) {
   const texto = escapeHtmlAdmin(nome || "Representante") +
     (telefone ? ` · ${escapeHtmlAdmin(formatarTelefone(telefone))}` : "");
   return url
-    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">💬 ${texto}</a>`
-    : `<span title="Sem um WhatsApp válido (informe com DDD)">👤 ${texto}</span>`;
+    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">${icone("message-circle")} ${texto}</a>`
+    : `<span title="Sem um WhatsApp válido (informe com DDD)">${icone("user")} ${texto}</span>`;
 }
 
 // ---------------- Time aberto ----------------
@@ -900,7 +900,7 @@ function renderizarTimeAberto(timeId) {
   const voltar = document.createElement("button");
   voltar.type = "button";
   voltar.className = "botao-voltar";
-  voltar.textContent = "← Todos os times";
+  voltar.innerHTML = icone("arrow-left") + " Todos os times";
   voltar.onclick = voltarParaListaAdmin;
 
   if (!estado) {
@@ -926,7 +926,7 @@ function renderizarTimeAberto(timeId) {
   verPagina.href = "time.html?id=" + encodeURIComponent(timeId);
   verPagina.target = "_blank";
   verPagina.rel = "noopener";
-  verPagina.textContent = "Ver a página do pedido ↗";
+  verPagina.innerHTML = "Ver a página do pedido " + icone("arrow-up-right");
   topo.appendChild(verPagina);
   elListaTimesAdmin.appendChild(topo);
 
@@ -1017,8 +1017,8 @@ function renderizarListaDoTime(timeId) {
     `<span class="numero-chip"><strong>${alunos.length - nPagos}</strong> pendente(s)</span>`
   ];
   if (nConfirmar) numeros.push(`<span class="numero-chip alerta"><strong>${nConfirmar}</strong> PIX a confirmar</span>`);
-  if (nGoleiros) numeros.push(`<span class="numero-chip">🧤 <strong>${nGoleiros}</strong> goleiro(s)</span>`);
-  if (nProfs) numeros.push(`<span class="numero-chip">🎓 <strong>${nProfs}</strong> prof</span>`);
+  if (nGoleiros) numeros.push(`<span class="numero-chip">${icone("hand")} <strong>${nGoleiros}</strong> goleiro(s)</span>`);
+  if (nProfs) numeros.push(`<span class="numero-chip">${icone("graduation-cap")} <strong>${nProfs}</strong> prof</span>`);
   if (nAjustes) numeros.push(`<span class="numero-chip alerta"><span class="marca-ajuste">!</span> <strong>${nAjustes}</strong> ajuste(s)</span>`);
 
   const cab = document.createElement("div");
@@ -1426,7 +1426,7 @@ function renderizarConfigTime(timeId) {
 
 function renderizarEditarArteTime(timeId) {
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "card tema-escuro";
   card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
     '<p class="pix-ajuda">Clique num elemento (no desenho ou na lista) para mudar a posição, a letra, as cores ou ocultá-lo — só neste time. ' +
     'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
@@ -1448,7 +1448,7 @@ function renderizarArquivosTime(timeId) {
   // Arquivos da folha EPS: arte de cada peça (PNG 600 dpi), brasão e fonte.
   if (typeof criarBlocoProducaoTime === "function") {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card tema-escuro";
     card.innerHTML = '<h3 class="titulo-bloco">Arquivos para impressão</h3>' +
       '<p class="pix-ajuda">Clique num espaço ou arraste o arquivo para cima dele. Arquivos grandes vão ao Drive em partes.</p>';
     // Camiseta comum ou a do goleiro: o que o goleiro não tiver usa o da comum.
@@ -1463,16 +1463,16 @@ function renderizarArquivosTime(timeId) {
   // Prévia montada com os arquivos acima: a arte plana e no mockup.
   if (typeof criarPreviaArteTime === "function") {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card tema-escuro";
     const golPrevia = typeof editandoGoleiro === "function" && editandoGoleiro(timeId);
-    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — 🧤 goleiro" : ""}</h3>`;
+    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — " + icone("hand") + " goleiro" : ""}</h3>`;
     card.appendChild(criarPreviaArteTime(timeId, time));
     elListaTimesAdmin.appendChild(card);
   }
 
   // Imagens que o cliente vê na loja e na página do pedido.
   const cardImagens = document.createElement("div");
-  cardImagens.className = "card";
+  cardImagens.className = "card tema-escuro";
   cardImagens.innerHTML = '<h3 class="titulo-bloco">Imagens da página do pedido</h3>' +
     '<p class="pix-ajuda">É o que o cliente vê na loja e no topo da página do pedido: a simulação na camiseta (mockup) e a arte sem simulação.</p>';
   cardImagens.appendChild(criarBlocoImagemTime(timeId, time));
@@ -1595,9 +1595,9 @@ function renderizarKanban() {
       coluna.classList.add("kanban-coluna-arquivo");
       const aviso = document.createElement("p");
       aviso.className = "kanban-vazio";
-      aviso.textContent = timesDaColuna.length > 0
-        ? `📦 ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
-        : "📦 Solte aqui para arquivar";
+      aviso.innerHTML = icone("archive") + (timesDaColuna.length > 0
+        ? ` ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
+        : " Solte aqui para arquivar");
       listaCards.appendChild(aviso);
       coluna.appendChild(listaCards);
       board.appendChild(coluna);
@@ -1679,7 +1679,7 @@ function criarCardKanban(timeId, statusId) {
     link.target = "_blank";
     link.rel = "noopener";
     const contato = contatoDoTime(time);
-    link.textContent = "💬 " + (contato.nome || formatarTelefone(contato.telefone));
+    link.innerHTML = icone("message-circle") + " " + escapeHtmlAdmin(contato.nome || formatarTelefone(contato.telefone));
     link.title = "Falar no WhatsApp com o representante do time";
     // O card é arrastável: sem isso, clicar no link viraria um arraste.
     link.addEventListener("pointerdown", (ev) => ev.stopPropagation());
@@ -1758,10 +1758,10 @@ function renderizarResumoPagamentos() {
   const pendentes = total - pagos - aguardando;
   // Quantas camisetas saem na cor de goleiro (só aparece quando há alguma).
   const marcaGoleiros = goleiros > 0
-    ? `<span class="badge goleiro" title="Camiseta de cor especial">🧤 Goleiros: ${goleiros}</span>`
+    ? `<span class="badge goleiro" title="Camiseta de cor especial">${icone("hand")} Goleiros: ${goleiros}</span>`
     : "";
   const marcaProfs = profs > 0
-    ? `<span class="badge prof" title="Camisetas de professor">🎓 Prof: ${profs}</span>`
+    ? `<span class="badge prof" title="Camisetas de professor">${icone("graduation-cap")} Prof: ${profs}</span>`
     : "";
 
   el.innerHTML = `
@@ -3263,7 +3263,7 @@ function abrirNovaCamiseta(timeId) {
     const statusId = statusPedidoDe(time);
     let aviso = "";
     if (pedidoEmProducao(time)) {
-      aviso = `⚠️ Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
+      aviso = `${icone("triangle-alert")} Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
         "a camiseta nova entra como pendente e não está nos CSVs já exportados. " +
         "Confirme o pagamento e exporte de novo (ou leve na próxima leva).";
     } else if (statusId !== "aberto") {

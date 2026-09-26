@@ -135,7 +135,7 @@ async function mostrarCliente() {
     // "Voltar" leva para a loja já filtrada neste cliente.
     if (elLinkVoltarLoja) {
       elLinkVoltarLoja.href = "index.html?cliente=" + encodeURIComponent(clienteId);
-      elLinkVoltarLoja.textContent = "← Times de " + nome;
+      elLinkVoltarLoja.innerHTML = icone("arrow-left") + " " + escapeHtml("Times de " + nome);
     }
   } catch (e) {
     console.warn("Não foi possível carregar o cliente deste time.", e);
@@ -184,7 +184,7 @@ function imagensDaGaleria() {
     // Camiseta do goleiro (quando o time tem uma diferente).
     const g = pc.goleiro;
     if (g) {
-      [["cena", "🧤 Goleiro — na camiseta"], ["frente", "🧤 Goleiro — frente"], ["costas", "🧤 Goleiro — costas"], ["arte", "🧤 Goleiro — arte (sem simulação)"]]
+      [["cena", "Goleiro — na camiseta"], ["frente", "Goleiro — frente"], ["costas", "Goleiro — costas"], ["arte", "Goleiro — arte (sem simulação)"]]
         .forEach(([chave, legenda]) => {
           if (g[chave]) itens.push({ url: g[chave], legenda, comMarca, goleiro: true });
         });
@@ -246,7 +246,7 @@ function renderizarGaleria() {
     if (item.goleiro) {
       const selo = document.createElement("span");
       selo.className = "selo-goleiro";
-      selo.textContent = "🧤 Goleiro";
+      selo.innerHTML = icone("hand") + " Goleiro";
       wrap.appendChild(selo);
     }
 
@@ -282,7 +282,7 @@ function atualizarBotao3D() {
     botao3d = document.createElement("button");
     botao3d.type = "button";
     botao3d.className = "secundario botao-3d";
-    botao3d.textContent = "🔄 Ver em 3D";
+    botao3d.innerHTML = icone("rotate-3d") + " Ver em 3D";
     botao3d.onclick = abrirVer3D;
     elGaleria.insertAdjacentElement("afterend", botao3d);
   }
@@ -311,11 +311,11 @@ async function abrirVer3D() {
   const fundo = document.createElement("div");
   fundo.className = "modal-3d";
   fundo.innerHTML = `<div class="modal-3d-caixa" role="dialog" aria-label="Camiseta em 3D">
-      <button type="button" class="modal-3d-fechar" aria-label="Fechar">✕</button>
+      <button type="button" class="modal-3d-fechar" aria-label="Fechar">${icone("x")}</button>
       ${temGoleiro ? `<div class="modal-3d-variantes segmentado" role="tablist" aria-label="Camiseta">
         <button type="button" data-variante="" class="ativo">Camiseta</button>
-        <button type="button" data-variante="goleiro">🧤 Goleiro</button></div>` : ""}
-      <span class="selo-goleiro modal-3d-selo oculto">🧤 Goleiro</span>
+        <button type="button" data-variante="goleiro">${icone("hand")} Goleiro</button></div>` : ""}
+      <span class="selo-goleiro modal-3d-selo oculto">${icone("hand")} Goleiro</span>
       <div class="modal-3d-palco"></div>
       ${timeAtual.marcaDagua === true ? '<span class="marca-overlay" aria-hidden="true"></span>' : ""}
       <p class="modal-3d-aviso">Carregando o 3D…</p>
@@ -405,7 +405,7 @@ function atualizarBadge() {
     if (timeAtual.dataLimite) {
       const d = new Date(timeAtual.dataLimite + "T00:00:00");
       const txt = isNaN(d.getTime()) ? timeAtual.dataLimite : d.toLocaleDateString("pt-BR");
-      elInfoDataLimite.textContent = "📅 Pagamento até " + txt;
+      elInfoDataLimite.innerHTML = icone("calendar") + " Pagamento até " + escapeHtml(txt);
       elInfoDataLimite.classList.remove("oculto");
     } else {
       elInfoDataLimite.classList.add("oculto");
@@ -510,10 +510,10 @@ function atualizarVisibilidade() {
     const mostrar = pedidoEmProducao(timeAtual) && alunosAtuais.length > 0;
     elMensagemProducao.classList.toggle("oculto", !mostrar);
     if (mostrar) {
-      elMensagemProducao.textContent = pendentes.length === 0
-        ? `🖨️ Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas e entraram na produção.`
-        : `🖨️ Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
-          `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`;
+      elMensagemProducao.innerHTML = icone("printer") + " " + (pendentes.length === 0
+        ? `Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas e entraram na produção.`
+        : `Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
+          `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`);
     }
   }
 
@@ -818,7 +818,7 @@ function renderizarTabela() {
       ? "Nenhuma camiseta na lista ainda."
       : "Nenhum nome da lista combina com a busca.";
   }
-  if (elBuscaLista) elBuscaLista.classList.toggle("oculto", alunosAtuais.length < 8);
+  if (elBuscaLista) elBuscaLista.closest(".campo-busca").classList.toggle("oculto", alunosAtuais.length < 8);
 
   elTabelaCorpo.innerHTML = "";
   visiveis.forEach((aluno) => {
@@ -1028,14 +1028,14 @@ function renderizarResumo() {
   const nGoleiros = alunosAtuais.filter(ehGoleiro).length;
   if (nGoleiros > 0) {
     const span = document.createElement("span");
-    span.innerHTML = `<strong>🧤 Goleiros: ${nGoleiros}</strong>`;
+    span.innerHTML = `<strong>${icone("hand")} Goleiros: ${nGoleiros}</strong>`;
     span.title = "Camiseta de cor especial";
     elResumo.appendChild(span);
   }
   const nProfs = alunosAtuais.filter(ehProf).length;
   if (nProfs > 0) {
     const span = document.createElement("span");
-    span.innerHTML = `<strong>🎓 Prof: ${nProfs}</strong>`;
+    span.innerHTML = `<strong>${icone("graduation-cap")} Prof: ${nProfs}</strong>`;
     span.title = "Camisetas de professor";
     elResumo.appendChild(span);
   }

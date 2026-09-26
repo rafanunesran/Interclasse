@@ -206,9 +206,9 @@ function celulaMolde(pecaId, tam) {
   return `<td class="molde-celula" title="${escAttr(m.nomeArquivo || "")}">
     ${img}
     <div class="molde-medida">${dim.w.toFixed(0)} × ${dim.h.toFixed(0)} mm${!m.contorno
-      ? ' · <span title="Sem o contorno, a arte não é recortada no formato do molde (fica retangular)">⚠️ sem contorno</span>'
+      ? ' · <span title="Sem o contorno, a arte não é recortada no formato do molde (fica retangular)">' + icone("triangle-alert") + ' sem contorno</span>'
       : pecaId !== "gola" && contornoRetangular(m.contorno)
-        ? ' · <span title="O contorno lido é um retângulo: use Reler contornos. Se continuar, o EPS não tem a linha de corte como traço.">⚠️ contorno retangular</span>'
+        ? ' · <span title="O contorno lido é um retângulo: use Reler contornos. Se continuar, o EPS não tem a linha de corte como traço.">' + icone("triangle-alert") + ' contorno retangular</span>'
         : ""}</div>
     <div class="molde-acoes">
       <button type="button" class="secundario" data-molde="${escAttr(chave)}|enviar">Trocar</button>

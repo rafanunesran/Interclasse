@@ -1016,7 +1016,7 @@ function renderizarBarraProducao() {
     <label>Leva de destino
       <select id="prodDestino">
         ${levas.map((e) => `<option value="${escAttr(e.leva.id)}">${escapeHtmlAdmin(e.leva.nome || e.leva.id)}</option>`).join("")}
-        <option value="__nova__">➕ Nova leva…</option>
+        <option value="__nova__">+ Nova leva…</option>
       </select>
     </label>
     <button type="button" class="primario" id="btnEnviarProducao">Enviar para a produção</button>

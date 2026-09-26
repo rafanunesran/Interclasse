@@ -201,7 +201,7 @@ function criarCardProduto(time) {
   const capaUrl = time.imagemUrl || time.arteUrl || (time.previaCliente && time.previaCliente.cena);
   const imagem = capaUrl
     ? `<span class="wrap-imagem"><img class="img-na-marca" src="${escaparHtml(capaUrl).replace(/"/g, "&quot;")}" alt="Camiseta de ${escaparHtml(time.nome)}" loading="lazy" />${marcaOverlay}</span>`
-    : `<span class="produto-sem-imagem" style="background:${corDoTime(time.nome)}" aria-hidden="true">👕</span>`;
+    : `<span class="produto-sem-imagem" style="background:${corDoTime(time.nome)}" aria-hidden="true">${icone("shirt")}</span>`;
 
   const cliente = nomeClienteLoja(time);
   const preco = precoDoCard(time.id);

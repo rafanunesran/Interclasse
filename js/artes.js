@@ -330,7 +330,7 @@ function criarSeletorVariante(timeId) {
   wrap.innerHTML = `
     <div class="segmentado" role="tablist" aria-label="Variante da camiseta">
       <button type="button" data-variante="" class="${gol ? "" : "ativo"}" aria-selected="${!gol}">Camiseta comum</button>
-      <button type="button" data-variante="goleiro" class="${gol ? "ativo" : ""}" aria-selected="${gol}">🧤 Goleiro${temVarianteGoleiro(time) ? " ●" : ""}</button>
+      <button type="button" data-variante="goleiro" class="${gol ? "ativo" : ""}" aria-selected="${gol}">${icone("hand")} Goleiro${temVarianteGoleiro(time) ? " ●" : ""}</button>
     </div>
     <span class="pix-ajuda">${gol
       ? "Arquivos e ajustes só da camiseta do goleiro. O que não for enviado ou mudado aqui usa o da camiseta comum."
@@ -406,7 +406,7 @@ function criarBlocoProducaoTime(timeId, time) {
         : "✓ Pronto para gerar a folha"}</span>
       <span class="producao-checklist">${reqs.filter((r) => r.necessario || r.tem).map((r) =>
         `<span class="check-item ${r.tem ? "ok" : "falta"}">${r.tem ? "✓" : "○"} ${escapeHtmlAdmin(r.rotulo)}${r.detalhe && r.tem ? ` <small>${escapeHtmlAdmin(r.detalhe)}</small>` : ""}</span>`).join("")}</span>
-      ${gol ? `<span class="pix-ajuda">🧤 ${nProprios} arquivo(s) próprio(s) do goleiro — o resto usa o da camiseta comum</span>` : ""}
+      ${gol ? `<span class="pix-ajuda">${icone("hand")} ${nProprios} arquivo(s) próprio(s) do goleiro — o resto usa o da camiseta comum</span>` : ""}
     </summary>`;
 
   const infoPng = (a) => a ? {
@@ -475,7 +475,7 @@ function criarBlocoProducaoTime(timeId, time) {
   const btnLayout = document.createElement("button");
   btnLayout.type = "button";
   btnLayout.className = "primario";
-  btnLayout.textContent = gol ? "✏️ Editar arte do goleiro" : "✏️ Editar arte deste time";
+  btnLayout.innerHTML = icone("pencil") + (gol ? " Editar arte do goleiro" : " Editar arte deste time");
   btnLayout.onclick = () => abrirLayoutDoTime(timeId);
   rodape.appendChild(btnLayout);
   const nAjustes = Object.values(propria.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
@@ -508,7 +508,7 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
     : mostrar && mostrar.previa
       ? `<img src="${escAttr(mostrar.previa)}" alt="" loading="lazy" />`
       : mostrar ? '<span class="producao-slot-ok">✓</span>'
-        : `<span class="producao-slot-soltar"><span class="producao-slot-seta">⬆</span>Clique ou arraste<br><small>${escapeHtmlAdmin(formato)}</small></span>`;
+        : `<span class="producao-slot-soltar"><span class="producao-slot-seta">${icone("file-up")}</span>Clique ou arraste<br><small>${escapeHtmlAdmin(formato)}</small></span>`;
   div.innerHTML = `
     <div class="producao-slot-titulo"><span>${escapeHtmlAdmin(titulo)}</span>${atual ? '<span class="producao-slot-selo">✓</span>' : herdado ? '<span class="producao-slot-selo herdado" title="Usa o da camiseta comum">comum</span>' : ""}</div>
     <div class="producao-slot-previa">${previa}</div>
@@ -1146,13 +1146,13 @@ function criarPreviaArteTime(timeId, timeComum) {
         <button type="button" data-vista="frente" class="${previaTime.vista === "frente" ? "ativo" : ""}">Frente</button>
         <button type="button" data-vista="costas" class="${previaTime.vista === "costas" ? "ativo" : ""}">Costas</button>
       </div>
-      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-girar-3d>🔄 Girar 3D</button>
-      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>⬇ Baixar PNG</button>
+      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-girar-3d>${icone("rotate-3d")} Girar 3D</button>
+      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>${icone("download")} Baixar PNG</button>
     </div>
     <div class="previa-area"></div>
     <p class="pix-ajuda previa-nota"></p>
     <div class="previa-cliente">
-      <button type="button" class="secundario" data-publicar-previa="${escAttr(timeId)}">📤 Publicar prévia para o cliente</button>
+      <button type="button" class="secundario" data-publicar-previa="${escAttr(timeId)}">${icone("send")} Publicar prévia para o cliente</button>
       <span class="pix-ajuda" data-previa-cliente-status="${escAttr(timeId)}"></span>
     </div>
     <p class="pix-ajuda">Sem simulação/arte postadas, a página do pedido mostra os mockups (Cena, Frente, Costas) e a arte montados daqui, com "NOME" e "00" — atualizados sozinhos quando os arquivos do time mudam.</p>`;
@@ -1312,6 +1312,7 @@ let layoutPeca = "costas";
 let layoutTam = "";
 let layoutElSel = "";
 let layoutArrastando = false;
+let layoutZoom = 1;         // zoom do palco (1 = a peça inteira cabendo)
 const amostraLayout = { nomeCamiseta: "JOÃO PEDRO", nome: "João Pedro Silva", numero: "10" };
 
 // "Ajustar layout deste time": abre a aba "Editar arte" do pedido.
@@ -1401,50 +1402,63 @@ function renderizarEditorLayout() {
 
   const qtdNaPeca = (id) => ((layoutConfig.pecas[id] && layoutConfig.pecas[id].elementos) || []).length;
   const nomeTime = layoutModo && estadoTimes[layoutModo] ? escapeHtmlAdmin(estadoTimes[layoutModo].time.nome) : "";
+  const ferramenta = (tipo, ic, titulo) =>
+    `<button type="button" class="ferramenta" data-add="${tipo}" title="${escAttr(titulo)}" aria-label="${escAttr(titulo)}">${icone(ic)}</button>`;
   elEditorLayout.innerHTML = `
     <div class="estudio">
-      <div class="estudio-barra">
+      <header class="estudio-topo">
+        <span class="estudio-titulo">${icone("palette")} ${layoutModo ? nomeTime : "Layout geral"}</span>
         ${editorTravado ? "" : `<label class="campo-inline">Editando
           <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
         ${layoutModo ? "" : `<label class="campo-inline">Prévia com a arte de
           <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
+        <label class="campo-inline">Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
+        <label class="campo-inline">Nº <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" class="input-curto" /></label>
+        <span class="estudio-espaco"></span>
         <span id="layoutEstadoSalvar" class="estudio-salvo" aria-live="polite"></span>
-      </div>
+        <button type="button" class="botao-acento" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">${icone("download")} EPS de teste</button>
+      </header>
       ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutGoleiro
-        ? `🧤 Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
-        : `✏️ Ajustes só de <strong>${nomeTime}</strong>. O que não mudar aqui segue o layout geral (aba Artes).`}</p>`}
-      <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_PRODUCAO.map((p) =>
-        `<button type="button" role="tab" aria-selected="${p.id === layoutPeca}" class="estudio-peca${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}${qtdNaPeca(p.id) ? ` <span class="estudio-peca-qtd">${qtdNaPeca(p.id)}</span>` : ""}</button>`).join("")}</nav>
+        ? `${icone("hand")} Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
+        : `${icone("pencil")} Ajustes só de <strong>${nomeTime}</strong>. O que não mudar aqui segue o layout geral (aba Artes).`}</p>`}
       <div class="estudio-corpo">
-        <div class="estudio-palco-col">
-          <div class="estudio-ferramentas">
-            <label class="campo-inline">Tamanho <select data-l="tam">${tamanhosComMolde(layoutPeca).map((t) =>
-              `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
-            <label class="campo-inline">Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
-            <label class="campo-inline">Nº <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" class="input-curto" /></label>
-            <span class="estudio-espaco"></span>
-            ${layoutModo ? "" : `<details class="menu-add">
-              <summary class="botao-menu">+ Adicionar</summary>
-              <div class="menu-add-itens">
-                <button type="button" data-add="nome"><span class="el-icone">Aa</span> Nome</button>
-                <button type="button" data-add="numero"><span class="el-icone">#</span> Número</button>
-                <button type="button" data-add="brasao"><span class="el-icone">🛡️</span> Brasão do time</button>
-                <button type="button" data-add="logo" title="Logo da empresa (enviado em Configurações)"><span class="el-icone">🏷️</span> Logo da empresa</button>
-                <button type="button" data-add="detalhe" title="Detalhe da manga (PNG enviado em cada time)"><span class="el-icone">〰️</span> Detalhe da manga</button>
-              </div>
-            </details>`}
-            <button type="button" class="secundario botao-pequeno" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">⬇ EPS de teste</button>
-          </div>
+        <div class="estudio-canvas">
+          ${layoutModo ? "" : `<div class="estudio-ferramentas" role="toolbar" aria-label="Adicionar à peça">
+            ${ferramenta("nome", "type", "Adicionar nome")}
+            ${ferramenta("numero", "hash", "Adicionar número")}
+            ${ferramenta("brasao", "shield", "Adicionar brasão do time")}
+            ${ferramenta("logo", "tag", "Adicionar logo da empresa")}
+            ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}
+          </div>`}
+          <p class="estudio-peca-rotulo">${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}${tam ? ` · ${escapeHtmlAdmin(tam)}${tam === moldesConfig.tamanhoBase ? " (base)" : ""}` : ""}</p>
           <div class="arte-palco-wrap estudio-palco-fundo"><div id="layoutPalco" class="arte-palco"></div></div>
-          <p class="estudio-dica">Arraste para mover · alça do canto para redimensionar · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Esc</kbd> solta a seleção</p>
+          <div class="estudio-rodape">
+            <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_PRODUCAO.map((p) =>
+              `<button type="button" role="tab" aria-selected="${p.id === layoutPeca}" class="estudio-peca${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}${qtdNaPeca(p.id) ? ` <span class="estudio-peca-qtd">${qtdNaPeca(p.id)}</span>` : ""}</button>`).join("")}</nav>
+            <span class="estudio-divisor"></span>
+            <label class="campo-inline campo-rodape">${icone("ruler")}<select data-l="tam" aria-label="Tamanho">${tamanhosComMolde(layoutPeca).map((t) =>
+              `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
+            <span class="estudio-zoom">
+              <button type="button" data-zoom="-1" title="Diminuir" aria-label="Diminuir">${icone("minus")}</button>
+              <button type="button" data-zoom="0" class="estudio-zoom-valor" title="Ajustar à tela">${Math.round(layoutZoom * 100)}%</button>
+              <button type="button" data-zoom="1" title="Aumentar" aria-label="Aumentar">${icone("plus")}</button>
+            </span>
+          </div>
         </div>
         <aside class="arte-painel estudio-painel" id="layoutPainel"></aside>
       </div>
+      <p class="estudio-dica">Arraste para mover · alça do canto para redimensionar · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Esc</kbd> solta a seleção</p>
     </div>`;
 
-  // "+ Adicionar": fecha o menu depois de escolher.
-  const menuAdd = elEditorLayout.querySelector(".menu-add");
-  if (menuAdd) menuAdd.addEventListener("click", (ev) => { if (ev.target.closest("[data-add]")) menuAdd.open = false; });
+  // Zoom do palco (100% = a peça inteira cabendo na tela).
+  elEditorLayout.querySelectorAll("[data-zoom]").forEach((b) => {
+    b.onclick = () => {
+      const d = Number(b.dataset.zoom);
+      layoutZoom = d === 0 ? 1 : Math.min(3, Math.max(0.5, Math.round((layoutZoom + d * 0.25) * 100) / 100));
+      b.closest(".estudio-zoom").querySelector(".estudio-zoom-valor").textContent = Math.round(layoutZoom * 100) + "%";
+      renderizarPalcoLayout();
+    };
+  });
   // Clique no fundo do palco solta a seleção.
   const palcoFundo = elEditorLayout.querySelector(".estudio-palco-fundo");
   palcoFundo.addEventListener("pointerdown", (ev) => {
@@ -1489,8 +1503,8 @@ function medidasLayout() {
   const palco = document.getElementById("layoutPalco");
   // O palco fica dentro de uma moldura com 16 px de respiro de cada lado.
   const disp = palco ? palco.parentElement.clientWidth : 0;
-  const larguraDisp = Math.min(760, disp > 120 ? disp - 32 : 620);
-  const s = Math.min(larguraDisp / dim.w, 680 / dim.h);
+  const larguraDisp = Math.min(820, disp > 120 ? disp - 48 : 620);
+  const s = Math.min(larguraDisp / dim.w, 620 / dim.h) * layoutZoom;
   return { tam, molde, dim, base, s, ehBase: tam === moldesConfig.tamanhoBase || !mb };
 }
 
@@ -1538,11 +1552,11 @@ function caminhoSvg(comandos, s) {
 }
 
 function iconeElementoLayout(el) {
-  if (el.tipo === "brasao") return "🛡️";
-  if (el.tipo === "logo") return "🏷️";
-  if (el.tipo === "detalhe") return "〰️";
-  if (el.tipo === "numero") return "#";
-  return "Aa";
+  if (el.tipo === "brasao") return icone("shield");
+  if (el.tipo === "logo") return icone("tag");
+  if (el.tipo === "detalhe") return icone("waves");
+  if (el.tipo === "numero") return icone("hash");
+  return icone("type");
 }
 
 function rotuloElementoLayout(el) {
@@ -1818,14 +1832,15 @@ function renderizarPainelLayout() {
   const els = elementosDaPeca(layoutPeca);
   const el = els.find((e) => e.id === layoutElSel);
   painel.innerHTML = `
+    <div class="painel-cabecalho"><span class="ativo">Design</span></div>
     <section class="painel-secao">
-      <h4 class="painel-titulo">Elementos · ${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
+      <h4 class="painel-titulo">${icone("layers")} Camadas <span>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</span></h4>
       <ul class="lista-elementos">${els.map((e) => {
         const ajE = ajusteNoEditor(layoutPeca, e.id);
         return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ajE && ajE.oculto ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
           `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
           `${seloAjusteTime(ajE)}` +
-          `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">🧤</span>' : ""}</li>`;
+          `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}</li>`;
       }).join("") ||
         `<li class="lista-elementos-vazia">Nada nesta peça${layoutModo ? " no layout geral" : " — use <strong>+ Adicionar</strong>"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
       ${els.length && !layoutElSel ? '<p class="pix-ajuda">Clique num elemento (aqui ou no desenho) para editar.</p>' : ""}
@@ -1866,18 +1881,18 @@ function renderizarPainelLayout() {
       <div class="painel-el-topo">
         <span class="el-icone">${iconeElementoLayout(el)}</span>
         <strong>${escapeHtmlAdmin(rotuloElementoLayout(el))}</strong>
-        <button type="button" class="painel-fechar" data-acao="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">×</button>
+        <button type="button" class="painel-fechar" data-acao="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">${icone("x")}</button>
       </div>
       <p class="pix-ajuda">${estado}</p>
       ${layoutModo ? `<label class="interruptor"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> <span>${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</span></label>` : ""}
       ${layoutModo && ajProprio ? `<div class="arte-botoes-el">
-        <button type="button" class="secundario" data-acao="voltarGeral">↺ ${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>
-        ${posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">↺ Só a posição</button>' : ""}
+        <button type="button" class="secundario" data-acao="voltarGeral">${icone("undo-2")} ${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>
+        ${posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">' + icone("undo-2") + ' Só a posição</button>' : ""}
       </div>` : ""}
     </section>
 
     <section class="painel-secao">
-      <h4 class="painel-titulo">Posição e tamanho <span>mm</span></h4>
+      <h4 class="painel-titulo">${icone("scaling")} Layout <span>mm</span></h4>
       <div class="arte-grade arte-grade-4">
         <label>X<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
         <label>Y<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
@@ -1889,8 +1904,8 @@ function renderizarPainelLayout() {
       ${!ehTexto ? `<label class="interruptor"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> <span>Manter proporção</span></label>
         <p class="pix-ajuda">Desmarque para esticar na largura e na altura, cada uma no seu.</p>` : ""}
       <div class="arte-botoes-el">
-        <button type="button" class="secundario" data-acao="centralizar">↔ Centralizar na largura</button>
-        ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">↺ Voltar ao proporcional</button>' : ""}
+        <button type="button" class="secundario" data-acao="centralizar">${icone("move-horizontal")} Centralizar na largura</button>
+        ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">' + icone("undo-2") + ' Voltar ao proporcional</button>' : ""}
       </div>
     </section>`;
 
@@ -1902,12 +1917,12 @@ function renderizarPainelLayout() {
       `</div>`;
     html += `
       <section class="painel-secao">
-        <h4 class="painel-titulo">Texto</h4>
+        <h4 class="painel-titulo">${icone("type")} Texto</h4>
         <div class="arte-grade">
           ${el.tipo === "nome" && !layoutModo ? `<label>Texto
             <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
-          <label>Alinhamento
-            <select data-p="alinhamento"><option value="centro">Centro</option><option value="esquerda">Esquerda</option><option value="direita">Direita</option></select></label>
+          <div class="campo-alinhar"><span>Alinhamento</span><span class="segmentado-icones" role="group" aria-label="Alinhamento">${[["esquerda", "align-left"], ["centro", "align-center"], ["direita", "align-right"]].map(([v, ic]) =>
+            `<button type="button" data-alinhar="${v}" class="${(elT.alinhamento || "centro") === v ? "ativo" : ""}" title="${v === "centro" ? "Centro" : v === "esquerda" ? "Esquerda" : "Direita"}" aria-pressed="${(elT.alinhamento || "centro") === v}">${icone(ic)}</button>`).join("")}</span></div>
           <label>Texto maior que a caixa
             <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
           <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
@@ -1917,7 +1932,7 @@ function renderizarPainelLayout() {
         <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>
       </section>
       <section class="painel-secao">
-        <h4 class="painel-titulo">Cores <span>CMYK %</span></h4>
+        <h4 class="painel-titulo">${icone("palette")} Cores <span>CMYK %</span></h4>
         <p class="arte-rotulo-cor">Preenchimento</p>${cmyk("corCmyk", elT.corCmyk)}
         <label class="arte-contorno">Contorno <small>(mm, 0 = sem)</small><input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
         <p class="arte-rotulo-cor">Cor do contorno</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
@@ -1925,8 +1940,8 @@ function renderizarPainelLayout() {
   }
   if (!layoutModo) {
     html += `<section class="painel-secao painel-rodape">
-      <button type="button" class="secundario" data-acao="duplicar">⧉ Duplicar</button>
-      <button type="button" class="perigo" data-acao="excluir">🗑 Excluir</button></section>`;
+      <button type="button" class="secundario" data-acao="duplicar">${icone("copy")} Duplicar</button>
+      <button type="button" class="perigo" data-acao="excluir">${icone("trash-2")} Excluir</button></section>`;
   }
   box.innerHTML = html;
 
@@ -1942,6 +1957,7 @@ function renderizarPainelLayout() {
     redesenhar();
   };
 
+  box.querySelectorAll("[data-alinhar]").forEach((b) => (b.onclick = () => gravarEstilo("alinhamento", b.dataset.alinhar)));
   const chkOculto = box.querySelector("[data-oculto]");
   if (chkOculto) {
     chkOculto.onchange = () => {
