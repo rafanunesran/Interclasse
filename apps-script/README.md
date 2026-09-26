@@ -73,9 +73,10 @@ levas de produção e cobranças — e salva um arquivo `.json` na pasta **priva
 1. Abra o seu projeto em **https://script.google.com**.
 2. Em **Configurações do projeto** (engrenagem), marque **"Mostrar o arquivo de manifesto
    appsscript.json no editor"**.
-3. No editor, substitua o conteúdo de `Codigo.gs` e de `appsscript.json` pelos deste repositório,
-   e crie um arquivo novo **`Backup.gs`** (botão **+ → Script**) com o conteúdo de
-   [`Backup.gs`](Backup.gs). Salve.
+3. No editor, o projeto fica com **só dois arquivos**: substitua todo o conteúdo de `Codigo.gs`
+   pelo de [`Codigo.gs`](Codigo.gs) (imagens + backup, tudo junto) e o de `appsscript.json` pelo
+   de [`appsscript.json`](appsscript.json). Se você já tinha criado um `Backup.gs` no projeto,
+   **exclua-o** (senão as funções ficam duplicadas e dá erro). Salve.
 4. No topo, escolha a função **`instalarBackupDiario`** e clique em **▶ Executar**. Autorize os
    acessos pedidos (Drive, Firestore, e-mail e gatilhos). Isso liga o backup todo dia por volta
    das 3h.
@@ -100,7 +101,7 @@ levas de produção e cobranças — e salva um arquivo `.json` na pasta **priva
   apagado.
 - **De um arquivo baixado:** botão **Restaurar de um arquivo…** na mesma aba (útil se o Drive
   tiver algum problema — por isso vale baixar um backup de vez em quando pelo botão **Baixar**).
-- **Sem o site (emergência):** no editor do Apps Script, abra `Backup.gs`, preencha o nome do
+- **Sem o site (emergência):** no editor do Apps Script, abra `Codigo.gs`, preencha o nome do
   arquivo em `restaurarPeloEditor` e rode essa função.
 
 > Os arquivos de arte, moldes e imagens já ficam no seu Drive (pasta "Interclasse Camisetas");
