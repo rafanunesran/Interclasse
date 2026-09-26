@@ -101,15 +101,6 @@ para ver a lista, fazer um backup na hora, baixar e **restaurar** (tudo ou só u
 restaurar é feito um backup de segurança). Como ativar e restaurar em caso de emergência:
 [`apps-script/README.md`](apps-script/README.md#backup-diário-dos-dados).
 
-## Backup diário (aba Backup)
-
-Todo dia o Apps Script salva uma cópia de **todos os dados** do site na pasta privada
-**"Interclasse Backups"** do seu Google Drive. Os backups dos últimos **30 dias** são protegidos
-e os mais antigos **nunca são apagados sem a sua confirmação**. No **Super Admin → Backup** dá
-para ver a lista, fazer um backup na hora, baixar e **restaurar** (tudo ou só um time; antes de
-restaurar é feito um backup de segurança). Como ativar e restaurar em caso de emergência:
-[`apps-script/README.md`](apps-script/README.md#backup-diário-dos-dados).
-
 ## Contato do representante (WhatsApp)
 
 Cada time pode guardar **quem responde por ele** — nome e WhatsApp — para a organização
