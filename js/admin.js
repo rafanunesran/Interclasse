@@ -1428,8 +1428,8 @@ function renderizarEditarArteTime(timeId) {
   const card = document.createElement("div");
   card.className = "card";
   card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
-    '<p class="pix-ajuda">Escolha a peça e clique num elemento (nome, número, brasão…) para mudar a posição, o tamanho da letra, as cores ou ocultá-lo — só neste time. ' +
-    'O que não for mudado aqui segue o layout geral (aba <strong>Artes</strong>). A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
+    '<p class="pix-ajuda">Clique num elemento (no desenho ou na lista) para mudar a posição, a letra, as cores ou ocultá-lo — só neste time. ' +
+    'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
   // Camiseta comum ou a do goleiro (o mesmo seletor da aba Arquivos).
   if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
   const host = document.createElement("div");
@@ -1450,7 +1450,7 @@ function renderizarArquivosTime(timeId) {
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = '<h3 class="titulo-bloco">Arquivos para impressão</h3>' +
-      '<p class="pix-ajuda">A arte de cada peça em PNG 600 dpi (feita para o molde do tamanho base), o brasão em EPS e a fonte do nome e do número.</p>';
+      '<p class="pix-ajuda">Clique num espaço ou arraste o arquivo para cima dele. Arquivos grandes vão ao Drive em partes.</p>';
     // Camiseta comum ou a do goleiro: o que o goleiro não tiver usa o da comum.
     if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
     const bloco = criarBlocoProducaoTime(timeId, time);

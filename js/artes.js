@@ -345,6 +345,20 @@ function criarSeletorVariante(timeId) {
   return wrap;
 }
 
+// O checklist dos arquivos de produção: cada item diz se o layout usa aquilo
+// (necessário) e se o time já enviou (tem).
+function requisitosProducao(time) {
+  const p = producaoDoTime(time);
+  const usa = (teste) => Object.values(layoutConfig.pecas || {}).some((l) => (l.elementos || []).some(teste));
+  const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id]).length;
+  return [
+    { id: "artes", rotulo: "Artes das peças", necessario: true, tem: nArtes > 0, detalhe: `${nArtes} enviada(s)` },
+    { id: "fonte", rotulo: "Fonte", necessario: usa((e) => !ehCaixaImagem(e)), tem: !!p.fonte },
+    { id: "brasao", rotulo: "Brasão", necessario: usa((e) => e.tipo === "brasao"), tem: !!p.brasao },
+    { id: "detalhe", rotulo: "Detalhe da manga", necessario: usa((e) => e.tipo === "detalhe"), tem: !!p.detalheManga }
+  ];
+}
+
 // O que falta para o time poder gerar a folha (na variante do goleiro, passe
 // timeNaVariante(time, true)).
 function pendenciasProducao(time) {
@@ -381,56 +395,71 @@ function criarBlocoProducaoTime(timeId, time) {
   bloco.open = !!blocoProducaoAberto[timeId];
   bloco.addEventListener("toggle", () => (blocoProducaoAberto[timeId] = bloco.open));
 
-  const nArtes = PECAS_PRODUCAO.filter((x) => EPS.arteDaPeca(prod, x.id)).length;
-  const falta = pendenciasProducao(gol ? timeNaVariante(time, true) : time);
+  // Checklist: o que o layout usa e o que já foi enviado.
+  const reqs = requisitosProducao(gol ? timeNaVariante(time, true) : time);
+  const falta = reqs.filter((r) => r.necessario && !r.tem);
   const nProprios = gol ? Object.keys(propria.pecas || {}).length +
     ["brasao", "fonte", "detalheManga", "detalheMangaDir"].filter((k) => propria[k]).length : 0;
-  bloco.innerHTML = `<summary>${gol ? "🧤 Arquivos do goleiro" : "🎨 Arquivos de produção"} <span class="badge ${falta.length ? "pendente" : "pago"}">` +
-    `${falta.length ? "falta " + escapeHtmlAdmin(falta.join(", ")) : "pronto ✓"}</span>` +
-    ` <span class="pix-ajuda">${gol
-      ? `${nProprios} arquivo(s) próprio(s) — o resto usa o da camiseta comum`
-      : `${nArtes}/${PECAS_PRODUCAO.length} artes${prod.brasao ? " · brasão" : ""}${prod.fonte ? " · fonte" : ""}`}</span></summary>`;
-
-  const grade = document.createElement("div");
-  grade.className = "producao-grade";
+  bloco.innerHTML = `<summary class="producao-resumo">
+      <span class="producao-estado ${falta.length ? "falta" : "pronto"}">${falta.length
+        ? `Falta ${escapeHtmlAdmin(falta.map((r) => r.rotulo.toLowerCase()).join(", "))}`
+        : "✓ Pronto para gerar a folha"}</span>
+      <span class="producao-checklist">${reqs.filter((r) => r.necessario || r.tem).map((r) =>
+        `<span class="check-item ${r.tem ? "ok" : "falta"}">${r.tem ? "✓" : "○"} ${escapeHtmlAdmin(r.rotulo)}${r.detalhe && r.tem ? ` <small>${escapeHtmlAdmin(r.detalhe)}</small>` : ""}</span>`).join("")}</span>
+      ${gol ? `<span class="pix-ajuda">🧤 ${nProprios} arquivo(s) próprio(s) do goleiro — o resto usa o da camiseta comum</span>` : ""}
+    </summary>`;
 
   const infoPng = (a) => a ? {
     previa: a.previaUrl,
-    info: `${a.larguraPx} × ${a.alturaPx} px · ${a.dpi || "?"} dpi · ` +
-      `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm`
+    nome: a.nomeArquivo || "",
+    info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi`
   } : null;
-  const infoBrasao = (b) => b ? { previa: b.previaUrl, info: b.nomeArquivo || "EPS" } : null;
-  const infoFonte = (f) => f ? { info: f.nome } : null;
+  const infoBrasao = (b) => b ? { previa: b.previaUrl, nome: b.nomeArquivo || "", info: "EPS vetorial" } : null;
+  const infoFonte = (f) => f ? { nome: f.nome, info: "Fonte do nome e do número", fonte: true } : null;
+
+  const grupo = (titulo, ajuda) => {
+    const sec = document.createElement("section");
+    sec.className = "producao-grupo";
+    sec.innerHTML = `<h4 class="producao-grupo-titulo">${escapeHtmlAdmin(titulo)}</h4>${ajuda ? `<p class="pix-ajuda">${ajuda}</p>` : ""}`;
+    const grade = document.createElement("div");
+    grade.className = "producao-grade";
+    sec.appendChild(grade);
+    bloco.appendChild(sec);
+    return grade;
+  };
   // Na variante do goleiro, um espaço sem arquivo próprio mostra (apagado) o
   // da camiseta comum, que é o que vai ser usado.
-  const slot = (id, titulo, proprio, daComum, formato) => {
+  const slot = (grade, id, titulo, proprio, daComum, formato) => {
     const herdado = gol && !proprio && daComum ? daComum : null;
     grade.appendChild(criarSlotProducao(timeId, id, titulo, proprio, formato, herdado));
   };
+
+  const gradePecas = grupo("Peças da camiseta", "PNG 600 dpi, feito para o molde do tamanho base. Nos outros tamanhos a arte acompanha o molde.");
   // Uma arte serve para as duas mangas; a da direita só aparece quando o
   // time ativa "manga direita com arte diferente".
   PECAS_PRODUCAO.forEach((peca) => {
     if (peca.id === "mangaDir" && !comum.mangaDirDiferente) return;
     const titulo = peca.id === "mangaEsq" && !comum.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
-    slot(`arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
+    slot(gradePecas, `arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
       infoPng(comum.pecas && comum.pecas[peca.id]), "PNG 600 dpi");
   });
-  slot("detalhe", comum.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
+
+  const gradeExtras = grupo("Brasão, detalhe e fonte", "");
+  slot(gradeExtras, "brasao", "Brasão", infoBrasao(propria.brasao), infoBrasao(comum.brasao), "EPS");
+  slot(gradeExtras, "detalhe", comum.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
     infoPng(propria.detalheManga), infoPng(comum.detalheManga), "PNG 600 dpi");
   if (comum.detalheDirDiferente) {
-    slot("detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "PNG 600 dpi");
+    slot(gradeExtras, "detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "PNG 600 dpi");
   }
-  slot("brasao", "Brasão", infoBrasao(propria.brasao), infoBrasao(comum.brasao), "EPS");
-  slot("fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
-  bloco.appendChild(grade);
+  slot(gradeExtras, "fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
 
   // Mangas e detalhe diferentes em cada lado (padrão: um arquivo para as duas).
   // Valem para as duas variantes.
   const opcoes = document.createElement("div");
   opcoes.className = "producao-opcoes";
   opcoes.innerHTML = `
-    <label class="checkbox-inline"><input type="checkbox" data-op="mangaDirDiferente" ${comum.mangaDirDiferente ? "checked" : ""} /> Manga direita com arte diferente</label>
-    <label class="checkbox-inline"><input type="checkbox" data-op="detalheDirDiferente" ${comum.detalheDirDiferente ? "checked" : ""} /> Detalhe diferente na manga direita</label>
+    <label class="interruptor"><input type="checkbox" data-op="mangaDirDiferente" ${comum.mangaDirDiferente ? "checked" : ""} /> <span>Manga direita com arte diferente</span></label>
+    <label class="interruptor"><input type="checkbox" data-op="detalheDirDiferente" ${comum.detalheDirDiferente ? "checked" : ""} /> <span>Detalhe diferente na manga direita</span></label>
     ${gol ? '<span class="pix-ajuda">(vale para a camiseta comum e a do goleiro)</span>' : ""}`;
   opcoes.querySelectorAll("[data-op]").forEach((inp) => {
     inp.onchange = async () => {
@@ -445,47 +474,65 @@ function criarBlocoProducaoTime(timeId, time) {
   rodape.className = "producao-rodape";
   const btnLayout = document.createElement("button");
   btnLayout.type = "button";
-  btnLayout.className = "secundario";
-  btnLayout.textContent = gol ? "Editar arte do goleiro" : "Editar arte deste time";
+  btnLayout.className = "primario";
+  btnLayout.textContent = gol ? "✏️ Editar arte do goleiro" : "✏️ Editar arte deste time";
   btnLayout.onclick = () => abrirLayoutDoTime(timeId);
   rodape.appendChild(btnLayout);
   const nAjustes = Object.values(propria.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-  if (nAjustes) rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes} ajuste(s) próprio(s)${gol ? " do goleiro" : ""} — aba "Editar arte"</span>`);
+  rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes
+    ? `${nAjustes} ajuste(s) próprio(s)${gol ? " do goleiro" : ""} de posição, letra ou cor`
+    : "Posição do nome, número e brasão: segue o layout geral (aba Artes)"}</span>`);
   bloco.appendChild(rodape);
   return bloco;
+}
+
+// Amostra da fonte do time ("AaBb 0123"), desenhada com a própria fonte.
+function amostraDaFonteHtml(time) {
+  const fonte = fonteProntaDoTime(time);
+  if (!fonte) return '<span class="producao-fonte-carregando">Aa 123</span>';
+  const l = EPS.layoutTexto(fonte, "AaBb 0123", { w: 120, h: 22 }, { maiusculas: false });
+  return `<svg viewBox="0 0 120 22" class="producao-fonte-amostra" role="img" aria-label="Amostra da fonte"><path d="${caminhoSvg(l.comandos, 1)}" fill="#111827"/></svg>`;
 }
 
 // `herdado`: na variante do goleiro, o arquivo da comum que vale no lugar.
 function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
   const gol = editandoGoleiro(timeId);
   const div = document.createElement("div");
-  div.className = "producao-slot" + (atual ? " ok" : "") + (herdado ? " herdado" : "");
+  div.className = "producao-slot" + (atual ? " ok" : " vazio") + (herdado ? " herdado" : "");
   const andamento = enviandoProducao[chaveEnvio(timeId, slot, gol)];
+  if (andamento) div.classList.add("enviando");
   const mostrar = atual || herdado;
-  div.innerHTML = `
-    <div class="producao-slot-titulo">${escapeHtmlAdmin(titulo)}</div>
-    <div class="producao-slot-previa">${mostrar && mostrar.previa
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  const previa = mostrar && mostrar.fonte
+    ? amostraDaFonteHtml(timeNaVariante(time, gol))
+    : mostrar && mostrar.previa
       ? `<img src="${escAttr(mostrar.previa)}" alt="" loading="lazy" />`
-      : `<span>${mostrar ? "✓" : escapeHtmlAdmin(formato)}</span>`}</div>
-    <div class="producao-slot-info">${andamento ? escapeHtmlAdmin(andamento)
-      : atual ? escapeHtmlAdmin(atual.info || "")
-        : herdado ? "Usa o da camiseta comum" : "—"}</div>`;
+      : mostrar ? '<span class="producao-slot-ok">✓</span>'
+        : `<span class="producao-slot-soltar"><span class="producao-slot-seta">⬆</span>Clique ou arraste<br><small>${escapeHtmlAdmin(formato)}</small></span>`;
+  div.innerHTML = `
+    <div class="producao-slot-titulo"><span>${escapeHtmlAdmin(titulo)}</span>${atual ? '<span class="producao-slot-selo">✓</span>' : herdado ? '<span class="producao-slot-selo herdado" title="Usa o da camiseta comum">comum</span>' : ""}</div>
+    <div class="producao-slot-previa">${previa}</div>
+    <div class="producao-slot-info">${andamento
+      ? `<span class="producao-slot-andamento">${escapeHtmlAdmin(andamento)}</span>`
+      : atual ? `${atual.nome ? `<span class="producao-slot-nome" title="${escAttr(atual.nome)}">${escapeHtmlAdmin(atual.nome)}</span>` : ""}<span>${escapeHtmlAdmin(atual.info || "")}</span>`
+        : herdado ? "Usa o da camiseta comum" : "Nenhum arquivo"}</div>`;
   const acoes = document.createElement("div");
   acoes.className = "producao-slot-acoes";
   const env = document.createElement("button");
   env.type = "button";
-  env.className = "secundario";
+  env.className = atual ? "secundario" : "primario";
   env.textContent = atual ? "Trocar" : "Enviar";
   env.disabled = !!andamento;
-  env.onclick = () => enviarArquivoProducao(timeId, slot, gol);
+  env.onclick = (ev) => { ev.stopPropagation(); enviarArquivoProducao(timeId, slot, gol); };
   acoes.appendChild(env);
   if (atual) {
     const rem = document.createElement("button");
     rem.type = "button";
-    rem.className = "perigo";
-    rem.textContent = "×";
+    rem.className = "secundario botao-remover";
+    rem.textContent = "Remover";
     rem.title = gol ? "Remover (volta a usar o da camiseta comum)" : "Remover";
-    rem.onclick = async () => {
+    rem.onclick = async (ev) => {
+      ev.stopPropagation();
       if (!confirm(gol
         ? `Remover ${titulo.toLowerCase()} do goleiro? Ele volta a usar o da camiseta comum.`
         : `Remover ${titulo.toLowerCase()} deste time?`)) return;
@@ -502,6 +549,26 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
     acoes.appendChild(rem);
   }
   div.appendChild(acoes);
+
+  // Espaço vazio: clicar em qualquer lugar abre o seletor de arquivo.
+  if (!atual && !andamento) {
+    div.tabIndex = 0;
+    div.setAttribute("role", "button");
+    div.setAttribute("aria-label", `Enviar ${titulo}`);
+    div.onclick = () => enviarArquivoProducao(timeId, slot, gol);
+    div.onkeydown = (ev) => { if (ev.target === div && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); div.click(); } };
+  }
+  // Arrastar e soltar o arquivo em cima do espaço.
+  if (!andamento) {
+    div.addEventListener("dragover", (ev) => { ev.preventDefault(); div.classList.add("arrastando"); });
+    div.addEventListener("dragleave", () => div.classList.remove("arrastando"));
+    div.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      div.classList.remove("arrastando");
+      const file = ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (file) enviarArquivoProducao(timeId, slot, gol, file);
+    });
+  }
   return div;
 }
 
@@ -559,12 +626,20 @@ async function miniaturaDaArte(bytes, info) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-async function enviarArquivoProducao(timeId, slot, goleiro) {
+// `arquivo`: já escolhido (arrastar e soltar); sem ele, abre o seletor.
+async function enviarArquivoProducao(timeId, slot, goleiro, arquivo) {
   if (!exigirDriveProducao()) return;
   const accept = slot === "brasao" ? ".eps,.ps,application/postscript"
     : slot === "fonte" ? ".ttf,.otf,font/ttf,font/otf" : "image/png";
-  const file = await escolherArquivos(accept);
+  const file = arquivo || await escolherArquivos(accept);
   if (!file) return;
+  // Arquivo solto do tipo errado: avisa antes de tentar enviar.
+  const ext = (file.name.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
+  const esperado = slot === "brasao" ? ["eps", "ps"] : slot === "fonte" ? ["ttf", "otf"] : ["png"];
+  if (!esperado.includes(ext.toLowerCase())) {
+    alert(`Este espaço aceita ${esperado.map((e) => "." + e).join(" ou ")} — o arquivo "${file.name}" não é desse tipo.`);
+    return;
+  }
   const pref = `${slugify(estadoTimes[timeId].time.nome) || timeId}${goleiro ? "-goleiro" : ""}-${slot.replace(":", "-")}`;
   const marcar = (texto) => marcarEnvio(timeId, slot, texto, goleiro);
   try {
@@ -1324,39 +1399,60 @@ function renderizarEditorLayout() {
   const opcTimes = (sel) => times.map(([id, e]) =>
     `<option value="${escAttr(id)}"${id === sel ? " selected" : ""}>${escapeHtmlAdmin(e.time.nome)}</option>`).join("");
 
+  const qtdNaPeca = (id) => ((layoutConfig.pecas[id] && layoutConfig.pecas[id].elementos) || []).length;
+  const nomeTime = layoutModo && estadoTimes[layoutModo] ? escapeHtmlAdmin(estadoTimes[layoutModo].time.nome) : "";
   elEditorLayout.innerHTML = `
-    <div class="layout-topo">
-      ${editorTravado ? "" : `<label>Editando
-        <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
-      ${layoutModo ? "" : `<label>Prévia com a arte de
-        <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
-      <span id="layoutEstadoSalvar" class="pix-ajuda"></span>
-    </div>
-    ${!layoutModo ? "" : layoutGoleiro
-      ? `<p class="aviso">🧤 Ajustes do <strong>goleiro</strong> de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para a camiseta do goleiro. O que não for mudado aqui segue a camiseta comum deste time.</p>`
-      : `<p class="aviso">Ajustes próprios de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para este time. O que não for mudado aqui segue o layout geral (aba Artes).</p>`}
-    <nav class="fin-subabas layout-pecas">${PECAS_PRODUCAO.map((p) =>
-      `<button type="button" class="fin-subaba${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}</button>`).join("")}</nav>
-    <div class="arte-area">
-      <div class="arte-palco-col">
-        <div class="arte-barra-palco">
-          <label>Tamanho <select data-l="tam">${tamanhosComMolde(layoutPeca).map((t) =>
-            `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
-          <label>Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
-          <label>Número <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" style="width:60px" /></label>
-          <span class="arte-botoes-add">
-            ${layoutModo ? "" : `<button type="button" class="secundario" data-add="brasao">+ Brasão</button>
-            <button type="button" class="secundario" data-add="logo" title="Logo da empresa (enviado em Configurações)">+ Logo</button>
-            <button type="button" class="secundario" data-add="detalhe" title="Detalhe da manga (PNG enviado em cada time)">+ Detalhe</button>
-            <button type="button" class="secundario" data-add="nome">+ Nome</button>
-            <button type="button" class="secundario" data-add="numero">+ Número</button>`}
-            <button type="button" class="secundario" data-l="teste">⬇ EPS de teste</button>
-          </span>
-        </div>
-        <div class="arte-palco-wrap"><div id="layoutPalco" class="arte-palco"></div></div>
+    <div class="estudio">
+      <div class="estudio-barra">
+        ${editorTravado ? "" : `<label class="campo-inline">Editando
+          <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
+        ${layoutModo ? "" : `<label class="campo-inline">Prévia com a arte de
+          <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
+        <span id="layoutEstadoSalvar" class="estudio-salvo" aria-live="polite"></span>
       </div>
-      <div class="arte-painel" id="layoutPainel"></div>
+      ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutGoleiro
+        ? `🧤 Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
+        : `✏️ Ajustes só de <strong>${nomeTime}</strong>. O que não mudar aqui segue o layout geral (aba Artes).`}</p>`}
+      <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_PRODUCAO.map((p) =>
+        `<button type="button" role="tab" aria-selected="${p.id === layoutPeca}" class="estudio-peca${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}${qtdNaPeca(p.id) ? ` <span class="estudio-peca-qtd">${qtdNaPeca(p.id)}</span>` : ""}</button>`).join("")}</nav>
+      <div class="estudio-corpo">
+        <div class="estudio-palco-col">
+          <div class="estudio-ferramentas">
+            <label class="campo-inline">Tamanho <select data-l="tam">${tamanhosComMolde(layoutPeca).map((t) =>
+              `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
+            <label class="campo-inline">Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
+            <label class="campo-inline">Nº <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" class="input-curto" /></label>
+            <span class="estudio-espaco"></span>
+            ${layoutModo ? "" : `<details class="menu-add">
+              <summary class="botao-menu">+ Adicionar</summary>
+              <div class="menu-add-itens">
+                <button type="button" data-add="nome"><span class="el-icone">Aa</span> Nome</button>
+                <button type="button" data-add="numero"><span class="el-icone">#</span> Número</button>
+                <button type="button" data-add="brasao"><span class="el-icone">🛡️</span> Brasão do time</button>
+                <button type="button" data-add="logo" title="Logo da empresa (enviado em Configurações)"><span class="el-icone">🏷️</span> Logo da empresa</button>
+                <button type="button" data-add="detalhe" title="Detalhe da manga (PNG enviado em cada time)"><span class="el-icone">〰️</span> Detalhe da manga</button>
+              </div>
+            </details>`}
+            <button type="button" class="secundario botao-pequeno" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">⬇ EPS de teste</button>
+          </div>
+          <div class="arte-palco-wrap estudio-palco-fundo"><div id="layoutPalco" class="arte-palco"></div></div>
+          <p class="estudio-dica">Arraste para mover · alça do canto para redimensionar · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Esc</kbd> solta a seleção</p>
+        </div>
+        <aside class="arte-painel estudio-painel" id="layoutPainel"></aside>
+      </div>
     </div>`;
+
+  // "+ Adicionar": fecha o menu depois de escolher.
+  const menuAdd = elEditorLayout.querySelector(".menu-add");
+  if (menuAdd) menuAdd.addEventListener("click", (ev) => { if (ev.target.closest("[data-add]")) menuAdd.open = false; });
+  // Clique no fundo do palco solta a seleção.
+  const palcoFundo = elEditorLayout.querySelector(".estudio-palco-fundo");
+  palcoFundo.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest(".arte-el") || !layoutElSel) return;
+    layoutElSel = "";
+    renderizarPalcoLayout();
+    renderizarPainelLayout();
+  });
 
   const q = (s) => elEditorLayout.querySelector(s);
   if (q('[data-l="modo"]')) q('[data-l="modo"]').onchange = (ev) => {
@@ -1391,8 +1487,10 @@ function medidasLayout() {
   const mb = moldes[moldesConfig.tamanhoBase];
   const base = mb ? EPS.tamanhoMmDoBbox(mb.bbox) : dim;
   const palco = document.getElementById("layoutPalco");
-  const larguraDisp = Math.min(620, (palco && palco.parentElement.clientWidth) || 620);
-  const s = Math.min(larguraDisp / dim.w, 700 / dim.h);
+  // O palco fica dentro de uma moldura com 16 px de respiro de cada lado.
+  const disp = palco ? palco.parentElement.clientWidth : 0;
+  const larguraDisp = Math.min(760, disp > 120 ? disp - 32 : 620);
+  const s = Math.min(larguraDisp / dim.w, 680 / dim.h);
   return { tam, molde, dim, base, s, ehBase: tam === moldesConfig.tamanhoBase || !mb };
 }
 
@@ -1437,6 +1535,14 @@ function caminhoSvg(comandos, s) {
     if (c.type === "C") return `C${f(c.x1)} ${f(c.y1)} ${f(c.x2)} ${f(c.y2)} ${f(c.x)} ${f(c.y)}`;
     return "Z";
   }).join("");
+}
+
+function iconeElementoLayout(el) {
+  if (el.tipo === "brasao") return "🛡️";
+  if (el.tipo === "logo") return "🏷️";
+  if (el.tipo === "detalhe") return "〰️";
+  if (el.tipo === "numero") return "#";
+  return "Aa";
 }
 
 function rotuloElementoLayout(el) {
@@ -1499,6 +1605,8 @@ function renderizarPalcoLayout() {
     const temAjusteTime = !!ajTime;
     div.className = "arte-el arte-el-" + el.tipo + (el.id === layoutElSel ? " selecionado" : "") +
       (temAjusteTime ? " ajuste-time" : "") + (oculto ? " oculto-time" : "");
+    div.dataset.id = elGeral.id;
+    div.dataset.rotulo = rotuloElementoLayout(el) + (oculto ? " (oculto)" : "");
     div.style.left = c.x * s + "px";
     div.style.top = c.y * s + "px";
     div.style.width = c.w * s + "px";
@@ -1525,6 +1633,60 @@ function renderizarPalcoLayout() {
     palco.appendChild(div);
   });
 }
+
+// Setas do teclado: movem o elemento selecionado 1 mm (Shift: 10 mm). O
+// desenho acompanha na hora; grava uma vez só, quando as teclas param.
+let empurraoLayout = null; // { elId, m, caixa, timer }
+
+function editorLayoutVisivel() {
+  return !!(elEditorLayout && elEditorLayout.isConnected && !elEditorLayout.closest(".oculto") &&
+    elEditorLayout.querySelector("#layoutPalco"));
+}
+
+function empurrarSelecionado(dx, dy) {
+  const el = elementosDaPeca(layoutPeca).find((e) => e.id === layoutElSel);
+  const m = medidasLayout();
+  if (!el || !m) return;
+  if (!empurraoLayout || empurraoLayout.elId !== el.id) {
+    empurraoLayout = { elId: el.id, m, caixa: caixaNoEditor(el, m) };
+  }
+  const e = empurraoLayout;
+  e.caixa = { ...e.caixa, x: e.caixa.x + dx, y: e.caixa.y + dy };
+  const div = elEditorLayout.querySelector(`.arte-el[data-id="${CSS.escape(el.id)}"]`);
+  if (div) {
+    div.style.left = e.caixa.x * m.s + "px";
+    div.style.top = e.caixa.y * m.s + "px";
+  }
+  const campoX = elEditorLayout.querySelector('[data-cx="x"]');
+  const campoY = elEditorLayout.querySelector('[data-cx="y"]');
+  if (campoX) campoX.value = e.caixa.x.toFixed(1);
+  if (campoY) campoY.value = e.caixa.y.toFixed(1);
+  clearTimeout(e.timer);
+  e.timer = setTimeout(() => {
+    empurraoLayout = null;
+    gravarCaixaLayout(el, e.m, e.caixa);
+    renderizarPalcoLayout();
+    renderizarPainelLayout();
+  }, 450);
+}
+
+document.addEventListener("keydown", (ev) => {
+  if (!editorLayoutVisivel() || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const alvo = ev.target;
+  if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "SELECT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
+  if (document.querySelector(".modal-pix:not(.oculto), .lightbox:not(.oculto)")) return;
+  if (ev.key === "Escape" && layoutElSel) {
+    layoutElSel = "";
+    renderizarPalcoLayout();
+    renderizarPainelLayout();
+    return;
+  }
+  const passos = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (!passos[ev.key] || !layoutElSel) return;
+  ev.preventDefault();
+  const k = ev.shiftKey ? 10 : 1;
+  empurrarSelecionado(passos[ev.key][0] * k, passos[ev.key][1] * k);
+});
 
 // Arrastar (mover) e a alça do canto (redimensionar). O brasão mantém a
 // proporção; as caixas de texto são livres (são o limite do texto).
@@ -1656,15 +1818,22 @@ function renderizarPainelLayout() {
   const els = elementosDaPeca(layoutPeca);
   const el = els.find((e) => e.id === layoutElSel);
   painel.innerHTML = `
-    <h4>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
-    <ul class="arte-lista-el">${els.map((e) =>
-      `<li class="${e.id === layoutElSel ? "ativo" : ""}" data-id="${escAttr(e.id)}">${escapeHtmlAdmin(rotuloElementoLayout(e))}` +
-      `${seloAjusteTime(ajusteNoEditor(layoutPeca, e.id))}` +
-      `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">🧤 goleiro</span>' : ""}</li>`).join("") ||
-      `<li class="pix-ajuda">Nada nesta peça${layoutModo ? " no layout geral" : " — use + Brasão / + Nome / + Número"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+    <section class="painel-secao">
+      <h4 class="painel-titulo">Elementos · ${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
+      <ul class="lista-elementos">${els.map((e) => {
+        const ajE = ajusteNoEditor(layoutPeca, e.id);
+        return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ajE && ajE.oculto ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
+          `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
+          `${seloAjusteTime(ajE)}` +
+          `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">🧤</span>' : ""}</li>`;
+      }).join("") ||
+        `<li class="lista-elementos-vazia">Nada nesta peça${layoutModo ? " no layout geral" : " — use <strong>+ Adicionar</strong>"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+      ${els.length && !layoutElSel ? '<p class="pix-ajuda">Clique num elemento (aqui ou no desenho) para editar.</p>' : ""}
+    </section>
     <div id="layoutPainelEl"></div>`;
   painel.querySelectorAll("li[data-id]").forEach((li) => {
     li.onclick = () => { layoutElSel = li.dataset.id; renderizarPalcoLayout(); renderizarPainelLayout(); };
+    li.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); } };
   });
   const m = medidasLayout();
   if (!el || !m) return;
@@ -1682,7 +1851,7 @@ function renderizarPainelLayout() {
   const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
   const ehTexto = !ehCaixaImagem(el);
 
-  let html = `<p class="pix-ajuda">${layoutGoleiro
+  const estado = layoutGoleiro
     ? ajProprio ? `O goleiro tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
       : "Igual à camiseta comum deste time — mudar qualquer coisa aqui cria um ajuste só para o goleiro."
     : layoutModo
@@ -1690,52 +1859,74 @@ function renderizarPainelLayout() {
       : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para este time."
     : m.ehBase ? `Posição no tamanho base (${escapeHtmlAdmin(m.tam)}).`
       : el.ajustes && el.ajustes[m.tam] ? `Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.`
-        : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`}</p>
-    ${layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> ${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</label>` : ""}
-    <div class="arte-grade arte-grade-4">
-      <label>X (mm)<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
-      <label>Y (mm)<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
-      <label>Largura<input type="number" step="0.5" min="1" data-cx="w" value="${c.w.toFixed(1)}" /></label>
-      <label>Altura<input type="number" step="0.5" min="1" data-cx="h" value="${c.h.toFixed(1)}" /></label>
-    </div>
-    ${ehTexto ? `<label class="arte-letra">Tamanho da letra (altura das maiúsculas, mm)
-      <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
-    <div class="arte-botoes-el">
-      <button type="button" class="secundario" data-acao="centralizar">Centralizar na largura</button>
-      ${layoutModo && ajProprio ? `<button type="button" class="secundario" data-acao="voltarGeral">${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>` : ""}
-      ${layoutModo && posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
-      ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
-    </div>`;
+        : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`;
 
-  if (!ehTexto) {
-    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> Manter proporção</label>
-      <p class="pix-ajuda">Desmarque para esticar ${escapeHtmlAdmin(rotuloElementoLayout(el).toLowerCase())} na largura e na altura, cada uma no seu (a alça do canto e os campos passam a mexer só na medida escolhida).</p>`;
-  } else {
+  let html = `
+    <section class="painel-secao painel-selecionado">
+      <div class="painel-el-topo">
+        <span class="el-icone">${iconeElementoLayout(el)}</span>
+        <strong>${escapeHtmlAdmin(rotuloElementoLayout(el))}</strong>
+        <button type="button" class="painel-fechar" data-acao="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">×</button>
+      </div>
+      <p class="pix-ajuda">${estado}</p>
+      ${layoutModo ? `<label class="interruptor"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> <span>${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</span></label>` : ""}
+      ${layoutModo && ajProprio ? `<div class="arte-botoes-el">
+        <button type="button" class="secundario" data-acao="voltarGeral">↺ ${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>
+        ${posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">↺ Só a posição</button>' : ""}
+      </div>` : ""}
+    </section>
+
+    <section class="painel-secao">
+      <h4 class="painel-titulo">Posição e tamanho <span>mm</span></h4>
+      <div class="arte-grade arte-grade-4">
+        <label>X<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
+        <label>Y<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
+        <label>Largura<input type="number" step="0.5" min="1" data-cx="w" value="${c.w.toFixed(1)}" /></label>
+        <label>Altura<input type="number" step="0.5" min="1" data-cx="h" value="${c.h.toFixed(1)}" /></label>
+      </div>
+      ${ehTexto ? `<label class="arte-letra">Tamanho da letra <small>(altura das maiúsculas, mm)</small>
+        <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
+      ${!ehTexto ? `<label class="interruptor"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> <span>Manter proporção</span></label>
+        <p class="pix-ajuda">Desmarque para esticar na largura e na altura, cada uma no seu.</p>` : ""}
+      <div class="arte-botoes-el">
+        <button type="button" class="secundario" data-acao="centralizar">↔ Centralizar na largura</button>
+        ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">↺ Voltar ao proporcional</button>' : ""}
+      </div>
+    </section>`;
+
+  if (ehTexto) {
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
+      `<span class="arte-amostra-cor" style="background:${cmykParaCss(v)}"></span>` +
       ["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number((v || [])[i]) || 0}" /></label>`).join("") +
-      `<span class="arte-amostra-cor" style="background:${cmykParaCss(v)}"></span></div>`;
+      `</div>`;
     html += `
-      <div class="arte-grade">
-        ${el.tipo === "nome" && !layoutModo ? `<label>Texto
-          <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
-        <label>Alinhamento
-          <select data-p="alinhamento"><option value="centro">Centro</option><option value="esquerda">Esquerda</option><option value="direita">Direita</option></select></label>
-        <label>Texto maior que a caixa
-          <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
-        <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
-        <label>Contorno (mm, 0 = sem)<input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
-        <label class="checkbox-inline"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> MAIÚSCULAS</label>
-        ${el.tipo === "nome" && !layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> Sem apelido, usar o nome</label>` : ""}
-      </div>
-      <p class="arte-rotulo-cor">Cor (CMYK %)</p>${cmyk("corCmyk", elT.corCmyk)}
-      <p class="arte-rotulo-cor">Cor do contorno (CMYK %)</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
-      <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>`;
+      <section class="painel-secao">
+        <h4 class="painel-titulo">Texto</h4>
+        <div class="arte-grade">
+          ${el.tipo === "nome" && !layoutModo ? `<label>Texto
+            <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
+          <label>Alinhamento
+            <select data-p="alinhamento"><option value="centro">Centro</option><option value="esquerda">Esquerda</option><option value="direita">Direita</option></select></label>
+          <label>Texto maior que a caixa
+            <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
+          <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
+        </div>
+        <label class="interruptor"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> <span>MAIÚSCULAS</span></label>
+        ${el.tipo === "nome" && !layoutModo ? `<label class="interruptor"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> <span>Sem apelido, usar o nome</span></label>` : ""}
+        <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>
+      </section>
+      <section class="painel-secao">
+        <h4 class="painel-titulo">Cores <span>CMYK %</span></h4>
+        <p class="arte-rotulo-cor">Preenchimento</p>${cmyk("corCmyk", elT.corCmyk)}
+        <label class="arte-contorno">Contorno <small>(mm, 0 = sem)</small><input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
+        <p class="arte-rotulo-cor">Cor do contorno</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
+      </section>`;
   }
   if (!layoutModo) {
-    html += `<div class="arte-botoes-el">
-      <button type="button" class="secundario" data-acao="duplicar">Duplicar</button>
-      <button type="button" class="perigo" data-acao="excluir">Excluir</button></div>`;
+    html += `<section class="painel-secao painel-rodape">
+      <button type="button" class="secundario" data-acao="duplicar">⧉ Duplicar</button>
+      <button type="button" class="perigo" data-acao="excluir">🗑 Excluir</button></section>`;
   }
   box.innerHTML = html;
 
@@ -1797,7 +1988,9 @@ function renderizarPainelLayout() {
   box.querySelectorAll("[data-acao]").forEach((b) => {
     b.onclick = async () => {
       const a = b.dataset.acao;
-      if (a === "centralizar") {
+      if (a === "soltar") {
+        layoutElSel = "";
+      } else if (a === "centralizar") {
         gravarCaixaLayout(el, m, { ...c, x: (m.dim.w - c.w) / 2 });
       } else if (a === "voltarGeral") {
         await gravarAjusteTime(el.id, (x) => { Object.keys(x).forEach((k) => delete x[k]); });

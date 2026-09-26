@@ -2426,3 +2426,160 @@ button.kanban-card-nome:hover { color: var(--azul); text-decoration: underline; 
 .producao-time.variante-goleiro .producao-slot.ok { border-color: #67e8f9; }
 .producao-slot.herdado .producao-slot-previa img { opacity: 0.4; filter: grayscale(0.5); }
 .producao-slot.herdado .producao-slot-info { font-style: italic; }
+
+/* ============================================================
+   ESTÚDIO DE ARTE (aba Artes e "Editar arte" do pedido)
+   ============================================================ */
+main:has(#painelAdmin) { max-width: 1200px; }
+
+.campo-inline { margin: 0; font-size: 0.78rem; font-weight: 600; color: var(--texto-suave); display: inline-flex; flex-direction: column; gap: 3px; }
+.campo-inline select, .campo-inline input { width: auto; min-width: 0; margin: 0; padding: 7px 9px; font-size: 0.9rem; color: var(--texto); font-weight: 400; }
+.campo-inline .input-curto { width: 64px; }
+.botao-pequeno { margin: 0; padding: 8px 12px; font-size: 0.85rem; }
+kbd { font: 600 0.72rem ui-monospace, monospace; background: #fff; border: 1px solid var(--cinza-borda); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+
+.estudio-barra { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; margin-bottom: 10px; }
+.estudio-salvo { margin-left: auto; font-size: 0.82rem; font-weight: 600; color: var(--verde); min-height: 1.2em; }
+.estudio-aviso { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; font-size: 0.88rem; }
+.estudio-aviso.goleiro { background: #ecfeff; border-color: #a5f3fc; color: #155e75; }
+
+.estudio-pecas { display: flex; gap: 4px; overflow-x: auto; border-bottom: 2px solid #e5e7eb; margin-bottom: 12px; scrollbar-width: thin; }
+.estudio-peca { flex: 0 0 auto; margin: 0 0 -2px; padding: 9px 14px; border-radius: 8px 8px 0 0; background: transparent; color: var(--texto-suave); border-bottom: 3px solid transparent; font-size: 0.9rem; }
+.estudio-peca:hover { color: var(--texto); background: rgba(0, 0, 0, 0.03); }
+.estudio-peca.ativa { color: var(--azul); border-bottom-color: var(--azul); }
+.estudio-peca-qtd { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: #e5e7eb; color: #374151; font-size: 0.72rem; text-align: center; }
+.estudio-peca.ativa .estudio-peca-qtd { background: #dbeafe; color: #1e40af; }
+
+.estudio-corpo { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .estudio-corpo { grid-template-columns: 1fr; } }
+.estudio-ferramentas { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin-bottom: 10px; }
+.estudio-espaco { flex: 1; }
+.estudio-palco-fundo {
+  display: flex; justify-content: center; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb;
+  background: repeating-conic-gradient(#eef2f7 0% 25%, #f8fafc 0% 50%) 0 0 / 22px 22px;
+  min-height: 240px;
+}
+.estudio-palco-fundo .arte-palco { box-shadow: 0 4px 18px rgba(15, 23, 42, 0.18); background: #fff; }
+.estudio-dica { font-size: 0.78rem; color: var(--texto-suave); margin: 8px 0 0; line-height: 1.9; }
+
+/* Rótulo do elemento selecionado, em cima da caixa. */
+.arte-el.selecionado::before {
+  content: attr(data-rotulo); position: absolute; left: 0; top: 0; z-index: 4;
+  background: var(--azul); color: #fff; font: 600 11px/1.6 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  padding: 0 6px; border-radius: 4px; white-space: nowrap; pointer-events: none;
+}
+.arte-el:hover:not(.selecionado) { outline: 1px dashed var(--azul); }
+
+/* Menu "+ Adicionar". */
+.menu-add { position: relative; }
+.menu-add > summary { list-style: none; cursor: pointer; }
+.menu-add > summary::-webkit-details-marker { display: none; }
+.botao-menu { display: inline-block; padding: 8px 14px; border-radius: 6px; background: var(--azul); color: #fff; font-weight: 600; font-size: 0.88rem; }
+.menu-add-itens {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 220px; padding: 6px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: var(--sombra-media);
+  display: flex; flex-direction: column;
+}
+.menu-add-itens button { margin: 0; background: transparent; color: var(--texto); text-align: left; font-weight: 500; padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
+.menu-add-itens button:hover { background: var(--azul-claro); }
+
+/* Painel da direita. */
+.estudio-painel {
+  position: sticky; top: calc(var(--altura-topo-admin, 0px) + 12px);
+  max-height: calc(100vh - var(--altura-topo-admin, 0px) - 24px); overflow-y: auto;
+  min-width: 0; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;
+}
+@media (max-width: 900px) { .estudio-painel { position: static; max-height: none; } }
+.painel-secao { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; }
+.painel-secao:last-child { border-bottom: 0; }
+.painel-titulo { margin: 0 0 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--texto-suave); display: flex; justify-content: space-between; }
+.painel-titulo span { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.painel-selecionado { background: #f8fafc; }
+.painel-el-topo { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.painel-fechar { margin: 0 0 0 auto; padding: 2px 8px; background: transparent; color: var(--texto-suave); font-size: 1.3rem; line-height: 1; }
+.painel-rodape { display: flex; gap: 6px; }
+.painel-rodape button { margin: 0; }
+
+.lista-elementos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.lista-elementos li[data-id] { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; flex-wrap: wrap; }
+.lista-elementos li[data-id]:hover { background: #f3f4f6; }
+.lista-elementos li.ativo { background: #dbeafe; color: #1e3a8a; font-weight: 700; }
+.lista-elementos li.apagado .el-nome { text-decoration: line-through; opacity: 0.6; }
+.lista-elementos .badge { font-size: 0.66rem; padding: 1px 6px; }
+.lista-elementos-vazia { font-size: 0.85rem; color: var(--texto-suave); }
+.el-icone { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: #eef2ff; color: #3730a3; font: 700 0.8rem ui-monospace, monospace; flex: 0 0 26px; }
+
+.estudio-painel .arte-grade { gap: 8px; }
+.estudio-painel .arte-grade input, .estudio-painel .arte-grade select,
+.estudio-painel .arte-letra input, .estudio-painel .arte-contorno input { padding: 7px 8px; font-size: 0.9rem; }
+.estudio-painel .arte-letra, .estudio-painel .arte-contorno { display: block; margin: 10px 0 4px; font-size: 0.8rem; }
+.estudio-painel .arte-letra small, .estudio-painel .arte-contorno small { font-weight: 400; color: var(--texto-suave); }
+.estudio-painel .arte-letra input, .estudio-painel .arte-contorno input { display: block; margin-top: 4px; width: 110px; }
+.estudio-painel .arte-cmyk { display: grid; grid-template-columns: 30px repeat(4, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.estudio-painel .arte-cmyk label { font-size: 0.7rem; margin: 0; text-align: center; color: var(--texto-suave); }
+.estudio-painel .arte-cmyk input { width: 100%; padding: 6px 2px; text-align: center; font-size: 0.85rem; margin-top: 2px; }
+.estudio-painel .arte-amostra-cor { width: 30px; height: 32px; border-radius: 6px; }
+.estudio-painel .arte-botoes-el { margin-top: 10px; }
+.estudio-painel .arte-botoes-el button { margin: 0; font-size: 0.82rem; }
+
+/* Interruptor (checkbox com cara de chave). */
+.interruptor { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 0.88rem; font-weight: 500; cursor: pointer; }
+.interruptor input { appearance: none; -webkit-appearance: none; width: 34px; height: 20px; border-radius: 999px; background: #d1d5db; position: relative; margin: 0; flex: 0 0 34px; cursor: pointer; transition: background 0.15s; }
+.interruptor input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left 0.15s; }
+.interruptor input:checked { background: var(--azul); }
+.interruptor input:checked::after { left: 16px; }
+
+/* ============================================================
+   ARQUIVOS DE PRODUÇÃO (time aberto)
+   ============================================================ */
+.producao-time.fixo > summary.producao-resumo { pointer-events: auto; cursor: default; }
+.producao-resumo { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.producao-estado { align-self: flex-start; font-weight: 700; font-size: 0.9rem; padding: 6px 12px; border-radius: 8px; }
+.producao-estado.pronto { background: #dcfce7; color: #166534; }
+.producao-estado.falta { background: #fef3c7; color: #92400e; }
+.producao-checklist { display: flex; flex-wrap: wrap; gap: 6px; }
+.check-item { font-size: 0.8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff; }
+.check-item.ok { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.check-item.falta { color: #92400e; border-color: #fde68a; background: #fffbeb; }
+.check-item small { color: var(--texto-suave); }
+
+.producao-grupo { margin-top: 16px; }
+.producao-grupo-titulo { margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--texto-suave); }
+.producao-grupo .pix-ajuda { margin: 2px 0 0; }
+.producao-time .producao-grade { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 10px; }
+.producao-time .producao-slot {
+  display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 10px;
+  border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.producao-time .producao-slot.ok { border-color: #bbf7d0; }
+.producao-time .producao-slot.vazio { border: 2px dashed #cbd5e1; background: #f8fafc; cursor: pointer; }
+.producao-time .producao-slot.vazio:hover, .producao-time .producao-slot.arrastando { border-color: var(--azul); background: var(--azul-claro); }
+.producao-time .producao-slot.arrastando { box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.15); }
+.producao-time .producao-slot.enviando { opacity: 0.85; }
+.producao-slot-titulo { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-weight: 700; font-size: 0.85rem; }
+.producao-slot-selo { font-size: 0.72rem; color: #166534; background: #dcfce7; border-radius: 999px; padding: 1px 7px; }
+.producao-slot-selo.herdado { color: #475569; background: #e2e8f0; }
+.producao-time .producao-slot-previa {
+  height: 120px; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 0 0 / 14px 14px; color: var(--texto-suave);
+}
+.producao-slot.vazio .producao-slot-previa { background: transparent; }
+.producao-time .producao-slot-previa img { max-width: 100%; max-height: 120px; object-fit: contain; }
+.producao-slot-soltar { text-align: center; font-size: 0.82rem; line-height: 1.35; }
+.producao-slot-seta { display: block; font-size: 1.4rem; color: var(--azul); }
+.producao-slot-ok { font-size: 1.6rem; color: var(--verde); }
+.producao-fonte-amostra { width: 90%; height: auto; }
+.producao-fonte-carregando { font-size: 1.6rem; font-weight: 700; color: #9ca3af; }
+.producao-time .producao-slot-info { font-size: 0.75rem; color: var(--texto-suave); min-height: 2.4em; display: flex; flex-direction: column; }
+.producao-slot-nome { color: var(--texto); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.producao-slot-andamento { color: var(--azul); font-weight: 600; }
+.producao-time .producao-slot-acoes { justify-content: flex-start; gap: 6px; }
+.producao-time .producao-slot-acoes button { padding: 5px 12px; font-size: 0.8rem; margin: 0; }
+.botao-remover { color: #b91c1c !important; }
+.producao-time .producao-opcoes { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f1f5f9; gap: 4px 24px; }
+.producao-time .producao-opcoes .interruptor { margin: 0; }
+.producao-time .producao-rodape { margin-top: 14px; padding: 12px; border-radius: 10px; background: #f8fafc; }
+.producao-time .producao-rodape button { margin: 0; }
+.ajuda-recolhivel { margin: 0 0 14px; font-size: 0.88rem; }
+.ajuda-recolhivel > summary { cursor: pointer; color: var(--azul); font-weight: 600; }
+.ajuda-recolhivel ul { margin: 8px 0 0; padding-left: 20px; color: #374151; }
