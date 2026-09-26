@@ -205,19 +205,13 @@ const EPS = (function () {
     return { x: caixa.x + (caixa.w - W) / 2, y: caixa.y + (caixa.h - H) / 2, w: W, h: H };
   }
 
-  // Onde a ARTE (PNG) da peça fica no molde de um tamanho. A arte é feita
-  // para o molde BASE, no tamanho real (pixels ÷ dpi) e centralizada nele.
-  // Nos outros tamanhos ela cresce/diminui na proporção do molde (a maior
-  // das duas, para continuar cobrindo a peça inteira), também centralizada.
-  function caixaArte(arte, moldeBase, moldeTam) {
-    const dpi = arte.dpi > 0 ? arte.dpi : 600;
-    let w = (arte.larguraPx / dpi) * MM_POR_POL;
-    let h = (arte.alturaPx / dpi) * MM_POR_POL;
-    const base = moldeBase || moldeTam;
-    const esc = Math.max(moldeTam.w / base.w, moldeTam.h / base.h);
-    w *= esc;
-    h *= esc;
-    return { x: (moldeTam.w - w) / 2, y: (moldeTam.h - h) / 2, w, h };
+  // Onde a ARTE (PNG) da peça fica no molde de um tamanho: ela é ESTICADA
+  // para cobrir o molde inteiro — largura e altura, cada uma no seu — mais a
+  // sangria para fora da linha de corte, para não sobrar nenhuma fresta
+  // branca em tamanho nenhum. Quem dá o formato é o recorte no contorno.
+  function caixaArte(arte, moldeBase, moldeTam, sangriaMm) {
+    const s = Number(sangriaMm) > 0 ? Number(sangriaMm) : 0;
+    return { x: -s, y: -s, w: moldeTam.w + 2 * s, h: moldeTam.h + 2 * s };
   }
 
   // ---------------- Encaixe na folha (MaxRects) ----------------
@@ -632,7 +626,7 @@ const EPS = (function () {
           avisar(`O molde de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" ${cam.tamanho} está sem contorno — a arte dessa peça saiu retangular (aba Tamanhos → Ler contornos).`);
         }
         if (arte && arte.larguraPx) {
-          ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam) });
+          ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam, op.sangriaMm == null ? 2 : op.sangriaMm) });
         }
 
         (lay.elementos || []).forEach((el) => {
@@ -641,7 +635,8 @@ const EPS = (function () {
             const d = detalheDaPeca(prod, pecaId);
             const img = d && rec.imagens && rec.imagens[d.chave];
             if (!img) { avisar("O time não tem o detalhe da manga (PNG) — a caixa do detalhe ficou vazia."); return; }
-            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...encaixarProporcional(caixa, img.largura, img.altura) });
+            // `livre`: a imagem estica na caixa (largura e altura independentes).
+            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...(el.livre ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
             return;
           }
           if (el.tipo === "brasao" || el.tipo === "logo") {
@@ -653,7 +648,7 @@ const EPS = (function () {
               return;
             }
             const t = tamanhoMmDoBbox(e.bbox);
-            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...encaixarProporcional(caixa, t.w, t.h) });
+            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...(el.livre ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
             return;
           }
           if (!rec.fonte) { avisar("O time não tem fonte — nome e número ficaram de fora."); return; }

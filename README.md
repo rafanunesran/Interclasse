@@ -459,9 +459,10 @@ retangular (a geração avisa).
 
 ### 2. Arquivos do time (time aberto → **Arquivos de produção**)
 
-- A **arte de cada peça em PNG 600 dpi**, feita para o molde do tamanho base. O tamanho real
-  vem do dpi do arquivo. Nos outros tamanhos a arte cresce/diminui na proporção do molde,
-  centralizada. PNG 8 bits (RGB/RGBA, com transparência), sem entrelaçamento.
+- A **arte de cada peça em PNG 600 dpi**. Em cada tamanho ela é **esticada para cobrir o molde
+  inteiro** (largura e altura, cada uma no seu, mais a sangria), então não sobra nenhuma fresta
+  branca; quem dá o formato é o recorte no contorno do molde. PNG 8 bits (RGB/RGBA, com
+  transparência), sem entrelaçamento.
 - **Mangas**: uma arte só serve para **as duas** (menos arquivo no Drive). Se a manga direita
   for diferente, marque **"Manga direita com arte diferente"** e envie a dela.
 - **Detalhe da manga** (PNG): um elemento posicionado na manga, como o brasão (bandeira,
@@ -475,7 +476,8 @@ O selo mostra **pronto ✓** ou o que falta. Arquivos grandes vão ao Drive em p
 ### 3. Layout (aba **Artes**)
 
 Em cima do molde de cada peça, marque o **brasão**, o **logo da empresa**, o **detalhe da manga**
-(**+ Detalhe**) e as caixas do **nome** e do **número**
+(**+ Detalhe**) e as caixas do **nome** e do **número**. Brasão, logo e detalhe mantêm a proporção;
+desmarque **"Manter proporção"** no painel para esticá-los na largura e na altura quando precisar
 (arrastar, alça do canto ou X/Y/largura/altura em mm). A caixa é o **limite**: nome ou número
 comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No texto: cor **CMYK**,
 **contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do

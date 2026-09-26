@@ -58,6 +58,12 @@ function limparParaFirestore(obj) {
 
 const arred1 = (v) => Math.round(v * 10) / 10;
 
+// Sangria usada nas prévias (a mesma da última geração; padrão 2 mm).
+function sangriaDaPrevia() {
+  const s = layoutConfig && layoutConfig.folha && layoutConfig.folha.sangriaMm;
+  return s == null ? 2 : Number(s) || 0;
+}
+
 // Brasão (do time) e logo (da empresa) são caixas de imagem: mantêm a
 // proporção e não têm estilo de texto.
 function ehCaixaImagem(el) {
@@ -542,7 +548,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   const idClip = "pc" + Math.random().toString(36).slice(2, 8);
   const recorte = !semRecorte && molde && molde.contorno ? molde.contorno : "";
   if (arte && arte.previaUrl) {
-    const c = EPS.caixaArte(arte, base, dim);
+    const c = EPS.caixaArte(arte, base, dim, sangriaDaPrevia());
     partes.push(`<image href="${escAttr(urlPreviaGrande(arte.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
       `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="none" />`);
   }
@@ -555,7 +561,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
       const url = imagemDaCaixa(el, prod, pecaId);
       if (url) {
         partes.push(`<image href="${escAttr(urlPreviaGrande(url))}" x="${n(c.x)}" y="${n(c.y)}" ` +
-          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="xMidYMid meet" />`);
+          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${el.livre ? "none" : "xMidYMid meet"}" />`);
       } else if (comMolde) {
         partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
       }
@@ -1010,7 +1016,7 @@ function renderizarPalcoLayout() {
   const adEd = EPS.arteDaPeca(prod, layoutPeca);
   const arte = adEd && adEd.arte;
   if (arte && arte.previaUrl) {
-    const c = EPS.caixaArte(arte, base, dim);
+    const c = EPS.caixaArte(arte, base, dim, sangriaDaPrevia());
     // Recortada no formato do molde, como vai sair na folha.
     const idClip = "lc" + Math.random().toString(36).slice(2, 8);
     const clip = m.molde.contorno ? `<clipPath id="${idClip}"><path d="${escAttr(m.molde.contorno)}" /></clipPath>` : "";
@@ -1042,7 +1048,7 @@ function renderizarPalcoLayout() {
     if (ehCaixaImagem(el)) {
       const url = imagemDaCaixa(el, prod, layoutPeca);
       div.innerHTML = url
-        ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:contain" />`
+        ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${el.livre ? "fill" : "contain"}" />`
         : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
     } else if (fonte) {
       const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el);
@@ -1085,7 +1091,8 @@ function ligarArrasteLayout(div, alca, el) {
       const dx = (e.clientX - x0) / m.s, dy = (e.clientY - y0) / m.s;
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
-        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) ? w / prop : Math.max(2, ini.h + dy) };
+        // Imagem com proporção travada acompanha a largura; livre, estica.
+        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !el.livre ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
       }
@@ -1204,6 +1211,10 @@ function renderizarPainelLayout() {
       ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
     </div>`;
 
+  if (!layoutModo && ehCaixaImagem(el)) {
+    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${el.livre ? "" : "checked"} /> Manter proporção</label>
+      <p class="pix-ajuda">Desmarque para esticar ${escapeHtmlAdmin(rotuloElementoLayout(el).toLowerCase())} na largura e na altura, cada uma no seu (a alça do canto e os campos passam a mexer só na medida escolhida).</p>`;
+  }
   if (!layoutModo && !ehCaixaImagem(el)) {
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
       ["C", "M", "Y", "K"].map((l, i) =>
@@ -1233,10 +1244,19 @@ function renderizarPainelLayout() {
   }
   box.innerHTML = html;
 
+  const chkProp = box.querySelector("[data-proporcao]");
+  if (chkProp) {
+    chkProp.onchange = () => {
+      el.livre = !chkProp.checked;
+      salvarLayout();
+      renderizarPalcoLayout();
+      renderizarPainelLayout();
+    };
+  }
   box.querySelectorAll("[data-cx]").forEach((inp) => {
     inp.onchange = () => {
       const nova = { ...c, [inp.dataset.cx]: Number(inp.value) || 0 };
-      if (ehCaixaImagem(el) && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
+      if (ehCaixaImagem(el) && !el.livre && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
         const prop = c.w / c.h;
         if (inp.dataset.cx === "w") nova.h = nova.w / prop; else nova.w = nova.h * prop;
       }
