@@ -59,8 +59,40 @@ function aoCarregarScripts(f) {
   else setTimeout(f, 0);
 }
 
+// Sai por inatividade: 24h sem uso em nenhuma aba (ver js/auth-admin.js).
+async function sairPorInatividade() {
+  elPainel.classList.add("oculto");
+  await auth.signOut();
+  window.location.replace(PAGINA_LOGIN);
+}
+
+let ultimaGravacaoAtividade = 0;
+function aoUsarPainel() {
+  // No máximo uma gravação por minuto (o mousemove dispara sem parar).
+  const agora = Date.now();
+  if (agora - ultimaGravacaoAtividade < 60 * 1000) return;
+  if (sessaoAdminExpirada()) {
+    sairPorInatividade();
+    return;
+  }
+  ultimaGravacaoAtividade = agora;
+  registrarAtividadeAdmin();
+}
+["click", "keydown", "scroll", "pointermove", "touchstart"].forEach((ev) =>
+  window.addEventListener(ev, aoUsarPainel, { passive: true, capture: true }));
+// Confere de tempos em tempos (e ao voltar para a aba) se o prazo acabou.
+setInterval(() => { if (auth.currentUser && sessaoAdminExpirada()) sairPorInatividade(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") aoUsarPainel();
+});
+
 auth.onAuthStateChanged((user) => {
+  if (ehContaAdmin(user) && sessaoAdminExpirada()) {
+    sairPorInatividade();
+    return;
+  }
   if (ehContaAdmin(user)) {
+    registrarAtividadeAdmin();
     if (elEmailLogado) elEmailLogado.textContent = user.email;
     elPainel.classList.remove("oculto");
     if (!painelIniciado) {
