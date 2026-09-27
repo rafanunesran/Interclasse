@@ -539,9 +539,9 @@ const EPS = (function () {
   // ---------------- Marcador da costureira ----------------
   // Cada peça leva, dentro da área de impressão, "Time-Tamanho-Peça"
   // (ex.: 7B-P-Frente), com 4 mm de altura (a altura das maiúsculas) e a
-  // 1 mm da base da peça, centralizado. Na gola, que é uma faixa, vai na
-  // lateral esquerda, na vertical (lendo de baixo para cima), também a 1 mm
-  // da borda e com 4 mm.
+  // 1 mm da borda de baixo do MOLDE (o contorno; sem contorno, a caixa),
+  // centralizado. Na gola, que é uma faixa, vai na lateral esquerda, na
+  // vertical (lendo de baixo para cima), também a 1 mm da borda e com 4 mm.
   const MARCADOR_ALTURA_MM = 4;
   // Faca (linha de corte) desenhada a partir do contorno: 3 mm de espessura,
   // toda para FORA do molde — não cobre a arte nem o marcador.
@@ -567,19 +567,113 @@ const EPS = (function () {
     return { x1, y1, x2, y2 };
   }
 
-  // Comandos (mm, relativos ao canto de cima da peça) do marcador.
-  function marcadorDaPeca(fonte, texto, pecaW, pecaH, vertical) {
+  // Contorno achatado em polígonos (as curvas viram segmentos).
+  function poligonosDoContorno(cmds) {
+    const polis = [];
+    let atual = null, cx = 0, cy = 0;
+    (cmds || []).forEach((c) => {
+      if (c.type === "M") { atual = [[c.x, c.y]]; polis.push(atual); cx = c.x; cy = c.y; }
+      else if (c.type === "L") { if (atual) atual.push([c.x, c.y]); cx = c.x; cy = c.y; }
+      else if (c.type === "C") {
+        if (!atual) return;
+        for (let k = 1; k <= 12; k++) {
+          const t = k / 12, u = 1 - t;
+          atual.push([
+            u * u * u * cx + 3 * u * u * t * c.x1 + 3 * u * t * t * c.x2 + t * t * t * c.x,
+            u * u * u * cy + 3 * u * u * t * c.y1 + 3 * u * t * t * c.y2 + t * t * t * c.y
+          ]);
+        }
+        cx = c.x; cy = c.y;
+      }
+    });
+    return polis.filter((p) => p.length > 2);
+  }
+
+  // Onde uma reta (x = v, ou y = v com `horizontal`) cruza o contorno.
+  function cortes(polis, v, horizontal) {
+    const out = [];
+    polis.forEach((p) => {
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length];
+        const [a0, a1] = horizontal ? [a[1], a[0]] : [a[0], a[1]];
+        const [b0, b1] = horizontal ? [b[1], b[0]] : [b[0], b[1]];
+        if ((a0 <= v && b0 > v) || (b0 <= v && a0 > v)) out.push(a1 + ((v - a0) * (b1 - a1)) / (b0 - a0));
+      }
+    });
+    return out.sort((x, y) => x - y);
+  }
+
+  // Comandos (mm, relativos ao canto de cima da peça) do marcador. Com o
+  // `contorno` do molde (comandos), o marcador fica a 1 mm da borda REAL da
+  // peça — barra curva, manga que afina... —, sempre dentro da área de
+  // impressão (a faca de 3 mm fica toda por fora do contorno).
+  function marcadorDaPeca(fonte, texto, pecaW, pecaH, vertical, contorno) {
     const A = MARCADOR_ALTURA_MM, M = MARCADOR_MARGEM_MM;
-    const comprimento = (vertical ? pecaH : pecaW) - 2 * M;
-    if (!texto || comprimento <= 0) return [];
+    const polis = poligonosDoContorno(contorno);
+    if (!texto) return [];
+    if (vertical) return marcadorVertical(fonte, texto, pecaW, pecaH, polis);
+
+    let comprimento = pecaW - 2 * M, centro = pecaW / 2;
+    let res = [];
+    for (let tentativa = 0; tentativa < 8 && comprimento > 2; tentativa++) {
+      const l = layoutTexto(fonte, texto, { w: comprimento, h: A }, { maiusculas: false, alinhamento: "centro" });
+      if (!l.comandos.length) return [];
+      const cx = caixaDosComandos(l.comandos);
+      const larg = cx.x2 - cx.x1, alt = cx.y2 - cx.y1;
+      const x0 = centro - larg / 2, x1 = x0 + larg;
+      // Sem contorno: a 1 mm da base da caixa (a tinta, com as pernas do g, p...).
+      let base = pecaH - M;
+      if (polis.length) {
+        // A borda de baixo do contorno em cada x do texto; a mais alta manda.
+        let borda = Infinity;
+        for (let k = 0; k <= 20; k++) {
+          const ys = cortes(polis, x0 + ((x1 - x0) * k) / 20, false);
+          if (ys.length) borda = Math.min(borda, ys[ys.length - 1]);
+        }
+        if (borda < Infinity) base = borda - M;
+      }
+      res = deslocarComandos(l.comandos, x0 - cx.x1, base - cx.y2);
+      if (!polis.length) return res;
+      // Cabe na largura do contorno nessa altura (com 1 mm de cada lado)?
+      let esq = -Infinity, dir = Infinity;
+      for (let k = 0; k <= 6; k++) {
+        const y = base - (alt * k) / 6;
+        const xs = cortes(polis, y, true);
+        let l0 = null, r0 = null;
+        for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i] <= centro && xs[i + 1] >= centro) { l0 = xs[i]; r0 = xs[i + 1]; }
+        if (l0 == null) { l0 = xs[0]; r0 = xs[xs.length - 1]; }
+        if (l0 != null) { esq = Math.max(esq, l0); dir = Math.min(dir, r0); }
+      }
+      if (!(dir > esq) || (esq + M <= x0 + 0.05 && dir - M >= x1 - 0.05)) return res;
+      // Não cabe: centraliza no que há e encolhe.
+      centro = (esq + dir) / 2;
+      comprimento = Math.min(comprimento, dir - esq - 2 * M) - 0.2;
+    }
+    return res;
+  }
+
+  // Gola: na lateral esquerda, na vertical (lendo de baixo para cima), a
+  // 1 mm da borda esquerda do contorno.
+  function marcadorVertical(fonte, texto, pecaW, pecaH, polis) {
+    const A = MARCADOR_ALTURA_MM, M = MARCADOR_MARGEM_MM;
+    const comprimento = pecaH - 2 * M;
+    if (comprimento <= 0) return [];
     const l = layoutTexto(fonte, texto, { w: comprimento, h: A }, { maiusculas: false, alinhamento: "centro" });
     if (!l.comandos.length) return [];
-    // A tinta (incluindo as pernas do g, p, q...) fica a exatamente 1 mm da borda.
     const cx = caixaDosComandos(l.comandos);
-    if (!vertical) return deslocarComandos(l.comandos, M, pecaH - M - cx.y2);
     // Gira 90° (de baixo para cima): o "chão" das letras vira o lado direito.
     const gira = (x, y) => [y, pecaH - M - x];
-    const deslocX = M - cx.y1; // a parte de cima das letras encosta a 1 mm da esquerda
+    let deslocX = M - cx.y1; // a parte de cima das letras a 1 mm da esquerda
+    if (polis.length) {
+      // Faixa de y ocupada pelo texto girado e a borda esquerda do contorno nela.
+      const yA = pecaH - M - cx.x2, yB = pecaH - M - cx.x1;
+      let borda = -Infinity;
+      for (let k = 0; k <= 20; k++) {
+        const xs = cortes(polis, yA + ((yB - yA) * k) / 20, true);
+        if (xs.length) borda = Math.max(borda, xs[0]);
+      }
+      if (borda > -Infinity) deslocX = borda + M - cx.y1;
+    }
     return l.comandos.map((c) => {
       const n = { type: c.type };
       ["", "1", "2"].forEach((s) => {
@@ -697,7 +791,8 @@ const EPS = (function () {
         // "Time-Tamanho-Peça" (ex.: 7B-P-Frente), ver marcadorDaPeca().
         if (op.etiqueta !== false && rec.fonteEtiqueta) {
           const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId);
-          const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola");
+          const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola",
+            molde.contorno ? comandosDoContorno(molde.contorno) : null);
           if (cmds.length) {
             ops.push({ tipo: "caminho", recortar, comandos: cmds, cmyk: [0, 0, 0, 100], contorno: { cmyk: [0, 0, 0, 0], mm: 0.25 } });
           }

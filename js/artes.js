@@ -724,7 +724,8 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
 
   // Marcador da costureira (só na prévia "Arte", como vai sair na folha).
   if (comMolde && fonte && tam && molde) {
-    const cmds = EPS.marcadorDaPeca(fonte, EPS.textoDoMarcador(time.nome, tam, nomePecaProducao(pecaId)), dim.w, dim.h, pecaId === "gola");
+    const cmds = EPS.marcadorDaPeca(fonte, EPS.textoDoMarcador(time.nome, tam, nomePecaProducao(pecaId)), dim.w, dim.h, pecaId === "gola",
+      molde.contorno ? EPS.comandosDoContorno(molde.contorno) : null);
     if (cmds.length) {
       partes.push(`<path d="${caminhoSvg(cmds, 1)}" fill="#000" stroke="#fff" stroke-width="0.5" stroke-linejoin="round" paint-order="stroke" />`);
     }

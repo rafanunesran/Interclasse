@@ -579,7 +579,8 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
 
 Cada peça leva um **marcador para a costureira** dentro da área de impressão:
 **`Time-Tamanho-Peça`** (ex.: `7B-P-Frente`), com **4 mm** de altura, centralizado a **1 mm da
-base** da peça. Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo
+borda de baixo do molde** (seguindo o contorno — barra curva, manga que afina —, sempre dentro da
+área de impressão e fora da faca de 3 mm). Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo
 para cima), também a 1 mm da borda e com 4 mm. Dá para desligar no diálogo.
 
 Sai **um EPS por time** (camisetas avulsas vão para o time do mesmo modelo; os goleiros saem num
