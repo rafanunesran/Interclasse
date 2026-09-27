@@ -68,6 +68,7 @@ async function carregarInicio() {
     }
     renderizarFiltros();
     renderizarLoja();
+    mostrarCarrinho(); // de novo, agora sabendo quais times escondem o preço
   } catch (erro) {
     console.error(erro);
     elCarregando.classList.remove("oculto");
@@ -205,7 +206,7 @@ function criarCardProduto(time) {
     : `<span class="produto-sem-imagem" style="background:${corDoTime(time.nome)}" aria-hidden="true">${icone("shirt")}</span>`;
 
   const cliente = nomeClienteLoja(time);
-  const preco = precoDoCard(time.id);
+  const preco = precoOculto(time) ? "" : precoDoCard(time.id);
 
   item.innerHTML = `
     <span class="produto-img">${imagem}<span class="produto-status">${status}</span></span>
@@ -230,7 +231,11 @@ function mostrarCarrinho() {
   document.body.classList.toggle("com-carrinho", itens.length > 0);
   if (itens.length === 0) return;
 
-  const { total, semPreco } = carrinhoTotal(itens);
+  const { total: totalReal, semPreco: semPrecoReal } = carrinhoTotal(itens);
+  // Camiseta de um time com preço oculto no carrinho: a barra não mostra valores.
+  const escondeValor = itens.some((i) => precoOculto(timesLoja.find((t) => t.id === i.timeId)));
+  const total = escondeValor ? 0 : totalReal;
+  const semPreco = escondeValor ? 0 : semPrecoReal;
   const times = carrinhoTimes(itens);
   const valor = total > 0 ? " · " + formatarReais(total) : "";
   const deQuemE = times.length > 1 ? ` · ${times.length} times` : "";

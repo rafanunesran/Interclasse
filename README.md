@@ -148,6 +148,12 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
   `index.html?cliente=...`. Nada é apagado: o painel continua mostrando tudo (com o selo
   *Oculto na loja*), e o link direto do time (`time.html?id=...`) continua abrindo para
   quem já o tem. **Mostrar na loja** desfaz.
+- **Ocultar o preço:** time aberto → **Configuração** → *Visibilidade para o cliente* →
+  **Ocultar o preço**. O pedido continua na loja e a página dele abre normalmente (lista,
+  status, tamanhos), mas **sem o valor da camiseta**: some do card da loja, do topo da página
+  do pedido, da aba de tamanhos (que passa a se chamar só *Tamanhos*), dos botões *Pagar* e
+  da barra do carrinho. O pagamento continua funcionando — o valor aparece só na tela do PIX,
+  na hora de pagar. **Mostrar o preço** desfaz.
 - **No Financeiro**, com mais de um cliente na conta, a *Visão geral* ganha o quadro
   **Por cliente** (previsto, recebido, a receber, % e lucro) e a tabela por time ganha a
   coluna do cliente. Os CSVs do Financeiro e o de conferência também trazem o cliente.
