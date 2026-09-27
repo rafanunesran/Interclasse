@@ -129,6 +129,7 @@ function escutarLayout() {
       if (salvarLayoutTimer) return;
       const d = doc.exists ? doc.data() : {};
       layoutConfig = { pecas: d.pecas || {}, folha: d.folha || {} };
+      ultimoLayoutSalvo = JSON.stringify(layoutConfig);
       renderizarEditorLayout();
       if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
     },
@@ -142,7 +143,58 @@ function elementosDaPeca(pecaId) {
   return p.elementos;
 }
 
+// ---------------- Desfazer / refazer ----------------
+// Cada mudança do editor guarda o "antes" e o "depois": do layout geral
+// (config/layout) ou da produção do time (ajustes próprios).
+const historicoEditor = { desfazer: [], refazer: [] };
+let ultimoLayoutSalvo = "";   // layout geral como estava na última gravação
+let aplicandoHistorico = false;
+
+function registrarHistorico(entrada) {
+  if (aplicandoHistorico || entrada.antes === entrada.depois) return;
+  historicoEditor.desfazer.push(entrada);
+  if (historicoEditor.desfazer.length > 100) historicoEditor.desfazer.shift();
+  historicoEditor.refazer = [];
+  atualizarBotoesHistorico();
+}
+
+function atualizarBotoesHistorico() {
+  const b1 = document.querySelector('[data-historico="desfazer"]');
+  const b2 = document.querySelector('[data-historico="refazer"]');
+  if (b1) b1.disabled = !historicoEditor.desfazer.length;
+  if (b2) b2.disabled = !historicoEditor.refazer.length;
+}
+
+async function aplicarHistorico(de, para, lado) {
+  const e = historicoEditor[de].pop();
+  if (!e) return;
+  historicoEditor[para].push(e);
+  const valor = e[lado];
+  aplicandoHistorico = true;
+  try {
+    if (e.tipo === "geral") {
+      layoutConfig = JSON.parse(valor);
+      ultimoLayoutSalvo = valor;
+      salvarLayout(true);
+    } else if (estadoTimes[e.timeId]) {
+      await gravarProducaoTime(e.timeId, JSON.parse(valor));
+    }
+  } finally {
+    aplicandoHistorico = false;
+  }
+  estadoSalvarLayout(de === "desfazer" ? "↶ Desfeito" : "↷ Refeito");
+  renderizarPalcoLayout();
+  renderizarPainelLayout();
+  atualizarBotoesHistorico();
+}
+
+const desfazerEditor = () => aplicarHistorico("desfazer", "refazer", "antes");
+const refazerEditor = () => aplicarHistorico("refazer", "desfazer", "depois");
+
 function salvarLayout(imediato) {
+  const agora = JSON.stringify(layoutConfig);
+  if (ultimoLayoutSalvo) registrarHistorico({ tipo: "geral", antes: ultimoLayoutSalvo, depois: agora });
+  ultimoLayoutSalvo = agora;
   estadoSalvarLayout("Salvando…");
   clearTimeout(salvarLayoutTimer);
   const gravar = async () => {
@@ -330,7 +382,7 @@ function criarSeletorVariante(timeId) {
   wrap.innerHTML = `
     <div class="segmentado" role="tablist" aria-label="Variante da camiseta">
       <button type="button" data-variante="" class="${gol ? "" : "ativo"}" aria-selected="${!gol}">Camiseta comum</button>
-      <button type="button" data-variante="goleiro" class="${gol ? "ativo" : ""}" aria-selected="${gol}">🧤 Goleiro${temVarianteGoleiro(time) ? " ●" : ""}</button>
+      <button type="button" data-variante="goleiro" class="${gol ? "ativo" : ""}" aria-selected="${gol}">${icone("hand")} Goleiro${temVarianteGoleiro(time) ? " ●" : ""}</button>
     </div>
     <span class="pix-ajuda">${gol
       ? "Arquivos e ajustes só da camiseta do goleiro. O que não for enviado ou mudado aqui usa o da camiseta comum."
@@ -343,6 +395,20 @@ function criarSeletorVariante(timeId) {
     };
   });
   return wrap;
+}
+
+// O checklist dos arquivos de produção: cada item diz se o layout usa aquilo
+// (necessário) e se o time já enviou (tem).
+function requisitosProducao(time) {
+  const p = producaoDoTime(time);
+  const usa = (teste) => Object.values(layoutConfig.pecas || {}).some((l) => (l.elementos || []).some(teste));
+  const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id]).length;
+  return [
+    { id: "artes", rotulo: "Artes das peças", necessario: true, tem: nArtes > 0, detalhe: `${nArtes} enviada(s)` },
+    { id: "fonte", rotulo: "Fonte", necessario: usa((e) => !ehCaixaImagem(e)), tem: !!p.fonte },
+    { id: "brasao", rotulo: "Brasão", necessario: usa((e) => e.tipo === "brasao"), tem: !!p.brasao },
+    { id: "detalhe", rotulo: "Detalhe da manga", necessario: usa((e) => e.tipo === "detalhe"), tem: !!p.detalheManga }
+  ];
 }
 
 // O que falta para o time poder gerar a folha (na variante do goleiro, passe
@@ -381,56 +447,71 @@ function criarBlocoProducaoTime(timeId, time) {
   bloco.open = !!blocoProducaoAberto[timeId];
   bloco.addEventListener("toggle", () => (blocoProducaoAberto[timeId] = bloco.open));
 
-  const nArtes = PECAS_PRODUCAO.filter((x) => EPS.arteDaPeca(prod, x.id)).length;
-  const falta = pendenciasProducao(gol ? timeNaVariante(time, true) : time);
+  // Checklist: o que o layout usa e o que já foi enviado.
+  const reqs = requisitosProducao(gol ? timeNaVariante(time, true) : time);
+  const falta = reqs.filter((r) => r.necessario && !r.tem);
   const nProprios = gol ? Object.keys(propria.pecas || {}).length +
     ["brasao", "fonte", "detalheManga", "detalheMangaDir"].filter((k) => propria[k]).length : 0;
-  bloco.innerHTML = `<summary>${gol ? "🧤 Arquivos do goleiro" : "🎨 Arquivos de produção"} <span class="badge ${falta.length ? "pendente" : "pago"}">` +
-    `${falta.length ? "falta " + escapeHtmlAdmin(falta.join(", ")) : "pronto ✓"}</span>` +
-    ` <span class="pix-ajuda">${gol
-      ? `${nProprios} arquivo(s) próprio(s) — o resto usa o da camiseta comum`
-      : `${nArtes}/${PECAS_PRODUCAO.length} artes${prod.brasao ? " · brasão" : ""}${prod.fonte ? " · fonte" : ""}`}</span></summary>`;
-
-  const grade = document.createElement("div");
-  grade.className = "producao-grade";
+  bloco.innerHTML = `<summary class="producao-resumo">
+      <span class="producao-estado ${falta.length ? "falta" : "pronto"}">${falta.length
+        ? `Falta ${escapeHtmlAdmin(falta.map((r) => r.rotulo.toLowerCase()).join(", "))}`
+        : "✓ Pronto para gerar a folha"}</span>
+      <span class="producao-checklist">${reqs.filter((r) => r.necessario || r.tem).map((r) =>
+        `<span class="check-item ${r.tem ? "ok" : "falta"}">${r.tem ? "✓" : "○"} ${escapeHtmlAdmin(r.rotulo)}${r.detalhe && r.tem ? ` <small>${escapeHtmlAdmin(r.detalhe)}</small>` : ""}</span>`).join("")}</span>
+      ${gol ? `<span class="pix-ajuda">${icone("hand")} ${nProprios} arquivo(s) próprio(s) do goleiro — o resto usa o da camiseta comum</span>` : ""}
+    </summary>`;
 
   const infoPng = (a) => a ? {
     previa: a.previaUrl,
-    info: `${a.larguraPx} × ${a.alturaPx} px · ${a.dpi || "?"} dpi · ` +
-      `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm`
+    nome: a.nomeArquivo || "",
+    info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi`
   } : null;
-  const infoBrasao = (b) => b ? { previa: b.previaUrl, info: b.nomeArquivo || "EPS" } : null;
-  const infoFonte = (f) => f ? { info: f.nome } : null;
+  const infoBrasao = (b) => b ? { previa: b.previaUrl, nome: b.nomeArquivo || "", info: "EPS vetorial" } : null;
+  const infoFonte = (f) => f ? { nome: f.nome, info: "Fonte do nome e do número", fonte: true } : null;
+
+  const grupo = (titulo, ajuda) => {
+    const sec = document.createElement("section");
+    sec.className = "producao-grupo";
+    sec.innerHTML = `<h4 class="producao-grupo-titulo">${escapeHtmlAdmin(titulo)}</h4>${ajuda ? `<p class="pix-ajuda">${ajuda}</p>` : ""}`;
+    const grade = document.createElement("div");
+    grade.className = "producao-grade";
+    sec.appendChild(grade);
+    bloco.appendChild(sec);
+    return grade;
+  };
   // Na variante do goleiro, um espaço sem arquivo próprio mostra (apagado) o
   // da camiseta comum, que é o que vai ser usado.
-  const slot = (id, titulo, proprio, daComum, formato) => {
+  const slot = (grade, id, titulo, proprio, daComum, formato) => {
     const herdado = gol && !proprio && daComum ? daComum : null;
     grade.appendChild(criarSlotProducao(timeId, id, titulo, proprio, formato, herdado));
   };
+
+  const gradePecas = grupo("Peças da camiseta", "PNG 600 dpi, feito para o molde do tamanho base. Nos outros tamanhos a arte acompanha o molde.");
   // Uma arte serve para as duas mangas; a da direita só aparece quando o
   // time ativa "manga direita com arte diferente".
   PECAS_PRODUCAO.forEach((peca) => {
     if (peca.id === "mangaDir" && !comum.mangaDirDiferente) return;
     const titulo = peca.id === "mangaEsq" && !comum.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
-    slot(`arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
+    slot(gradePecas, `arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
       infoPng(comum.pecas && comum.pecas[peca.id]), "PNG 600 dpi");
   });
-  slot("detalhe", comum.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
+
+  const gradeExtras = grupo("Brasão, detalhe e fonte", "");
+  slot(gradeExtras, "brasao", "Brasão", infoBrasao(propria.brasao), infoBrasao(comum.brasao), "EPS");
+  slot(gradeExtras, "detalhe", comum.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
     infoPng(propria.detalheManga), infoPng(comum.detalheManga), "PNG 600 dpi");
   if (comum.detalheDirDiferente) {
-    slot("detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "PNG 600 dpi");
+    slot(gradeExtras, "detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "PNG 600 dpi");
   }
-  slot("brasao", "Brasão", infoBrasao(propria.brasao), infoBrasao(comum.brasao), "EPS");
-  slot("fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
-  bloco.appendChild(grade);
+  slot(gradeExtras, "fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
 
   // Mangas e detalhe diferentes em cada lado (padrão: um arquivo para as duas).
   // Valem para as duas variantes.
   const opcoes = document.createElement("div");
   opcoes.className = "producao-opcoes";
   opcoes.innerHTML = `
-    <label class="checkbox-inline"><input type="checkbox" data-op="mangaDirDiferente" ${comum.mangaDirDiferente ? "checked" : ""} /> Manga direita com arte diferente</label>
-    <label class="checkbox-inline"><input type="checkbox" data-op="detalheDirDiferente" ${comum.detalheDirDiferente ? "checked" : ""} /> Detalhe diferente na manga direita</label>
+    <label class="interruptor"><input type="checkbox" data-op="mangaDirDiferente" ${comum.mangaDirDiferente ? "checked" : ""} /> <span>Manga direita com arte diferente</span></label>
+    <label class="interruptor"><input type="checkbox" data-op="detalheDirDiferente" ${comum.detalheDirDiferente ? "checked" : ""} /> <span>Detalhe diferente na manga direita</span></label>
     ${gol ? '<span class="pix-ajuda">(vale para a camiseta comum e a do goleiro)</span>' : ""}`;
   opcoes.querySelectorAll("[data-op]").forEach((inp) => {
     inp.onchange = async () => {
@@ -445,47 +526,65 @@ function criarBlocoProducaoTime(timeId, time) {
   rodape.className = "producao-rodape";
   const btnLayout = document.createElement("button");
   btnLayout.type = "button";
-  btnLayout.className = "secundario";
-  btnLayout.textContent = gol ? "Editar arte do goleiro" : "Editar arte deste time";
+  btnLayout.className = "primario";
+  btnLayout.innerHTML = icone("pencil") + (gol ? " Editar arte do goleiro" : " Editar arte deste time");
   btnLayout.onclick = () => abrirLayoutDoTime(timeId);
   rodape.appendChild(btnLayout);
   const nAjustes = Object.values(propria.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-  if (nAjustes) rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes} ajuste(s) próprio(s)${gol ? " do goleiro" : ""} — aba "Editar arte"</span>`);
+  rodape.insertAdjacentHTML("beforeend", `<span class="pix-ajuda">${nAjustes
+    ? `${nAjustes} ajuste(s) próprio(s)${gol ? " do goleiro" : ""} de posição, letra ou cor`
+    : "Posição do nome, número e brasão: segue o layout geral (aba Artes)"}</span>`);
   bloco.appendChild(rodape);
   return bloco;
+}
+
+// Amostra da fonte do time ("AaBb 0123"), desenhada com a própria fonte.
+function amostraDaFonteHtml(time) {
+  const fonte = fonteProntaDoTime(time);
+  if (!fonte) return '<span class="producao-fonte-carregando">Aa 123</span>';
+  const l = EPS.layoutTexto(fonte, "AaBb 0123", { w: 120, h: 22 }, { maiusculas: false });
+  return `<svg viewBox="0 0 120 22" class="producao-fonte-amostra" role="img" aria-label="Amostra da fonte"><path d="${caminhoSvg(l.comandos, 1)}" fill="#111827"/></svg>`;
 }
 
 // `herdado`: na variante do goleiro, o arquivo da comum que vale no lugar.
 function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
   const gol = editandoGoleiro(timeId);
   const div = document.createElement("div");
-  div.className = "producao-slot" + (atual ? " ok" : "") + (herdado ? " herdado" : "");
+  div.className = "producao-slot" + (atual ? " ok" : " vazio") + (herdado ? " herdado" : "");
   const andamento = enviandoProducao[chaveEnvio(timeId, slot, gol)];
+  if (andamento) div.classList.add("enviando");
   const mostrar = atual || herdado;
-  div.innerHTML = `
-    <div class="producao-slot-titulo">${escapeHtmlAdmin(titulo)}</div>
-    <div class="producao-slot-previa">${mostrar && mostrar.previa
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  const previa = mostrar && mostrar.fonte
+    ? amostraDaFonteHtml(timeNaVariante(time, gol))
+    : mostrar && mostrar.previa
       ? `<img src="${escAttr(mostrar.previa)}" alt="" loading="lazy" />`
-      : `<span>${mostrar ? "✓" : escapeHtmlAdmin(formato)}</span>`}</div>
-    <div class="producao-slot-info">${andamento ? escapeHtmlAdmin(andamento)
-      : atual ? escapeHtmlAdmin(atual.info || "")
-        : herdado ? "Usa o da camiseta comum" : "—"}</div>`;
+      : mostrar ? '<span class="producao-slot-ok">✓</span>'
+        : `<span class="producao-slot-soltar"><span class="producao-slot-seta">${icone("file-up")}</span>Clique ou arraste<br><small>${escapeHtmlAdmin(formato)}</small></span>`;
+  div.innerHTML = `
+    <div class="producao-slot-titulo"><span>${escapeHtmlAdmin(titulo)}</span>${atual ? '<span class="producao-slot-selo">✓</span>' : herdado ? '<span class="producao-slot-selo herdado" title="Usa o da camiseta comum">comum</span>' : ""}</div>
+    <div class="producao-slot-previa">${previa}</div>
+    <div class="producao-slot-info">${andamento
+      ? `<span class="producao-slot-andamento">${escapeHtmlAdmin(andamento)}</span>`
+      : atual ? `${atual.nome ? `<span class="producao-slot-nome" title="${escAttr(atual.nome)}">${escapeHtmlAdmin(atual.nome)}</span>` : ""}<span>${escapeHtmlAdmin(atual.info || "")}</span>`
+        : herdado ? "Usa o da camiseta comum" : "Nenhum arquivo"}</div>`;
   const acoes = document.createElement("div");
   acoes.className = "producao-slot-acoes";
   const env = document.createElement("button");
   env.type = "button";
-  env.className = "secundario";
+  env.className = atual ? "secundario" : "primario";
   env.textContent = atual ? "Trocar" : "Enviar";
   env.disabled = !!andamento;
-  env.onclick = () => enviarArquivoProducao(timeId, slot, gol);
+  env.onclick = (ev) => { ev.stopPropagation(); enviarArquivoProducao(timeId, slot, gol); };
   acoes.appendChild(env);
   if (atual) {
     const rem = document.createElement("button");
     rem.type = "button";
-    rem.className = "perigo";
-    rem.textContent = "×";
+    rem.className = "secundario botao-remover";
+    rem.textContent = "Remover";
     rem.title = gol ? "Remover (volta a usar o da camiseta comum)" : "Remover";
-    rem.onclick = async () => {
+    rem.onclick = async (ev) => {
+      ev.stopPropagation();
       if (!confirm(gol
         ? `Remover ${titulo.toLowerCase()} do goleiro? Ele volta a usar o da camiseta comum.`
         : `Remover ${titulo.toLowerCase()} deste time?`)) return;
@@ -502,6 +601,26 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
     acoes.appendChild(rem);
   }
   div.appendChild(acoes);
+
+  // Espaço vazio: clicar em qualquer lugar abre o seletor de arquivo.
+  if (!atual && !andamento) {
+    div.tabIndex = 0;
+    div.setAttribute("role", "button");
+    div.setAttribute("aria-label", `Enviar ${titulo}`);
+    div.onclick = () => enviarArquivoProducao(timeId, slot, gol);
+    div.onkeydown = (ev) => { if (ev.target === div && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); div.click(); } };
+  }
+  // Arrastar e soltar o arquivo em cima do espaço.
+  if (!andamento) {
+    div.addEventListener("dragover", (ev) => { ev.preventDefault(); div.classList.add("arrastando"); });
+    div.addEventListener("dragleave", () => div.classList.remove("arrastando"));
+    div.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      div.classList.remove("arrastando");
+      const file = ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (file) enviarArquivoProducao(timeId, slot, gol, file);
+    });
+  }
   return div;
 }
 
@@ -559,12 +678,20 @@ async function miniaturaDaArte(bytes, info) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-async function enviarArquivoProducao(timeId, slot, goleiro) {
+// `arquivo`: já escolhido (arrastar e soltar); sem ele, abre o seletor.
+async function enviarArquivoProducao(timeId, slot, goleiro, arquivo) {
   if (!exigirDriveProducao()) return;
   const accept = slot === "brasao" ? ".eps,.ps,application/postscript"
     : slot === "fonte" ? ".ttf,.otf,font/ttf,font/otf" : "image/png";
-  const file = await escolherArquivos(accept);
+  const file = arquivo || await escolherArquivos(accept);
   if (!file) return;
+  // Arquivo solto do tipo errado: avisa antes de tentar enviar.
+  const ext = (file.name.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
+  const esperado = slot === "brasao" ? ["eps", "ps"] : slot === "fonte" ? ["ttf", "otf"] : ["png"];
+  if (!esperado.includes(ext.toLowerCase())) {
+    alert(`Este espaço aceita ${esperado.map((e) => "." + e).join(" ou ")} — o arquivo "${file.name}" não é desse tipo.`);
+    return;
+  }
   const pref = `${slugify(estadoTimes[timeId].time.nome) || timeId}${goleiro ? "-goleiro" : ""}-${slot.replace(":", "-")}`;
   const marcar = (texto) => marcarEnvio(timeId, slot, texto, goleiro);
   try {
@@ -702,20 +829,16 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
       const url = imagemDaCaixa(el, prod, pecaId);
       if (url) {
         partes.push(`<image href="${escAttr(urlPreviaGrande(url))}" x="${n(c.x)}" y="${n(c.y)}" ` +
-          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${EPS.imagemLivre(el) ? "none" : "xMidYMid meet"}" />`);
+          `width="${n(c.w)}" height="${n(c.h)}" preserveAspectRatio="${EPS.imagemLivre(el) ? "none" : "xMidYMid meet"}"${transformSvgDoElemento(el, c)} />`);
       } else if (comMolde) {
         partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
       }
       return;
     }
     if (fonte) {
-      const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostra), { w: c.w, h: c.h }, el);
+      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostra), { w: c.w, h: c.h }, el);
       if (!l.comandos.length) return;
-      const contorno = el.contornoMm > 0
-        ? ` stroke="${cmykParaCss(el.contornoCmyk)}" stroke-width="${n(el.contornoMm * 2)}" stroke-linejoin="round" paint-order="stroke"`
-        : "";
-      partes.push(`<path transform="translate(${n(c.x)} ${n(c.y)})" d="${caminhoSvg(l.comandos, 1)}" ` +
-        `fill="${cmykParaCss(el.corCmyk)}"${contorno} />`);
+      partes.push(`<g transform="translate(${n(c.x)} ${n(c.y)})">${svgDoTexto(l.comandos, el, 1)}</g>`);
     } else if (comMolde) {
       // Sem a fonte (ainda carregando ou não enviada): a caixa-limite tracejada.
       partes.push(`<rect x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" class="previa-caixa" />`);
@@ -1072,13 +1195,13 @@ function criarPreviaArteTime(timeId, timeComum) {
         <button type="button" data-vista="frente" class="${previaTime.vista === "frente" ? "ativo" : ""}">Frente</button>
         <button type="button" data-vista="costas" class="${previaTime.vista === "costas" ? "ativo" : ""}">Costas</button>
       </div>
-      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-girar-3d>🔄 Girar 3D</button>
-      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>⬇ Baixar PNG</button>
+      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-girar-3d>${icone("rotate-3d")} Girar 3D</button>
+      <button type="button" class="secundario ${previaTime.modo === "mockup" ? "" : "oculto"}" data-so-mockup data-baixar-mockup>${icone("download")} Baixar PNG</button>
     </div>
     <div class="previa-area"></div>
     <p class="pix-ajuda previa-nota"></p>
     <div class="previa-cliente">
-      <button type="button" class="secundario" data-publicar-previa="${escAttr(timeId)}">📤 Publicar prévia para o cliente</button>
+      <button type="button" class="secundario" data-publicar-previa="${escAttr(timeId)}">${icone("send")} Publicar prévia para o cliente</button>
       <span class="pix-ajuda" data-previa-cliente-status="${escAttr(timeId)}"></span>
     </div>
     <p class="pix-ajuda">Sem simulação/arte postadas, a página do pedido mostra os mockups (Cena, Frente, Costas) e a arte montados daqui, com "NOME" e "00" — atualizados sozinhos quando os arquivos do time mudam.</p>`;
@@ -1238,6 +1361,7 @@ let layoutPeca = "costas";
 let layoutTam = "";
 let layoutElSel = "";
 let layoutArrastando = false;
+let layoutZoom = 1;         // zoom do palco (1 = a peça inteira cabendo)
 const amostraLayout = { nomeCamiseta: "JOÃO PEDRO", nome: "João Pedro Silva", numero: "10" };
 
 // "Ajustar layout deste time": abre a aba "Editar arte" do pedido.
@@ -1325,39 +1449,106 @@ function renderizarEditorLayout() {
   const opcTimes = (sel) => times.map(([id, e]) =>
     `<option value="${escAttr(id)}"${id === sel ? " selected" : ""}>${escapeHtmlAdmin(e.time.nome)}</option>`).join("");
 
+  const qtdNaPeca = (id) => ((layoutConfig.pecas[id] && layoutConfig.pecas[id].elementos) || []).length;
+  const nomeTime = layoutModo && estadoTimes[layoutModo] ? escapeHtmlAdmin(estadoTimes[layoutModo].time.nome) : "";
+  const ferramenta = (tipo, ic, titulo) =>
+    `<button type="button" class="ferramenta" data-add="${tipo}" title="${escAttr(titulo)}" aria-label="${escAttr(titulo)}">${icone(ic)}</button>`;
   elEditorLayout.innerHTML = `
-    <div class="layout-topo">
-      ${editorTravado ? "" : `<label>Editando
-        <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
-      ${layoutModo ? "" : `<label>Prévia com a arte de
-        <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
-      <span id="layoutEstadoSalvar" class="pix-ajuda"></span>
-    </div>
-    ${!layoutModo ? "" : layoutGoleiro
-      ? `<p class="aviso">🧤 Ajustes do <strong>goleiro</strong> de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para a camiseta do goleiro. O que não for mudado aqui segue a camiseta comum deste time.</p>`
-      : `<p class="aviso">Ajustes próprios de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para este time. O que não for mudado aqui segue o layout geral (aba Artes).</p>`}
-    <nav class="fin-subabas layout-pecas">${PECAS_PRODUCAO.map((p) =>
-      `<button type="button" class="fin-subaba${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}</button>`).join("")}</nav>
-    <div class="arte-area">
-      <div class="arte-palco-col">
-        <div class="arte-barra-palco">
-          <label>Tamanho <select data-l="tam">${tamanhosComMolde(layoutPeca).map((t) =>
-            `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
-          <label>Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
-          <label>Número <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" style="width:60px" /></label>
-          <span class="arte-botoes-add">
-            ${layoutModo ? "" : `<button type="button" class="secundario" data-add="brasao">+ Brasão</button>
-            <button type="button" class="secundario" data-add="logo" title="Logo da empresa (enviado em Configurações)">+ Logo</button>
-            <button type="button" class="secundario" data-add="detalhe" title="Detalhe da manga (PNG enviado em cada time)">+ Detalhe</button>
-            <button type="button" class="secundario" data-add="nome">+ Nome</button>
-            <button type="button" class="secundario" data-add="numero">+ Número</button>`}
-            <button type="button" class="secundario" data-l="teste">⬇ EPS de teste</button>
-          </span>
+    <div class="estudio">
+      <header class="estudio-topo">
+        <span class="estudio-titulo">${icone("palette")} ${layoutModo ? nomeTime : "Layout geral"}</span>
+        ${editorTravado ? "" : `<label class="campo-inline">Editando
+          <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
+        ${layoutModo ? "" : `<label class="campo-inline">Prévia com a arte de
+          <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
+        <label class="campo-inline">Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
+        <label class="campo-inline">Nº <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" class="input-curto" /></label>
+        <span class="estudio-espaco"></span>
+        <span class="estudio-historico">
+          <button type="button" data-historico="desfazer" title="Desfazer (Ctrl+Z)" aria-label="Desfazer">${icone("undo-2")}</button>
+          <button type="button" data-historico="refazer" title="Refazer (Ctrl+Y)" aria-label="Refazer">${icone("redo-2")}</button>
+        </span>
+        <span id="layoutEstadoSalvar" class="estudio-salvo" aria-live="polite"></span>
+        <button type="button" class="botao-acento" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">${icone("download")} EPS de teste</button>
+      </header>
+      ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutGoleiro
+        ? `${icone("hand")} Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
+        : `${icone("pencil")} Ajustes só de <strong>${nomeTime}</strong>. O que não mudar aqui segue o layout geral (aba Artes).`}</p>`}
+      <div class="estudio-corpo">
+        <div class="estudio-canvas">
+          ${layoutModo ? "" : `<div class="estudio-ferramentas" role="toolbar" aria-label="Adicionar à peça">
+            ${ferramenta("nome", "type", "Adicionar nome")}
+            ${ferramenta("numero", "hash", "Adicionar número")}
+            ${ferramenta("brasao", "shield", "Adicionar brasão do time")}
+            ${ferramenta("logo", "tag", "Adicionar logo da empresa")}
+            ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}
+          </div>`}
+          <p class="estudio-peca-rotulo">${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}${tam ? ` · ${escapeHtmlAdmin(tam)}${tam === moldesConfig.tamanhoBase ? " (base)" : ""}` : ""}</p>
+          <div class="arte-palco-wrap estudio-palco-fundo"><div class="palco-reguas"><svg class="regua regua-h" aria-hidden="true"></svg><svg class="regua regua-v" aria-hidden="true"></svg><div id="layoutPalco" class="arte-palco"></div></div></div>
+          <div class="estudio-rodape">
+            <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_PRODUCAO.map((p) =>
+              `<button type="button" role="tab" aria-selected="${p.id === layoutPeca}" class="estudio-peca${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}${qtdNaPeca(p.id) ? ` <span class="estudio-peca-qtd">${qtdNaPeca(p.id)}</span>` : ""}</button>`).join("")}</nav>
+            <span class="estudio-divisor"></span>
+            <label class="campo-inline campo-rodape">${icone("ruler")}<select data-l="tam" aria-label="Tamanho">${tamanhosComMolde(layoutPeca).map((t) =>
+              `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
+            <span class="estudio-zoom">
+              <button type="button" data-zoom="-1" title="Diminuir" aria-label="Diminuir">${icone("minus")}</button>
+              <button type="button" data-zoom="0" class="estudio-zoom-valor" title="Ajustar à tela">${Math.round(layoutZoom * 100)}%</button>
+              <button type="button" data-zoom="1" title="Aumentar" aria-label="Aumentar">${icone("plus")}</button>
+            </span>
+          </div>
         </div>
-        <div class="arte-palco-wrap"><div id="layoutPalco" class="arte-palco"></div></div>
+        <aside class="arte-painel estudio-painel" id="layoutPainel"></aside>
       </div>
-      <div class="arte-painel" id="layoutPainel"></div>
+      <p class="estudio-dica">Arraste para mover · alça do canto para redimensionar · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Esc</kbd> solta a seleção</p>
     </div>`;
+
+  elEditorLayout.querySelector('[data-historico="desfazer"]').onclick = desfazerEditor;
+  elEditorLayout.querySelector('[data-historico="refazer"]').onclick = refazerEditor;
+  atualizarBotoesHistorico();
+  if (contaGotasAlvo) elEditorLayout.querySelector(".estudio-palco-fundo").classList.add("modo-conta-gotas");
+
+  // Zoom do palco (100% = a peça inteira cabendo na tela).
+  elEditorLayout.querySelectorAll("[data-zoom]").forEach((b) => {
+    b.onclick = () => {
+      const d = Number(b.dataset.zoom);
+      layoutZoom = d === 0 ? 1 : Math.min(3, Math.max(0.5, Math.round((layoutZoom + d * 0.25) * 100) / 100));
+      b.closest(".estudio-zoom").querySelector(".estudio-zoom-valor").textContent = Math.round(layoutZoom * 100) + "%";
+      renderizarPalcoLayout();
+    };
+  });
+  // Clique no fundo do palco solta a seleção.
+  const palcoFundo = elEditorLayout.querySelector(".estudio-palco-fundo");
+  // Conta-gotas: lupa com o pixel embaixo do mouse.
+  palcoFundo.addEventListener("pointermove", mostrarLupaContaGotas);
+  palcoFundo.addEventListener("pointerleave", () => {
+    const lupa = document.querySelector(".lupa-conta-gotas");
+    if (lupa) lupa.remove();
+  });
+
+  palcoFundo.addEventListener("pointerdown", async (ev) => {
+    if (contaGotasAlvo) {
+      ev.preventDefault();
+      const pt = mmDoPonteiro(ev);
+      if (!pt) return;
+      const chave = contaGotasAlvo;
+      estadoSalvarLayout("Lendo a cor…");
+      try {
+        const hex = await corNoPontoDaPeca(pt.x, pt.y);
+        sairContaGotas();
+        gravarEstiloElemento(layoutElSel, chave, hexParaCmyk(hex));
+        estadoSalvarLayout(`Cor ${hex.toUpperCase()} aplicada`);
+      } catch (e) {
+        console.warn(e);
+        estadoSalvarLayout(e.message || "Não foi possível ler a cor");
+      }
+      return;
+    }
+    if (ev.target.closest(".arte-el") || !layoutElSel) return;
+    layoutElSel = "";
+    renderizarPalcoLayout();
+    renderizarPainelLayout();
+  });
 
   const q = (s) => elEditorLayout.querySelector(s);
   if (q('[data-l="modo"]')) q('[data-l="modo"]').onchange = (ev) => {
@@ -1392,8 +1583,10 @@ function medidasLayout() {
   const mb = moldes[moldesConfig.tamanhoBase];
   const base = mb ? EPS.tamanhoMmDoBbox(mb.bbox) : dim;
   const palco = document.getElementById("layoutPalco");
-  const larguraDisp = Math.min(620, (palco && palco.parentElement.clientWidth) || 620);
-  const s = Math.min(larguraDisp / dim.w, 700 / dim.h);
+  // O palco fica dentro de uma moldura com 16 px de respiro de cada lado.
+  const disp = palco ? palco.parentElement.clientWidth : 0;
+  const larguraDisp = Math.min(820, disp > 120 ? disp - 48 : 620);
+  const s = Math.min(larguraDisp / dim.w, 620 / dim.h) * layoutZoom;
   return { tam, molde, dim, base, s, ehBase: tam === moldesConfig.tamanhoBase || !mb };
 }
 
@@ -1430,6 +1623,50 @@ function cmykParaCss(c) {
   return `rgb(${Math.round(255 * (1 - C) * (1 - K))},${Math.round(255 * (1 - M) * (1 - K))},${Math.round(255 * (1 - Y) * (1 - K))})`;
 }
 
+// Cor da tela (hex) para CMYK em % — a conta inversa de cmykParaCss, a mesma
+// conversão simples usada nas artes (K = 1 − máx(R, G, B)).
+function hexParaCmyk(hex) {
+  const n = parseInt(String(hex).replace("#", ""), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 1) return [0, 0, 0, 100];
+  const c = (x) => Math.round(((1 - x - k) / (1 - k)) * 100);
+  return [c(r), c(g), c(b), Math.round(k * 100)];
+}
+
+function cmykParaHex(v) {
+  const [C, M, Y, K] = (v || [0, 0, 0, 100]).map((x) => (Number(x) || 0) / 100);
+  const h = (x) => Math.round(255 * (1 - x) * (1 - K)).toString(16).padStart(2, "0");
+  return "#" + h(C) + h(M) + h(Y);
+}
+
+// Giro/espelho de uma imagem (brasão, logo, detalhe) no SVG, em volta do
+// centro da caixa c (mm) — o mesmo que a folha EPS faz.
+function transformSvgDoElemento(el, c, s) {
+  const k = s || 1;
+  const rot = Number(el.rotacao) || 0;
+  if (!rot && !el.espelharH && !el.espelharV) return "";
+  const cx = (c.x + c.w / 2) * k, cy = (c.y + c.h / 2) * k;
+  return ` transform="translate(${cx.toFixed(2)} ${cy.toFixed(2)}) rotate(${rot}) scale(${el.espelharH ? -1 : 1} ${el.espelharV ? -1 : 1}) translate(${(-cx).toFixed(2)} ${(-cy).toFixed(2)})"`;
+}
+
+// O texto (comandos já prontos) em SVG: sombra, segundo contorno, contorno e
+// preenchimento, na mesma ordem da folha EPS. `s` = px por mm.
+function svgDoTexto(comandos, el, s) {
+  const d = caminhoSvg(comandos, s);
+  const c1 = Number(el.contornoMm) || 0, c2 = Number(el.contorno2Mm) || 0;
+  let out = "";
+  const sombra = EPS.sombraDoElemento(el);
+  if (sombra) {
+    const cor = cmykParaCss(sombra.cmyk);
+    out += `<path transform="translate(${(sombra.dx * s).toFixed(2)} ${(sombra.dy * s).toFixed(2)})" d="${d}" fill="${cor}"` +
+      (c1 + c2 > 0 ? ` stroke="${cor}" stroke-width="${((c1 + c2) * 2 * s).toFixed(2)}" stroke-linejoin="round"` : "") + " />";
+  }
+  if (c2 > 0) out += `<path d="${d}" fill="none" stroke="${cmykParaCss(el.contorno2Cmyk || [0, 0, 0, 100])}" stroke-width="${((c1 + c2) * 2 * s).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round" />`;
+  if (c1 > 0) out += `<path d="${d}" fill="none" stroke="${cmykParaCss(el.contornoCmyk)}" stroke-width="${(c1 * 2 * s).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round" />`;
+  return out + `<path d="${d}" fill="${cmykParaCss(el.corCmyk)}" />`;
+}
+
 function caminhoSvg(comandos, s) {
   const f = (v) => (v * s).toFixed(2);
   return comandos.map((c) => {
@@ -1438,6 +1675,14 @@ function caminhoSvg(comandos, s) {
     if (c.type === "C") return `C${f(c.x1)} ${f(c.y1)} ${f(c.x2)} ${f(c.y2)} ${f(c.x)} ${f(c.y)}`;
     return "Z";
   }).join("");
+}
+
+function iconeElementoLayout(el) {
+  if (el.tipo === "brasao") return icone("shield");
+  if (el.tipo === "logo") return icone("tag");
+  if (el.tipo === "detalhe") return icone("waves");
+  if (el.tipo === "numero") return icone("hash");
+  return icone("type");
 }
 
 function rotuloElementoLayout(el) {
@@ -1462,6 +1707,7 @@ function renderizarPalcoLayout() {
   const { dim, base, s } = m;
   palco.style.width = dim.w * s + "px";
   palco.style.height = dim.h * s + "px";
+  desenharReguas(palco, dim, s);
   const time = timeDaPrevia();
   const prod = producaoDoTime(time);
 
@@ -1500,6 +1746,8 @@ function renderizarPalcoLayout() {
     const temAjusteTime = !!ajTime;
     div.className = "arte-el arte-el-" + el.tipo + (el.id === layoutElSel ? " selecionado" : "") +
       (temAjusteTime ? " ajuste-time" : "") + (oculto ? " oculto-time" : "");
+    div.dataset.id = elGeral.id;
+    div.dataset.rotulo = rotuloElementoLayout(el) + (oculto ? " (oculto)" : "");
     div.style.left = c.x * s + "px";
     div.style.top = c.y * s + "px";
     div.style.width = c.w * s + "px";
@@ -1510,34 +1758,296 @@ function renderizarPalcoLayout() {
         ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${EPS.imagemLivre(el) ? "fill" : "contain"}" />`
         : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
     } else if (fonte) {
-      const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el);
-      const contorno = el.contornoMm > 0
-        ? ` stroke="${cmykParaCss(el.contornoCmyk)}" stroke-width="${(el.contornoMm * 2 * s).toFixed(2)}" stroke-linejoin="round" paint-order="stroke"`
-        : "";
+      // Sem o giro: quem gira é a caixa inteira (a div), com a seleção junto.
+      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el, { semGiro: true });
       div.innerHTML = `<svg class="arte-el-svg" width="${c.w * s}" height="${c.h * s}" overflow="visible">` +
-        `<path d="${caminhoSvg(l.comandos, s)}" fill="${cmykParaCss(el.corCmyk)}"${contorno}/></svg>`;
+        `${svgDoTexto(l.comandos, el, s)}</svg>`;
     } else {
       div.innerHTML = `<span class="arte-el-rotulo">${escapeHtmlAdmin(rotuloElementoLayout(el))}${time ? "" : "<br>(escolha um time para ver a fonte)"}</span>`;
     }
+    // Giro e espelho: a caixa inteira gira (texto, imagem e seleção).
+    const rot = Number(el.rotacao) || 0;
+    if (rot || el.espelharH || el.espelharV) {
+      div.style.transform = `rotate(${rot}deg)`;
+      const alvoEsp = div.querySelector("svg, img");
+      if (alvoEsp && (el.espelharH || el.espelharV)) alvoEsp.style.transform = `scale(${el.espelharH ? -1 : 1}, ${el.espelharV ? -1 : 1})`;
+    }
+    if (el.travado) div.classList.add("travado");
     const alca = document.createElement("span");
     alca.className = "arte-el-alca";
     div.appendChild(alca);
-    ligarArrasteLayout(div, alca, elGeral);
+    const alcaGiro = document.createElement("span");
+    alcaGiro.className = "arte-el-giro";
+    alcaGiro.title = "Girar (Shift: de 15 em 15°)";
+    div.appendChild(alcaGiro);
+    ligarArrasteLayout(div, alca, elGeral, alcaGiro);
     palco.appendChild(div);
   });
 }
 
+// Setas do teclado: movem o elemento selecionado 1 mm (Shift: 10 mm). O
+// desenho acompanha na hora; grava uma vez só, quando as teclas param.
+let empurraoLayout = null; // { elId, m, caixa, timer }
+
+function editorLayoutVisivel() {
+  return !!(elEditorLayout && elEditorLayout.isConnected && !elEditorLayout.closest(".oculto") &&
+    elEditorLayout.querySelector("#layoutPalco"));
+}
+
+function empurrarSelecionado(dx, dy) {
+  const el = elementosDaPeca(layoutPeca).find((e) => e.id === layoutElSel);
+  const m = medidasLayout();
+  if (!el || !m) return;
+  if (!empurraoLayout || empurraoLayout.elId !== el.id) {
+    empurraoLayout = { elId: el.id, m, caixa: caixaNoEditor(el, m) };
+  }
+  const e = empurraoLayout;
+  e.caixa = { ...e.caixa, x: e.caixa.x + dx, y: e.caixa.y + dy };
+  const div = elEditorLayout.querySelector(`.arte-el[data-id="${CSS.escape(el.id)}"]`);
+  if (div) {
+    div.style.left = e.caixa.x * m.s + "px";
+    div.style.top = e.caixa.y * m.s + "px";
+  }
+  const campoX = elEditorLayout.querySelector('[data-cx="x"]');
+  const campoY = elEditorLayout.querySelector('[data-cx="y"]');
+  if (campoX) campoX.value = e.caixa.x.toFixed(1);
+  if (campoY) campoY.value = e.caixa.y.toFixed(1);
+  clearTimeout(e.timer);
+  e.timer = setTimeout(() => {
+    empurraoLayout = null;
+    gravarCaixaLayout(el, e.m, e.caixa);
+    renderizarPalcoLayout();
+    renderizarPainelLayout();
+  }, 450);
+}
+
+// ---------------- Operações de elemento (atalhos e botões) ----------------
+let elementoCopiado = null; // Ctrl+C (só no layout geral)
+
+function elementoSelecionado() {
+  return elementosDaPeca(layoutPeca).find((e) => e.id === layoutElSel) || null;
+}
+
+function duplicarElementoLayout(el, deslocar) {
+  const copia = limparParaFirestore(el);
+  copia.id = novoIdLayout("e");
+  const d = deslocar == null ? 10 : deslocar;
+  copia.caixa = { ...copia.caixa, x: arred1(copia.caixa.x + d), y: arred1(copia.caixa.y + d) };
+  delete copia.ajustes;
+  delete copia.travado;
+  elementosDaPeca(layoutPeca).push(copia);
+  layoutElSel = copia.id;
+  salvarLayout(true);
+  renderizarEditorLayout();
+}
+
+function excluirElementoLayout(el) {
+  const els = elementosDaPeca(layoutPeca);
+  const i = els.indexOf(el);
+  if (i < 0) return;
+  els.splice(i, 1);
+  layoutElSel = "";
+  salvarLayout(true);
+  estadoSalvarLayout("Excluído — Ctrl+Z desfaz");
+  renderizarEditorLayout();
+}
+
+// Ordem das camadas: o fim da lista fica por cima. `para`: "frente",
+// "tras", "topo" ou "fundo".
+function moverCamadaLayout(el, para) {
+  const els = elementosDaPeca(layoutPeca);
+  const i = els.indexOf(el);
+  if (i < 0) return;
+  els.splice(i, 1);
+  const j = para === "topo" ? els.length : para === "fundo" ? 0
+    : para === "frente" ? Math.min(els.length, i + 1) : Math.max(0, i - 1);
+  els.splice(j, 0, el);
+  salvarLayout(true);
+  renderizarPalcoLayout();
+  renderizarPainelLayout();
+}
+
+document.addEventListener("keydown", (ev) => {
+  if (!editorLayoutVisivel() || ev.altKey) return;
+  const alvo = ev.target;
+  if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "SELECT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
+  if (document.querySelector(".modal-pix:not(.oculto), .lightbox:not(.oculto)")) return;
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  const tecla = ev.key.toLowerCase();
+  const el = elementoSelecionado();
+
+  if (ctrl && tecla === "z") { ev.preventDefault(); (ev.shiftKey ? refazerEditor : desfazerEditor)(); return; }
+  if (ctrl && tecla === "y") { ev.preventDefault(); refazerEditor(); return; }
+  if (ctrl && tecla === "c" && el && !layoutModo) {
+    elementoCopiado = limparParaFirestore(el);
+    estadoSalvarLayout("Copiado — Ctrl+V cola");
+    return;
+  }
+  if (ctrl && tecla === "v" && elementoCopiado && !layoutModo) { ev.preventDefault(); duplicarElementoLayout(elementoCopiado); return; }
+  if (ctrl && tecla === "d" && el && !layoutModo) { ev.preventDefault(); duplicarElementoLayout(el); return; }
+  if (ctrl) return;
+
+  if (ev.key === "Escape") {
+    if (contaGotasAlvo) { sairContaGotas(); return; }
+    if (layoutElSel) { layoutElSel = ""; renderizarPalcoLayout(); renderizarPainelLayout(); }
+    return;
+  }
+  if ((ev.key === "Delete" || ev.key === "Backspace") && el) {
+    ev.preventDefault();
+    if (layoutModo) {
+      // No time não se apaga do layout geral: oculta só neste time.
+      gravarAjusteTime(el.id, (a) => { a.oculto = true; }).then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+      estadoSalvarLayout("Oculto neste time — Ctrl+Z desfaz");
+    } else {
+      excluirElementoLayout(el);
+    }
+    return;
+  }
+  const passos = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (!passos[ev.key] || !el) return;
+  ev.preventDefault();
+  if (elementoNoEditor(el).travado) { estadoSalvarLayout("Elemento travado"); return; }
+  const k = ev.shiftKey ? 10 : 1;
+  empurrarSelecionado(passos[ev.key][0] * k, passos[ev.key][1] * k);
+});
+
+// ---------------- Conta-gotas: pega a cor de um ponto da arte ----------------
+// Clique no conta-gotas e depois num ponto do desenho: a cor daquele ponto
+// (arte, brasão, logo ou texto, como aparece na prévia) vai para o campo.
+let contaGotasAlvo = ""; // estilo que vai receber a cor ("corCmyk", ...)
+
+let contaGotasDesenho = null; // Promise do canvas da peça (alta resolução)
+
+function entrarContaGotas(chave) {
+  contaGotasAlvo = chave;
+  contaGotasDesenho = desenharPecaParaContaGotas();
+  contaGotasDesenho.catch(() => {});
+  const fundo = elEditorLayout && elEditorLayout.querySelector(".estudio-palco-fundo");
+  if (fundo) fundo.classList.add("modo-conta-gotas");
+  document.querySelectorAll("[data-conta-gotas]").forEach((b) => b.classList.toggle("ativo", b.dataset.contaGotas === chave));
+  estadoSalvarLayout("Conta-gotas: passe o mouse na arte e clique no pixel (Esc cancela)");
+}
+
+function sairContaGotas() {
+  contaGotasAlvo = "";
+  contaGotasDesenho = null;
+  const fundo = elEditorLayout && elEditorLayout.querySelector(".estudio-palco-fundo");
+  if (fundo) fundo.classList.remove("modo-conta-gotas");
+  const lupa = document.querySelector(".lupa-conta-gotas");
+  if (lupa) lupa.remove();
+  document.querySelectorAll("[data-conta-gotas]").forEach((b) => b.classList.remove("ativo"));
+  estadoSalvarLayout("");
+}
+
+// A peça como aparece no palco (arte recortada no molde, brasão, logo e
+// textos), desenhada num canvas grande: cada pixel da tela cai num pixel
+// próprio do desenho, sem misturar com os vizinhos.
+async function desenharPecaParaContaGotas() {
+  const m = medidasLayout();
+  const time = timeDaPrevia();
+  const p = time && m && pecaEmSvg(time, layoutModo || layoutTimePrevia, layoutPeca, m.tam, amostraLayout, false, false);
+  if (!p) throw new Error("Escolha um time com arte (\"Prévia com a arte de\") para pegar a cor da arte.");
+  const canvas = await pecaEmCanvas(p, 3000);
+  return { canvas, ctx: canvas.getContext("2d", { willReadFrequently: true }), k: canvas.width / p.w };
+}
+
+// Pixel (hex e alfa) do desenho num ponto da peça, em mm.
+function pixelDoDesenho(d, xMm, yMm) {
+  const px = Math.min(d.canvas.width - 1, Math.max(0, Math.floor(xMm * d.k)));
+  const py = Math.min(d.canvas.height - 1, Math.max(0, Math.floor(yMm * d.k)));
+  const v = d.ctx.getImageData(px, py, 1, 1).data;
+  return { px, py, alfa: v[3], hex: "#" + [v[0], v[1], v[2]].map((c) => c.toString(16).padStart(2, "0")).join("") };
+}
+
+// Ponto do mouse → mm da peça.
+function mmDoPonteiro(ev) {
+  const palco = document.getElementById("layoutPalco");
+  const m = medidasLayout();
+  if (!palco || !m) return null;
+  const r = palco.getBoundingClientRect();
+  return { x: (ev.clientX - r.left) / m.s, y: (ev.clientY - r.top) / m.s };
+}
+
+async function corNoPontoDaPeca(xMm, yMm) {
+  const d = await (contaGotasDesenho || desenharPecaParaContaGotas());
+  const px = pixelDoDesenho(d, xMm, yMm);
+  if (px.alfa < 10) throw new Error("Nesse ponto não há arte (é o fundo). Clique em cima do desenho.");
+  return px.hex;
+}
+
+// Lupa que acompanha o mouse: mostra os pixels em volta, ampliados, com o
+// pixel que vai ser pego marcado no meio, e o código da cor.
+async function mostrarLupaContaGotas(ev) {
+  if (!contaGotasAlvo || !contaGotasDesenho) return;
+  const pt = mmDoPonteiro(ev);
+  let lupa = document.querySelector(".lupa-conta-gotas");
+  if (!lupa) {
+    lupa = document.createElement("div");
+    lupa.className = "lupa-conta-gotas";
+    lupa.innerHTML = '<canvas width="99" height="99"></canvas><span class="lupa-cor"><i></i><b></b></span>';
+    document.body.appendChild(lupa);
+  }
+  lupa.style.left = ev.clientX + 18 + "px";
+  lupa.style.top = ev.clientY + 18 + "px";
+  let d;
+  try { d = await contaGotasDesenho; } catch (e) { lupa.remove(); estadoSalvarLayout(e.message); return; }
+  if (!pt || !contaGotasAlvo) return;
+  const px = pixelDoDesenho(d, pt.x, pt.y);
+  const c = lupa.querySelector("canvas").getContext("2d");
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = "#fff";
+  c.fillRect(0, 0, 99, 99);
+  // 11 × 11 pixels, cada um com 9 × 9 na lupa.
+  c.drawImage(d.canvas, px.px - 5, px.py - 5, 11, 11, 0, 0, 99, 99);
+  c.strokeStyle = "#ff5b22";
+  c.lineWidth = 2;
+  c.strokeRect(45, 45, 9, 9);
+  lupa.querySelector("i").style.background = px.alfa < 10 ? "transparent" : px.hex;
+  lupa.querySelector("b").textContent = px.alfa < 10 ? "sem arte" : px.hex.toUpperCase();
+}
+
+// Réguas em mm em cima e à esquerda do palco (traço a cada 10 mm, número a cada 50).
+function desenharReguas(palco, dim, s) {
+  const caixa = palco.parentElement;
+  const rh = caixa && caixa.querySelector(".regua-h");
+  const rv = caixa && caixa.querySelector(".regua-v");
+  if (!rh || !rv) return;
+  const passo = s * 10 < 6 ? 50 : 10;
+  const marcas = (total, vertical) => {
+    let out = "";
+    for (let v = 0; v <= total + 0.01; v += passo) {
+      const p = (v * s).toFixed(1), grande = v % 50 === 0;
+      const t = grande ? 9 : 5;
+      out += vertical
+        ? `<line x1="${16 - t}" y1="${p}" x2="16" y2="${p}" />` + (grande && v ? `<text x="2" y="${p}" transform="rotate(-90 7 ${p})">${v}</text>` : "")
+        : `<line x1="${p}" y1="${16 - t}" x2="${p}" y2="16" />` + (grande && v ? `<text x="${Number(p) + 2}" y="8">${v}</text>` : "");
+    }
+    return out;
+  };
+  rh.setAttribute("width", (dim.w * s).toFixed(0));
+  rh.setAttribute("height", "16");
+  rh.innerHTML = marcas(dim.w, false);
+  rv.setAttribute("width", "16");
+  rv.setAttribute("height", (dim.h * s).toFixed(0));
+  rv.innerHTML = marcas(dim.h, true);
+}
+
 // Arrastar (mover) e a alça do canto (redimensionar). O brasão mantém a
 // proporção; as caixas de texto são livres (são o limite do texto).
-function ligarArrasteLayout(div, alca, el) {
+function ligarArrasteLayout(div, alca, el, alcaGiro) {
   div.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || contaGotasAlvo) return; // conta-gotas: quem trata é o palco
     ev.preventDefault();
-    const redimensionar = ev.target === alca;
+    ev.stopPropagation();
     if (layoutElSel !== el.id) {
       layoutElSel = el.id;
       document.querySelectorAll("#layoutPalco .arte-el").forEach((d) => d.classList.toggle("selecionado", d === div));
       renderizarPainelLayout();
+    }
+    const elT = elementoNoEditor(el);
+    if (elT.travado) {
+      estadoSalvarLayout("Elemento travado — destrave no cadeado para mexer");
+      return;
     }
     const m = medidasLayout();
     const ini = caixaNoEditor(el, m);
@@ -1546,15 +2056,80 @@ function ligarArrasteLayout(div, alca, el) {
     let atual = { ...ini };
     layoutArrastando = true;
     div.setPointerCapture(ev.pointerId);
+
+    // Girar pela alça de cima: ângulo do centro até o ponteiro.
+    if (ev.target === alcaGiro) {
+      const r = div.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      let graus = Number(elT.rotacao) || 0;
+      const mover = (e) => {
+        graus = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI + 90;
+        if (e.shiftKey) graus = Math.round(graus / 15) * 15;
+        graus = Math.round(((graus % 360) + 540) % 360 - 180);
+        div.style.transform = `rotate(${graus}deg)`;
+        estadoSalvarLayout(`Girando: ${graus}°`);
+      };
+      const soltar = () => {
+        div.removeEventListener("pointermove", mover);
+        div.removeEventListener("pointerup", soltar);
+        div.removeEventListener("pointercancel", soltar);
+        layoutArrastando = false;
+        gravarEstiloElemento(el.id, "rotacao", graus);
+      };
+      div.addEventListener("pointermove", mover);
+      div.addEventListener("pointerup", soltar);
+      div.addEventListener("pointercancel", soltar);
+      return;
+    }
+
+    const redimensionar = ev.target === alca;
+    // Guias magnéticas: bordas e centro da peça e dos outros elementos.
+    const palco = document.getElementById("layoutPalco");
+    const alvos = { x: [0, m.dim.w / 2, m.dim.w], y: [0, m.dim.h / 2, m.dim.h] };
+    elementosDaPeca(layoutPeca).forEach((o) => {
+      if (o.id === el.id) return;
+      const oT = EPS.elementoDoTime(o, ajusteNoEditor(layoutPeca, o.id));
+      if (!oT) return;
+      const c = caixaNoEditor(o, m);
+      alvos.x.push(c.x, c.x + c.w / 2, c.x + c.w);
+      alvos.y.push(c.y, c.y + c.h / 2, c.y + c.h);
+    });
+    const tolerancia = 6 / m.s; // 6 px na tela, em mm
+    const guias = [];
+    const limparGuias = () => { guias.forEach((g) => g.remove()); guias.length = 0; };
+    const guia = (eixo, valor) => {
+      const g = document.createElement("div");
+      g.className = "guia-" + eixo;
+      if (eixo === "v") g.style.left = valor * m.s + "px";
+      else g.style.top = valor * m.s + "px";
+      palco.appendChild(g);
+      guias.push(g);
+    };
+    const encaixar = (pontos, lista) => {
+      let melhor = null;
+      pontos.forEach((p) => lista.forEach((l) => {
+        const d = l - p;
+        if (Math.abs(d) <= tolerancia && (!melhor || Math.abs(d) < Math.abs(melhor.d))) melhor = { d, l };
+      }));
+      return melhor;
+    };
+
     const mover = (e) => {
       const dx = (e.clientX - x0) / m.s, dy = (e.clientY - y0) / m.s;
+      limparGuias();
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        const livre = EPS.imagemLivre(EPS.elementoDoTime(el, ajusteNoEditor(layoutPeca, el.id)) || el);
+        const livre = EPS.imagemLivre(elT);
         atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
+        if (!e.altKey) {
+          const sx = encaixar([atual.x, atual.x + atual.w / 2, atual.x + atual.w], alvos.x);
+          const sy = encaixar([atual.y, atual.y + atual.h / 2, atual.y + atual.h], alvos.y);
+          if (sx) { atual.x += sx.d; guia("v", sx.l); }
+          if (sy) { atual.y += sy.d; guia("h", sy.l); }
+        }
       }
       div.style.left = atual.x * m.s + "px";
       div.style.top = atual.y * m.s + "px";
@@ -1565,6 +2140,7 @@ function ligarArrasteLayout(div, alca, el) {
       div.removeEventListener("pointermove", mover);
       div.removeEventListener("pointerup", soltar);
       div.removeEventListener("pointercancel", soltar);
+      limparGuias();
       layoutArrastando = false;
       if (atual.x !== ini.x || atual.y !== ini.y || atual.w !== ini.w || atual.h !== ini.h) {
         gravarCaixaLayout(el, m, atual);
@@ -1578,12 +2154,33 @@ function ligarArrasteLayout(div, alca, el) {
   });
 }
 
+// O elemento como vale no editor (no time: com o estilo próprio dele).
+function elementoNoEditor(el) {
+  return layoutModo ? (EPS.elementoDoTime(el, ajusteNoEditor(layoutPeca, el.id)) || el) : el;
+}
+
+// Grava um estilo (cor, giro, efeito, travado...) de um elemento da peça
+// aberta: no layout geral muda o elemento; no time, o estilo próprio dele.
+function gravarEstiloElemento(elId, k, v) {
+  const el = elementosDaPeca(layoutPeca).find((e) => e.id === elId);
+  if (!el) return Promise.resolve();
+  const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
+  if (layoutModo) {
+    return gravarAjusteTime(el.id, (a) => { a.estilo = { ...(a.estilo || {}), [k]: v }; }).then(redesenhar);
+  }
+  el[k] = v;
+  salvarLayout();
+  redesenhar();
+  return Promise.resolve();
+}
+
 // Grava a caixa onde ela deve ir: no layout geral (tamanho base = posição do
 // elemento; outro tamanho = ajuste daquele tamanho) ou no ajuste do time.
 function gravarCaixaLayout(el, m, caixa) {
   const c = { x: arred1(caixa.x), y: arred1(caixa.y), w: arred1(caixa.w), h: arred1(caixa.h) };
   if (layoutModo) {
     const time = estadoTimes[layoutModo].time;
+    const antes = JSON.stringify(producaoDoTime(time));
     const prod = limparParaFirestore(producaoDoTime(time));
     const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
     alvo.layoutAjustes = alvo.layoutAjustes || {};
@@ -1601,6 +2198,7 @@ function gravarCaixaLayout(el, m, caixa) {
       aj.tamanhos = aj.tamanhos || {};
       aj.tamanhos[m.tam] = c;
     }
+    registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
     gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
       .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
     return;
@@ -1657,15 +2255,43 @@ function renderizarPainelLayout() {
   const els = elementosDaPeca(layoutPeca);
   const el = els.find((e) => e.id === layoutElSel);
   painel.innerHTML = `
-    <h4>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
-    <ul class="arte-lista-el">${els.map((e) =>
-      `<li class="${e.id === layoutElSel ? "ativo" : ""}" data-id="${escAttr(e.id)}">${escapeHtmlAdmin(rotuloElementoLayout(e))}` +
-      `${seloAjusteTime(ajusteNoEditor(layoutPeca, e.id))}` +
-      `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">🧤 goleiro</span>' : ""}</li>`).join("") ||
-      `<li class="pix-ajuda">Nada nesta peça${layoutModo ? " no layout geral" : " — use + Brasão / + Nome / + Número"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+    <div class="painel-cabecalho"><span class="ativo">Design</span></div>
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("layers")} Camadas <span>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</span></h4>
+      <ul class="lista-elementos">${els.slice().reverse().map((e) => {
+        const ajE = ajusteNoEditor(layoutPeca, e.id);
+        const eT = EPS.elementoDoTime(e, ajE) || { ...e, ...((ajE && ajE.estilo) || {}) };
+        return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ajE && ajE.oculto ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
+          `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
+          `${seloAjusteTime(ajE)}` +
+          `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}` +
+          `<span class="camada-acoes">` +
+          (layoutModo ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ajE && ajE.oculto ? "Mostrar neste time" : "Ocultar neste time"}">${icone(ajE && ajE.oculto ? "eye-off" : "eye")}</button>` : "") +
+          `<button type="button" class="camada-botao${eT.travado ? " ligado" : ""}" data-camada-trava="${escAttr(e.id)}" title="${eT.travado ? "Destravar" : "Travar (não deixa mover sem querer)"}">${icone(eT.travado ? "lock" : "lock-open")}</button>` +
+          `</span></li>`;
+      }).join("") ||
+        `<li class="lista-elementos-vazia">Nada nesta peça${layoutModo ? " no layout geral" : " — use <strong>+ Adicionar</strong>"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+      ${els.length && !layoutElSel ? '<p class="pix-ajuda">Clique num elemento (aqui ou no desenho) para editar.</p>' : ""}
+    </section>
     <div id="layoutPainelEl"></div>`;
+  painel.querySelectorAll("[data-camada-trava]").forEach((b) => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const e = els.find((x) => x.id === b.dataset.camadaTrava);
+      if (e) gravarEstiloElemento(e.id, "travado", !elementoNoEditor(e).travado);
+    };
+  });
+  painel.querySelectorAll("[data-camada-olho]").forEach((b) => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const aj = ajusteNoEditor(layoutPeca, b.dataset.camadaOlho);
+      gravarAjusteTime(b.dataset.camadaOlho, (a) => { a.oculto = !(aj && aj.oculto); })
+        .then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+    };
+  });
   painel.querySelectorAll("li[data-id]").forEach((li) => {
     li.onclick = () => { layoutElSel = li.dataset.id; renderizarPalcoLayout(); renderizarPainelLayout(); };
+    li.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); } };
   });
   const m = medidasLayout();
   if (!el || !m) return;
@@ -1683,7 +2309,7 @@ function renderizarPainelLayout() {
   const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
   const ehTexto = !ehCaixaImagem(el);
 
-  let html = `<p class="pix-ajuda">${layoutGoleiro
+  const estado = layoutGoleiro
     ? ajProprio ? `O goleiro tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
       : "Igual à camiseta comum deste time — mudar qualquer coisa aqui cria um ajuste só para o goleiro."
     : layoutModo
@@ -1691,52 +2317,121 @@ function renderizarPainelLayout() {
       : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para este time."
     : m.ehBase ? `Posição no tamanho base (${escapeHtmlAdmin(m.tam)}).`
       : el.ajustes && el.ajustes[m.tam] ? `Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.`
-        : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`}</p>
-    ${layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> ${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</label>` : ""}
-    <div class="arte-grade arte-grade-4">
-      <label>X (mm)<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
-      <label>Y (mm)<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
-      <label>Largura<input type="number" step="0.5" min="1" data-cx="w" value="${c.w.toFixed(1)}" /></label>
-      <label>Altura<input type="number" step="0.5" min="1" data-cx="h" value="${c.h.toFixed(1)}" /></label>
-    </div>
-    ${ehTexto ? `<label class="arte-letra">Tamanho da letra (altura das maiúsculas, mm)
-      <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
-    <div class="arte-botoes-el">
-      <button type="button" class="secundario" data-acao="centralizar">Centralizar na largura</button>
-      ${layoutModo && ajProprio ? `<button type="button" class="secundario" data-acao="voltarGeral">${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>` : ""}
-      ${layoutModo && posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
-      ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
-    </div>`;
+        : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`;
 
-  if (!ehTexto) {
-    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> Manter proporção</label>
-      <p class="pix-ajuda">Desmarque para esticar ${escapeHtmlAdmin(rotuloElementoLayout(el).toLowerCase())} na largura e na altura, cada uma no seu (a alça do canto e os campos passam a mexer só na medida escolhida).</p>`;
-  } else {
+  let html = `
+    <section class="painel-secao painel-selecionado">
+      <div class="painel-el-topo">
+        <span class="el-icone">${iconeElementoLayout(el)}</span>
+        <strong>${escapeHtmlAdmin(rotuloElementoLayout(el))}</strong>
+        <button type="button" class="painel-fechar" data-acao="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">${icone("x")}</button>
+      </div>
+      <p class="pix-ajuda">${estado}</p>
+      ${layoutModo ? `<label class="interruptor"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> <span>${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</span></label>` : ""}
+      ${layoutModo && ajProprio ? `<div class="arte-botoes-el">
+        <button type="button" class="secundario" data-acao="voltarGeral">${icone("undo-2")} ${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>
+        ${posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">' + icone("undo-2") + ' Só a posição</button>' : ""}
+      </div>` : ""}
+    </section>
+
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("scaling")} Layout <span>mm</span></h4>
+      <div class="arte-grade arte-grade-4">
+        <label>X<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
+        <label>Y<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
+        <label>Largura<input type="number" step="0.5" min="1" data-cx="w" value="${c.w.toFixed(1)}" /></label>
+        <label>Altura<input type="number" step="0.5" min="1" data-cx="h" value="${c.h.toFixed(1)}" /></label>
+      </div>
+      ${ehTexto ? `<label class="arte-letra">Tamanho da letra <small>(altura das maiúsculas, mm)</small>
+        <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
+      ${!ehTexto ? `<label class="interruptor"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> <span>Manter proporção</span></label>
+        <p class="pix-ajuda">Desmarque para esticar na largura e na altura, cada uma no seu.</p>` : ""}
+      <div class="arte-botoes-el">
+        <button type="button" class="secundario" data-acao="centralizar">${icone("move-horizontal")} Centralizar na largura</button>
+        ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">' + icone("undo-2") + ' Voltar ao proporcional</button>' : ""}
+      </div>
+    </section>`;
+
+  // Organizar: alinhar na peça, ordem das camadas e travar.
+  const alinhar = [["esquerda", "align-start-vertical", "Alinhar à esquerda da peça"], ["centroH", "align-center-vertical", "Centralizar na largura"],
+    ["direita", "align-end-vertical", "Alinhar à direita da peça"], ["topo", "align-start-horizontal", "Alinhar ao topo da peça"],
+    ["meio", "align-center-horizontal", "Centralizar na altura"], ["base", "align-end-horizontal", "Alinhar à base da peça"]];
+  html += `
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("layout-grid")} Organizar</h4>
+      <div class="linha-icones" role="group" aria-label="Alinhar na peça">${alinhar.map(([v, ic, t]) =>
+        `<button type="button" data-alinhar-peca="${v}" title="${t}" aria-label="${t}">${icone(ic)}</button>`).join("")}</div>
+      ${!layoutModo ? `<div class="linha-icones" role="group" aria-label="Ordem das camadas">
+        <button type="button" data-camada="topo" title="Trazer para a frente de tudo">${icone("chevrons-up")}</button>
+        <button type="button" data-camada="frente" title="Trazer uma camada para a frente">${icone("chevron-up")}</button>
+        <button type="button" data-camada="tras" title="Enviar uma camada para trás">${icone("chevron-down")}</button>
+        <button type="button" data-camada="fundo" title="Enviar para trás de tudo">${icone("chevrons-down")}</button>
+      </div>` : ""}
+      <label class="interruptor"><input type="checkbox" data-p="travado" ${elT.travado ? "checked" : ""} /> <span>${icone("lock")} Travar (não mexe ao arrastar)</span></label>
+    </section>
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("rotate-cw")} Girar e espelhar</h4>
+      <div class="linha-giro">
+        <label class="campo-graus"><input type="number" step="1" min="-180" max="180" data-p="rotacao" value="${Number(elT.rotacao) || 0}" /><span>°</span></label>
+        <button type="button" class="botao-icone" data-girar="-90" title="Girar 90° para a esquerda">${icone("rotate-ccw")}</button>
+        <button type="button" class="botao-icone" data-girar="90" title="Girar 90° para a direita">${icone("rotate-cw")}</button>
+        <button type="button" class="botao-icone${elT.espelharH ? " ligado" : ""}" data-espelhar="espelharH" title="Espelhar na horizontal">${icone("flip-horizontal-2")}</button>
+        <button type="button" class="botao-icone${elT.espelharV ? " ligado" : ""}" data-espelhar="espelharV" title="Espelhar na vertical">${icone("flip-vertical-2")}</button>
+      </div>
+      <p class="pix-ajuda">Também dá para girar pela bolinha em cima da caixa (Shift: de 15 em 15°).</p>
+    </section>`;
+
+  if (ehTexto) {
+    // Amostra (clique = seletor de cor) + conta-gotas + os 4 campos CMYK.
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
+      `<label class="arte-amostra-cor" style="background:${cmykParaCss(v)}" title="Escolher a cor">` +
+      `<input type="color" data-cor-rgb="${nome}" value="${cmykParaHex(v)}" aria-label="Escolher a cor" /></label>` +
+      `<button type="button" class="conta-gotas" data-conta-gotas="${nome}" title="Conta-gotas: clique aqui e depois num ponto da arte" aria-label="Conta-gotas">${icone("pipette")}</button>` +
       ["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number((v || [])[i]) || 0}" /></label>`).join("") +
-      `<span class="arte-amostra-cor" style="background:${cmykParaCss(v)}"></span></div>`;
+      `</div>`;
     html += `
-      <div class="arte-grade">
-        ${el.tipo === "nome" && !layoutModo ? `<label>Texto
-          <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
-        <label>Alinhamento
-          <select data-p="alinhamento"><option value="centro">Centro</option><option value="esquerda">Esquerda</option><option value="direita">Direita</option></select></label>
-        <label>Texto maior que a caixa
-          <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
-        <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
-        <label>Contorno (mm, 0 = sem)<input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
-        <label class="checkbox-inline"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> MAIÚSCULAS</label>
-        ${el.tipo === "nome" && !layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> Sem apelido, usar o nome</label>` : ""}
-      </div>
-      <p class="arte-rotulo-cor">Cor (CMYK %)</p>${cmyk("corCmyk", elT.corCmyk)}
-      <p class="arte-rotulo-cor">Cor do contorno (CMYK %)</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
-      <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>`;
+      <section class="painel-secao">
+        <h4 class="painel-titulo">${icone("type")} Texto</h4>
+        <div class="arte-grade">
+          ${el.tipo === "nome" && !layoutModo ? `<label>Texto
+            <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
+          <div class="campo-alinhar"><span>Alinhamento</span><span class="segmentado-icones" role="group" aria-label="Alinhamento">${[["esquerda", "align-left"], ["centro", "align-center"], ["direita", "align-right"]].map(([v, ic]) =>
+            `<button type="button" data-alinhar="${v}" class="${(elT.alinhamento || "centro") === v ? "ativo" : ""}" title="${v === "centro" ? "Centro" : v === "esquerda" ? "Esquerda" : "Direita"}" aria-pressed="${(elT.alinhamento || "centro") === v}">${icone(ic)}</button>`).join("")}</span></div>
+          <label>Texto maior que a caixa
+            <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
+          <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
+        </div>
+        <label class="interruptor"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> <span>MAIÚSCULAS</span></label>
+        ${el.tipo === "nome" && !layoutModo ? `<label class="interruptor"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> <span>Sem apelido, usar o nome</span></label>` : ""}
+        <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>
+      </section>
+      <section class="painel-secao">
+        <h4 class="painel-titulo">${icone("palette")} Cores <span>CMYK %</span></h4>
+        <p class="arte-rotulo-cor">Preenchimento</p>${cmyk("corCmyk", elT.corCmyk)}
+        <label class="arte-contorno">Contorno <small>(mm, 0 = sem)</small><input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
+        <p class="arte-rotulo-cor">Cor do contorno</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
+      </section>
+      <section class="painel-secao">
+        <h4 class="painel-titulo">${icone("sparkles")} Efeitos</h4>
+        <label class="campo-deslizante">Arco <small>(graus; negativo curva para baixo)</small>
+          <span><input type="range" min="-180" max="180" step="5" data-p="arco" value="${Number(elT.arco) || 0}" /><input type="number" step="5" min="-300" max="300" data-p="arco" value="${Number(elT.arco) || 0}" /></span></label>
+        <label class="campo-deslizante">Itálico <small>(inclinação, graus)</small>
+          <span><input type="range" min="-30" max="30" step="1" data-p="inclinacao" value="${Number(elT.inclinacao) || 0}" /><input type="number" step="1" min="-45" max="45" data-p="inclinacao" value="${Number(elT.inclinacao) || 0}" /></span></label>
+        <label class="interruptor"><input type="checkbox" data-p="sombra" ${elT.sombra ? "checked" : ""} /> <span>Sombra</span></label>
+        ${elT.sombra ? `<div class="arte-grade arte-grade-4 efeito-sub">
+          <label>Deslocar X<input type="number" step="0.5" data-p="sombraDx" value="${elT.sombraDx == null ? 1.5 : Number(elT.sombraDx)}" /></label>
+          <label>Deslocar Y<input type="number" step="0.5" data-p="sombraDy" value="${elT.sombraDy == null ? 1.5 : Number(elT.sombraDy)}" /></label>
+        </div>
+        <p class="arte-rotulo-cor">Cor da sombra</p>${cmyk("sombraCmyk", elT.sombraCmyk || [0, 0, 0, 60])}` : ""}
+        <label class="arte-contorno">Segundo contorno <small>(mm por fora do primeiro, 0 = sem)</small><input type="number" step="0.5" min="0" data-p="contorno2Mm" value="${Number(elT.contorno2Mm) || 0}" /></label>
+        ${Number(elT.contorno2Mm) > 0 ? `<p class="arte-rotulo-cor">Cor do segundo contorno</p>${cmyk("contorno2Cmyk", elT.contorno2Cmyk || [0, 0, 0, 100])}` : ""}
+      </section>`;
   }
   if (!layoutModo) {
-    html += `<div class="arte-botoes-el">
-      <button type="button" class="secundario" data-acao="duplicar">Duplicar</button>
-      <button type="button" class="perigo" data-acao="excluir">Excluir</button></div>`;
+    html += `<section class="painel-secao painel-rodape">
+      <button type="button" class="secundario" data-acao="duplicar">${icone("copy")} Duplicar</button>
+      <button type="button" class="perigo" data-acao="excluir">${icone("trash-2")} Excluir</button></section>`;
   }
   box.innerHTML = html;
 
@@ -1752,6 +2447,36 @@ function renderizarPainelLayout() {
     redesenhar();
   };
 
+  box.querySelectorAll("[data-alinhar]").forEach((b) => (b.onclick = () => gravarEstilo("alinhamento", b.dataset.alinhar)));
+  box.querySelectorAll("[data-alinhar-peca]").forEach((b) => {
+    b.onclick = () => {
+      const v = b.dataset.alinharPeca, nova = { ...c };
+      if (v === "esquerda") nova.x = 0;
+      else if (v === "centroH") nova.x = (m.dim.w - c.w) / 2;
+      else if (v === "direita") nova.x = m.dim.w - c.w;
+      else if (v === "topo") nova.y = 0;
+      else if (v === "meio") nova.y = (m.dim.h - c.h) / 2;
+      else nova.y = m.dim.h - c.h;
+      gravarCaixaLayout(el, m, nova);
+      redesenhar();
+    };
+  });
+  box.querySelectorAll("[data-camada]").forEach((b) => (b.onclick = () => moverCamadaLayout(el, b.dataset.camada)));
+  box.querySelectorAll("[data-girar]").forEach((b) => {
+    b.onclick = () => {
+      let g = (Number(elT.rotacao) || 0) + Number(b.dataset.girar);
+      g = ((g % 360) + 540) % 360 - 180;
+      gravarEstilo("rotacao", g);
+    };
+  });
+  box.querySelectorAll("[data-espelhar]").forEach((b) => (b.onclick = () => gravarEstilo(b.dataset.espelhar, !elT[b.dataset.espelhar])));
+  // Deslizante e número do mesmo efeito andam juntos.
+  box.querySelectorAll('input[type="range"][data-p]').forEach((r) => {
+    r.oninput = () => {
+      const par = r.parentElement.querySelector('input[type="number"]');
+      if (par) par.value = r.value;
+    };
+  });
   const chkOculto = box.querySelector("[data-oculto]");
   if (chkOculto) {
     chkOculto.onchange = () => {
@@ -1784,11 +2509,19 @@ function renderizarPainelLayout() {
   box.querySelectorAll("[data-p]").forEach((inp) => {
     if (inp.tagName === "SELECT") inp.value = elT[inp.dataset.p] || inp.options[0].value;
     inp.onchange = () => {
-      gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value);
+      gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" || inp.type === "range" ? Number(inp.value) || 0 : inp.value);
     };
   });
+  // Amostra: seletor de cor; conta-gotas: pega a cor de um ponto da arte.
+  box.querySelectorAll("[data-cor-rgb]").forEach((inp) => {
+    inp.onchange = () => gravarEstilo(inp.dataset.corRgb, hexParaCmyk(inp.value));
+  });
+  box.querySelectorAll("[data-conta-gotas]").forEach((b) => {
+    if (b.dataset.contaGotas === contaGotasAlvo) b.classList.add("ativo");
+    b.onclick = () => (contaGotasAlvo === b.dataset.contaGotas ? sairContaGotas() : entrarContaGotas(b.dataset.contaGotas));
+  });
   box.querySelectorAll("[data-cor]").forEach((grupo) => {
-    grupo.querySelectorAll("input").forEach((inp) => {
+    grupo.querySelectorAll("input[data-i]").forEach((inp) => {
       inp.onchange = () => {
         gravarEstilo(grupo.dataset.cor, [0, 1, 2, 3].map((i) =>
           Math.max(0, Math.min(100, Number(grupo.querySelector(`[data-i="${i}"]`).value) || 0))));
@@ -1798,7 +2531,9 @@ function renderizarPainelLayout() {
   box.querySelectorAll("[data-acao]").forEach((b) => {
     b.onclick = async () => {
       const a = b.dataset.acao;
-      if (a === "centralizar") {
+      if (a === "soltar") {
+        layoutElSel = "";
+      } else if (a === "centralizar") {
         gravarCaixaLayout(el, m, { ...c, x: (m.dim.w - c.w) / 2 });
       } else if (a === "voltarGeral") {
         await gravarAjusteTime(el.id, (x) => { Object.keys(x).forEach((k) => delete x[k]); });
@@ -1831,6 +2566,7 @@ function renderizarPainelLayout() {
 function gravarAjusteTime(elId, mudar) {
   const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
   if (!time) return Promise.resolve();
+  const antes = JSON.stringify(producaoDoTime(time));
   const prod = limparParaFirestore(producaoDoTime(time));
   const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
   alvo.layoutAjustes = alvo.layoutAjustes || {};
@@ -1845,6 +2581,7 @@ function gravarAjusteTime(elId, mudar) {
   if (!Object.keys(aj).length) delete porPeca[elId];
   if (!Object.keys(porPeca).length) delete alvo.layoutAjustes[layoutPeca];
   if (layoutGoleiro) limparGoleiroVazio(prod);
+  registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
   return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
     .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
 }

@@ -4,15 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Super Admin — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20261009a" />
+<link rel="stylesheet" href="css/style.css?v=20261014a" />
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
 </head>
 <body>
 
 <header class="topo">
-  <h1>👕 Camisetas Interclasse</h1>
+  <h1><i data-icone="shirt"></i> <span class="titulo-site">Camisetas Interclasse</span></h1>
   <nav>
-    <a href="index.html">Início</a>
+    <a href="index.html"><i data-icone="house"></i> Início</a>
   </nav>
 </header>
 
@@ -32,7 +32,7 @@
            camiseta sem precisar abrir time por time. Vale para a lista de
            times (aba Inicial) e para o Kanban. -->
       <div class="busca-pedidos">
-        <label for="buscaPedidos">🔎 Buscar:</label>
+        <label for="buscaPedidos"><i data-icone="search"></i> Buscar:</label>
         <input type="search" id="buscaPedidos" autocomplete="off"
                placeholder="Time, nome do estudante ou apelido na camiseta" />
         <button type="button" id="btnLimparBusca" class="secundario oculto">Limpar</button>
@@ -40,16 +40,16 @@
       </div>
 
       <nav class="abas-admin">
-        <button type="button" class="aba ativa" data-aba="inicial">Inicial</button>
-        <button type="button" class="aba" data-aba="clientes">Clientes</button>
-        <button type="button" class="aba" data-aba="kanban">Kanban</button>
-        <button type="button" class="aba" data-aba="producao">Produção</button>
-        <button type="button" class="aba" data-aba="artes">Artes</button>
-        <button type="button" class="aba" data-aba="financeiro">Financeiro</button>
-        <button type="button" class="aba" data-aba="tamanhos">Tamanhos</button>
-        <button type="button" class="aba" data-aba="pagamentos">Pagamentos</button>
-        <button type="button" class="aba" data-aba="config">Configurações</button>
-        <button type="button" class="aba" data-aba="backup">Backup</button>
+        <button type="button" class="aba ativa" data-aba="inicial"><i data-icone="list"></i> Inicial</button>
+        <button type="button" class="aba" data-aba="clientes"><i data-icone="users"></i> Clientes</button>
+        <button type="button" class="aba" data-aba="kanban"><i data-icone="kanban"></i> Kanban</button>
+        <button type="button" class="aba" data-aba="producao"><i data-icone="factory"></i> Produção</button>
+        <button type="button" class="aba" data-aba="artes"><i data-icone="palette"></i> Artes</button>
+        <button type="button" class="aba" data-aba="financeiro"><i data-icone="wallet"></i> Financeiro</button>
+        <button type="button" class="aba" data-aba="tamanhos"><i data-icone="ruler"></i> Tamanhos</button>
+        <button type="button" class="aba" data-aba="pagamentos"><i data-icone="credit-card"></i> Pagamentos</button>
+        <button type="button" class="aba" data-aba="config"><i data-icone="settings"></i> Configurações</button>
+        <button type="button" class="aba" data-aba="backup"><i data-icone="database-backup"></i> Backup</button>
       </nav>
     </div>
 
@@ -60,7 +60,7 @@
           <h2>Times</h2>
           <p class="pix-ajuda">Clique num time para abrir o pedido: lista, configuração e arquivos de produção.</p>
         </div>
-        <button type="button" id="btnNovoTime" class="primario">+ Novo time</button>
+        <button type="button" id="btnNovoTime" class="primario"><i data-icone="plus"></i> Novo time</button>
       </div>
 
       <div class="card oculto so-lista" id="cardCriarTime">
@@ -152,10 +152,21 @@
 
     <!-- ABA: ARTES (editor de layout da folha EPS: brasão, nome e número) -->
     <section id="aba-artes" class="secao-aba oculto">
-      <div class="card">
-        <h2>Layout da folha de impressão</h2>
-        <p>Aqui você marca, em cima do <strong>molde de corte</strong> de cada peça, onde ficam o <strong>brasão</strong> e as caixas do <strong>nome</strong> e do <strong>número</strong>. A caixa é o <strong>limite</strong>: nome ou número comprido encolhe para caber e nunca sai dela. O layout geral vale para todos os times; em <strong>Editando</strong>, escolha um time para fazer um ajuste só dele.</p>
-        <p class="pix-ajuda">A arte de cada peça (PNG 600 dpi), o brasão e a fonte são enviados em cada time (aba Inicial → abra o time → <strong>Arquivos de produção</strong>). Os moldes de corte ficam na aba <strong>Tamanhos</strong>. A folha é gerada na aba <strong>Produção</strong>, botão <strong>Folhas EPS</strong>.</p>
+      <div class="card tema-escuro">
+        <div class="cabecalho-secao">
+          <div>
+            <h2>Editor de arte — layout geral</h2>
+            <p class="pix-ajuda">Onde ficam o <strong>nome</strong>, o <strong>número</strong>, o <strong>brasão</strong>, o logo e o detalhe da manga em cada peça, em cima do molde de corte. Vale para <strong>todos os times</strong>; para mudar só um time, abra o time → <strong>Editar arte</strong> (ou escolha o time em "Editando").</p>
+          </div>
+        </div>
+        <details class="ajuda-recolhivel">
+          <summary>Como funciona</summary>
+          <ul>
+            <li>A caixa de texto é o <strong>limite</strong>: nome ou número comprido encolhe para caber e nunca sai dela.</li>
+            <li>O layout é marcado no <strong>tamanho base</strong>; nos outros tamanhos as caixas acompanham a proporção do molde (dá para ajustar um tamanho específico).</li>
+            <li>A arte de cada peça, o brasão e a fonte vêm de cada time (abra o time → <strong>Arquivos de produção</strong>). Os moldes ficam na aba <strong>Tamanhos</strong>, e a folha é gerada na aba <strong>Produção</strong> (<strong>Folhas EPS</strong>).</li>
+          </ul>
+        </details>
         <div id="editorLayout"></div>
       </div>
     </section>
@@ -339,12 +350,12 @@
 
       <label class="checkbox-inline" for="novaCamisetaGoleiro">
         <input type="checkbox" id="novaCamisetaGoleiro" />
-        🧤 É goleiro (camiseta de cor especial)
+        <i data-icone="hand"></i> É goleiro (camiseta de cor especial)
       </label>
 
       <label class="checkbox-inline" for="novaCamisetaProf">
         <input type="checkbox" id="novaCamisetaProf" />
-        🎓 É camiseta de professor (só para organização)
+        <i data-icone="graduation-cap"></i> É camiseta de professor (só para organização)
       </label>
 
       <button type="submit" class="primario">Adicionar à lista</button>
@@ -371,17 +382,18 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
-<script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20261009a"></script>
-<script src="js/auth-admin.js"></script>
-<script src="js/admin.js?v=20261009a"></script>
-<script src="js/producao.js?v=20261009a"></script>
-<script src="js/eps.js?v=20261009a"></script>
-<script src="js/png-stream.js?v=20261009a"></script>
-<script src="js/previa-eps.js?v=20261009a"></script>
-<script src="js/moldes.js?v=20261009a"></script>
-<script src="js/artes.js?v=20261009a"></script>
-<script src="js/mockup.js?v=20261009a"></script>
-<script src="js/backup.js?v=20261009a"></script>
+<script src="js/firebase-init.js?v=20261014a"></script>
+<script src="js/icones.js?v=20261014a"></script>
+<script src="js/utils.js?v=20261014a"></script>
+<script src="js/auth-admin.js?v=20261014a"></script>
+<script src="js/admin.js?v=20261014a"></script>
+<script src="js/producao.js?v=20261014a"></script>
+<script src="js/eps.js?v=20261014a"></script>
+<script src="js/png-stream.js?v=20261014a"></script>
+<script src="js/previa-eps.js?v=20261014a"></script>
+<script src="js/moldes.js?v=20261014a"></script>
+<script src="js/artes.js?v=20261014a"></script>
+<script src="js/mockup.js?v=20261014a"></script>
+<script src="js/backup.js?v=20261014a"></script>
 </body>
 </html>

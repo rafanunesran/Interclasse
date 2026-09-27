@@ -167,6 +167,93 @@ const EPS = (function () {
     });
   }
 
+  // ---------------- Efeitos e transformações ----------------
+  // Tudo em mm, no sistema da caixa (y para baixo). O giro é em graus, no
+  // sentido horário (como na tela), em volta do centro da caixa.
+
+  // Aplica `f(x, y) -> [x, y]` a todos os pontos (inclusive os de controle).
+  function transformarComandos(comandos, f) {
+    return comandos.map((c) => {
+      const n = { type: c.type };
+      ["", "1", "2"].forEach((s) => {
+        if (c["x" + s] == null) return;
+        const [x, y] = f(c["x" + s], c["y" + s]);
+        n["x" + s] = x;
+        n["y" + s] = y;
+      });
+      return n;
+    });
+  }
+
+  // Giro e espelho de um elemento, em volta do centro (cx, cy).
+  function transformacaoDoElemento(el, cx, cy) {
+    const rot = ((Number(el.rotacao) || 0) * Math.PI) / 180;
+    const fh = el.espelharH ? -1 : 1, fv = el.espelharV ? -1 : 1;
+    if (!rot && fh === 1 && fv === 1) return null;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    return (x, y) => {
+      const dx = (x - cx) * fh, dy = (y - cy) * fv;
+      return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+    };
+  }
+
+  // Texto de um elemento pronto para desenhar: layoutTexto + itálico (inclinação),
+  // arco e, se pedido, giro/espelho. Com itálico ou arco o texto é reencaixado
+  // na caixa (continua nunca saindo dela). Devolve { comandos } em mm,
+  // relativos ao canto de cima da caixa.
+  //   opcoes.semGiro — sem o giro/espelho (o editor gira a caixa inteira).
+  function textoDoElemento(font, texto, caixa, el, opcoes) {
+    const l = layoutTexto(font, texto, caixa, el);
+    let cmds = l.comandos;
+    if (!cmds.length) return { comandos: [] };
+    const incl = Math.max(-45, Math.min(45, Number(el.inclinacao) || 0));
+    const arco = Math.max(-300, Math.min(300, Number(el.arco) || 0));
+    if (incl || Math.abs(arco) >= 1) {
+      const bb = caixaDosComandos(cmds);
+      const base = bb.y2;
+      if (incl) {
+        const t = Math.tan((incl * Math.PI) / 180);
+        cmds = transformarComandos(cmds, (x, y) => [x + (base - y) * t, y]);
+      }
+      if (Math.abs(arco) >= 1) {
+        const b2 = caixaDosComandos(cmds);
+        const larg = b2.x2 - b2.x1;
+        const R = larg / ((Math.abs(arco) * Math.PI) / 180);
+        const cx = (b2.x1 + b2.x2) / 2;
+        cmds = transformarComandos(cmds, arco > 0
+          // Arco para cima (∩): centro embaixo do texto.
+          ? (x, y) => { const th = (x - cx) / R, r = R + (base - y); return [cx + r * Math.sin(th), base + R - r * Math.cos(th)]; }
+          // Arco para baixo (∪): centro em cima do texto.
+          : (x, y) => { const th = (x - cx) / R, r = R - (base - y); return [cx + r * Math.sin(th), base - R + r * Math.cos(th)]; });
+      }
+      // Reencaixa na caixa: encolhe se passou e alinha como o texto reto.
+      const b3 = caixaDosComandos(cmds);
+      const w = b3.x2 - b3.x1, h = b3.y2 - b3.y1;
+      const e = Math.min(1, caixa.w / w, caixa.h / h);
+      const W = w * e, H = h * e;
+      let x0 = (caixa.w - W) / 2;
+      if (el.alinhamento === "esquerda") x0 = 0;
+      else if (el.alinhamento === "direita") x0 = caixa.w - W;
+      const y0 = (caixa.h - H) / 2;
+      cmds = transformarComandos(cmds, (x, y) => [x0 + (x - b3.x1) * e, y0 + (y - b3.y1) * e]);
+    }
+    if (!(opcoes && opcoes.semGiro)) {
+      const f = transformacaoDoElemento(el, caixa.w / 2, caixa.h / 2);
+      if (f) cmds = transformarComandos(cmds, f);
+    }
+    return { comandos: cmds };
+  }
+
+  // Sombra do texto ligada? (deslocamento em mm e cor)
+  function sombraDoElemento(el) {
+    if (!el.sombra) return null;
+    return {
+      dx: Number(el.sombraDx == null ? 1.5 : el.sombraDx) || 0,
+      dy: Number(el.sombraDy == null ? 1.5 : el.sombraDy) || 0,
+      cmyk: el.sombraCmyk || [0, 0, 0, 60]
+    };
+  }
+
   // ---------------- Layout: onde cada coisa fica em cada tamanho ----------------
 
   // Valor de texto de um elemento para uma camiseta.
@@ -703,6 +790,15 @@ const EPS = (function () {
   //   { tipo: "eps", chave, x, y, w, h }
   //   { tipo: "imagem", chave, x, y, w, h }
   //   { tipo: "caminho", comandos, cmyk, contorno: { cmyk, mm } | null }
+  // Giro/espelho que vai na op de imagem ou EPS (o escritor aplica).
+  function giroDaOp(el) {
+    const o = {};
+    if (Number(el.rotacao)) o.rot = Number(el.rotacao);
+    if (el.espelharH) o.flipH = true;
+    if (el.espelharV) o.flipV = true;
+    return o;
+  }
+
   function montarBlocos(moldes, layout, time, camisetas, rec, opcoes) {
     const op = opcoes || {};
     const posMolde = op.molde || "frente";
@@ -758,7 +854,7 @@ const EPS = (function () {
             const img = d && rec.imagens && rec.imagens[d.chave];
             if (!img) { avisar("O time não tem o detalhe da manga (PNG) — a caixa do detalhe ficou vazia."); return; }
             // `livre`: a imagem estica na caixa (largura e altura independentes).
-            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
+            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
             return;
           }
           if (el.tipo === "brasao" || el.tipo === "logo") {
@@ -770,20 +866,32 @@ const EPS = (function () {
               return;
             }
             const t = tamanhoMmDoBbox(e.bbox);
-            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
+            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
             return;
           }
           if (!rec.fonte) { avisar("O time não tem fonte — nome e número ficaram de fora."); return; }
           const valor = textoDoCampo(el, cam);
           if (!String(valor).trim()) return;
-          const l = layoutTexto(rec.fonte, valor, caixa, el);
+          const l = textoDoElemento(rec.fonte, valor, caixa, el);
           if (!l.comandos.length) return;
+          const c1 = Number(el.contornoMm) || 0, c2 = Number(el.contorno2Mm) || 0;
+          const sombra = sombraDoElemento(el);
+          if (sombra) {
+            // A sombra tem o tamanho da letra com os contornos, na cor da sombra.
+            ops.push({
+              tipo: "caminho", recortar,
+              comandos: deslocarComandos(l.comandos, caixa.x + sombra.dx, caixa.y + sombra.dy),
+              cmyk: sombra.cmyk,
+              contorno: c1 + c2 > 0 ? { cmyk: sombra.cmyk, mm: c1 + c2 } : null
+            });
+          }
           ops.push({
             tipo: "caminho",
             recortar,
             comandos: deslocarComandos(l.comandos, caixa.x, caixa.y),
             cmyk: el.corCmyk || [0, 0, 0, 100],
-            contorno: el.contornoMm > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: Number(el.contornoMm) } : null
+            contorno: c1 > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: c1 } : null,
+            contorno2: c2 > 0 ? { cmyk: el.contorno2Cmyk || [0, 0, 0, 100], mm: c1 + c2 } : null
           });
         });
 
@@ -982,6 +1090,15 @@ const EPS = (function () {
         return s;
       };
 
+      // Giro/espelho de imagem e EPS em volta do centro da caixa. No
+      // PostScript o y sobe, então o giro horário da tela é negativo.
+      const giro = (op) => {
+        if (!op.rot && !op.flipH && !op.flipV) return ["", ""];
+        const cx = (op.x + op.w / 2) * k, cy = (hb - (op.y + op.h / 2)) * k;
+        return [`gsave ${num(cx)} ${num(cy)} translate ${num(-(op.rot || 0))} rotate ` +
+          `${op.flipH ? -1 : 1} ${op.flipV ? -1 : 1} scale ${num(-cx)} ${num(-cy)} translate\n`, "grestore\n"];
+      };
+
       // Recorte no formato do molde: as ops marcadas `recortar` (arte,
       // brasão, logo, textos) ficam dentro de um clip com o contorno.
       let recortando = false;
@@ -1006,6 +1123,11 @@ const EPS = (function () {
             `${num(op.mm * k)} setlinewidth 1 setlinejoin stroke grestore\n`);
         } else if (op.tipo === "caminho") {
           const s = caminho(op.comandos);
+          if (op.contorno2) {
+            // Segundo contorno: por fora do primeiro (mm já é o total).
+            escrever(`gsave newpath\n${s}${cmykPs(op.contorno2.cmyk)} setcmykcolor ` +
+              `${num(op.contorno2.mm * 2 * k)} setlinewidth 1 setlinejoin 1 setlinecap stroke grestore\n`);
+          }
           if (op.contorno) {
             // Contorno por fora: traço com o dobro da espessura por baixo do
             // preenchimento — só a metade de fora fica visível.
@@ -1016,6 +1138,8 @@ const EPS = (function () {
         } else if (op.tipo === "imagem") {
           const img = rec.imagens[op.chave];
           if (!img) return;
+          const [giraIni, giraFim] = giro(op);
+          escrever(giraIni);
           const nome = nomeImg[op.chave];
           const w = img.largura, h = img.altura;
           const mat = `[${w} 0 0 ${-h} 0 ${h}]`;
@@ -1031,10 +1155,12 @@ const EPS = (function () {
           } else {
             s += `${dados} image\n`;
           }
-          escrever(s + "grestore\n");
+          escrever(s + "grestore\n" + giraFim);
         } else if (op.tipo === "eps") {
           const e = rec.eps[op.chave];
           if (!e) return;
+          const [giraIni, giraFim] = giro(op);
+          escrever(giraIni);
           const bw = e.bbox.x2 - e.bbox.x1, bh = e.bbox.y2 - e.bbox.y1;
           escrever(
             `BeginEPSF\n${X(op.x)} ${Y(op.y + op.h)} translate ` +
@@ -1044,7 +1170,7 @@ const EPS = (function () {
             `%%BeginDocument: ${String(op.chave).replace(/[^\w:.-]/g, "_")}.eps\n`
           );
           pedacos.push(e.bytes);
-          escrever("\n%%EndDocument\nEndEPSF\n");
+          escrever("\n%%EndDocument\nEndEPSF\n" + giraFim);
         }
       });
       if (recortando) escrever("grestore\n");
@@ -1061,6 +1187,10 @@ const EPS = (function () {
     lerBoundingBox,
     tamanhoMmDoBbox,
     layoutTexto,
+    textoDoElemento,
+    transformarComandos,
+    transformacaoDoElemento,
+    sombraDoElemento,
     textoDoCampo,
     caixaEfetiva,
     caixaArte,

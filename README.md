@@ -14,6 +14,8 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
 - **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
+O login do administrador **fica salvo** no navegador e só cai depois de **24h sem nenhum uso** do Super Admin (clique, tecla ou rolagem em qualquer aba); aí o site pede a senha de novo. Abrir a loja ou a página de um pedido no mesmo navegador não derruba mais o login do admin.
+
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
 ## Passo a passo da configuração
@@ -140,6 +142,12 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 - **Link do cliente:** `index.html?cliente=ID-DO-CLIENTE` abre a tela inicial já com os
   times daquele cliente — é o link para compartilhar com ele. Sem o parâmetro, a tela
   inicial mostra a lista de clientes para escolher.
+- **Ocultar da loja:** o botão **Ocultar da loja** (aba **Clientes**, no card do cliente,
+  ou time aberto → **Configuração** → *Visibilidade na loja*) tira o cliente — com todos os
+  times dele — ou um time só da loja (`index.html`), inclusive do link
+  `index.html?cliente=...`. Nada é apagado: o painel continua mostrando tudo (com o selo
+  *Oculto na loja*), e o link direto do time (`time.html?id=...`) continua abrindo para
+  quem já o tem. **Mostrar na loja** desfaz.
 - **No Financeiro**, com mais de um cliente na conta, a *Visão geral* ganha o quadro
   **Por cliente** (previsto, recebido, a receber, % e lucro) e a tabela por time ganha a
   coluna do cliente. Os CSVs do Financeiro e o de conferência também trazem o cliente.
@@ -566,6 +574,24 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
   gera as imagens e o 3D da camiseta do goleiro (`previaCliente.goleiro`), com a etiqueta
   **GOLEIRO** na imagem e a legenda "🧤 Goleiro — …" na galeria; no **Ver em 3D** o cliente troca
   entre **Camiseta** e **🧤 Goleiro**.
+
+### Ferramentas do editor
+
+- **Desfazer/refazer** (botões no topo, <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), **copiar/colar/duplicar**
+  (<kbd>Ctrl+C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, no layout geral), <kbd>Delete</kbd> apaga (no time: oculta só nele),
+  setas movem 1 mm (<kbd>Shift</kbd>: 10 mm).
+- **Camadas**: a lista mostra o que fica por cima primeiro; cadeado **trava** o elemento (não mexe ao
+  arrastar) e, no time, o olho oculta. **Organizar**: alinhar na peça (esquerda, centro, direita, topo,
+  meio, base) e a ordem das camadas.
+- **Guias magnéticas** ao arrastar (bordas e centro da peça e dos outros elementos; segure <kbd>Alt</kbd>
+  para soltar livre) e **réguas** em mm.
+- **Girar e espelhar** (campo em graus, ±90°, espelho horizontal/vertical ou a bolinha em cima da caixa).
+- **Efeitos no texto**: arco (negativo curva para baixo), itálico, sombra e segundo contorno. Com arco ou
+  itálico o texto é reencaixado e continua sem sair da caixa.
+- **Cores**: o **conta-gotas** pega a cor de um ponto da arte (clique nele e depois no desenho); a amostra
+  abre o seletor de cor. A cor vira CMYK pela conversão simples (K = 1 − máx(R,G,B)).
+
+Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
 
 ### Gerar (aba **Produção**)
 

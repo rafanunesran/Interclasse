@@ -4,14 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20261009a" />
+<link rel="stylesheet" href="css/style.css?v=20261014a" />
 </head>
 <body>
 
 <header class="topo">
-  <h1>👕 Camisetas Interclasse</h1>
+  <h1><i data-icone="shirt"></i> <span class="titulo-site">Camisetas Interclasse</span></h1>
   <nav>
-    <a href="index.html">Início</a>
+    <a href="index.html"><i data-icone="house"></i> Início</a>
   </nav>
 </header>
 
@@ -22,7 +22,7 @@
   </section>
 
   <div class="loja-filtros">
-    <input type="search" id="buscaLoja" class="loja-busca" placeholder="🔎 Buscar time ou escola" autocomplete="off" aria-label="Buscar time ou escola" />
+    <span class="campo-busca loja-busca-wrap"><i data-icone="search"></i><input type="search" id="buscaLoja" class="loja-busca" placeholder="Buscar time ou escola" autocomplete="off" aria-label="Buscar time ou escola" /></span>
     <div id="filtroClientesLoja" class="chips-filtro oculto" role="group" aria-label="Filtrar por escola ou cliente"></div>
   </div>
 
@@ -35,7 +35,7 @@
      um responsável pode juntar camisetas de times diferentes. -->
 <div id="barraCarrinho" class="barra-carrinho oculto" role="region" aria-label="Carrinho de pagamento">
   <div class="carrinho-info">
-    <span class="carrinho-icone" aria-hidden="true">🛒</span>
+    <span class="carrinho-icone" aria-hidden="true"><i data-icone="shopping-cart"></i></span>
     <span id="carrinhoResumo">Carrinho vazio</span>
   </div>
   <div class="carrinho-acoes">
@@ -52,8 +52,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
-<script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20261009a"></script>
-<script src="js/home.js?v=20261009a"></script>
+<script src="js/firebase-init.js?v=20261014a"></script>
+<script src="js/icones.js?v=20261014a"></script>
+<script src="js/utils.js?v=20261014a"></script>
+<script src="js/home.js?v=20261014a"></script>
 </body>
 </html>

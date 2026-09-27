@@ -91,7 +91,7 @@ function aplicarConfigGeral(cfg) {
   if (!cfg) return;
   if (cfg.tituloEvento) {
     const h1 = document.querySelector("header.topo h1");
-    if (h1) h1.textContent = "👕 " + cfg.tituloEvento;
+    if (h1) h1.innerHTML = (typeof icone === "function" ? icone("shirt") + " " : "") + escaparHtml(cfg.tituloEvento);
     document.title = cfg.tituloEvento;
   }
   if (cfg.rodape) {
@@ -225,6 +225,18 @@ function nomeDoCliente(clientes, clienteId) {
   const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
   const c = lista.find((x) => x.id === clienteId);
   return (c && c.nome) || SEM_CLIENTE_NOME;
+}
+
+// Clientes e times podem ser ocultados pelo Super Admin (campo oculto = true):
+// somem da loja (index.html), mas o link direto do time continua abrindo.
+// Um time some também quando o cliente dele está oculto.
+function timeOcultoNaLoja(time, clientes) {
+  if (time && time.oculto === true) return true;
+  const id = clienteIdDoTime(time);
+  if (!id) return false;
+  const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
+  const c = lista.find((x) => x.id === id);
+  return !!(c && c.oculto === true);
 }
 
 // Um time pertence ao cliente escolhido no filtro? Filtro vazio = todos.
@@ -438,9 +450,14 @@ function ehGoleiro(aluno) {
 
 // Marca do goleiro para as listas que não têm a coluna de marcar (produção,
 // levas, conferência). Onde dá para editar, quem manda é a caixa de marcar.
+// Ícone (js/icones.js) ou, numa página sem ele, o texto de reserva.
+function iconeOu(nome, reserva) {
+  return typeof icone === "function" ? icone(nome) : reserva;
+}
+
 function badgeGoleiroHtml(aluno) {
   return ehGoleiro(aluno)
-    ? '<span class="badge goleiro" title="Goleiro — camiseta de cor especial">🧤 Goleiro</span>'
+    ? '<span class="badge goleiro" title="Goleiro — camiseta de cor especial">' + iconeOu("hand", "🧤") + ' Goleiro</span>'
     : "";
 }
 
@@ -452,7 +469,7 @@ function criarCheckGoleiro(aluno, aoMudar) {
   return criarCheckMarca(aluno, {
     classe: "check-goleiro",
     titulo: "Goleiro — camiseta de cor especial",
-    icone: "🧤",
+    icone: "hand",
     palavra: "goleiro",
     marcado: ehGoleiro(aluno)
   }, aoMudar);
@@ -474,7 +491,7 @@ function criarCheckMarca(aluno, cfg, aoMudar) {
   // (CSS) para a coluna não alargar a tabela, e o ícone continua identificando.
   const icone = document.createElement("span");
   icone.className = cfg.classe + "-icone";
-  icone.textContent = cfg.icone;
+  icone.innerHTML = iconeOu(cfg.icone, "");
   const texto = document.createElement("span");
   texto.className = cfg.classe + "-texto";
 
@@ -509,7 +526,7 @@ function ehProf(aluno) {
 
 function badgeProfHtml(aluno) {
   return ehProf(aluno)
-    ? '<span class="badge prof" title="Camiseta de professor">🎓 Prof</span>'
+    ? '<span class="badge prof" title="Camiseta de professor">' + iconeOu("graduation-cap", "🎓") + ' Prof</span>'
     : "";
 }
 
@@ -517,7 +534,7 @@ function criarCheckProf(aluno, aoMudar) {
   return criarCheckMarca(aluno, {
     classe: "check-prof",
     titulo: "Camiseta de professor (só para organização)",
-    icone: "🎓",
+    icone: "graduation-cap",
     palavra: "prof",
     marcado: ehProf(aluno)
   }, aoMudar);
@@ -849,7 +866,7 @@ function renderizarBarraStatus(container, statusId) {
   if (statusForaDaLinha(statusId)) {
     const etapa = document.createElement("span");
     etapa.className = "status-etapa " + statusId + " atual";
-    etapa.textContent = statusId === "bloqueado" ? "🚫 Pedido bloqueado" : "⏸ Pedido suspenso";
+    etapa.innerHTML = statusId === "bloqueado" ? iconeOu("ban", "") + " Pedido bloqueado" : iconeOu("circle-pause", "") + " Pedido suspenso";
     container.appendChild(etapa);
     return;
   }

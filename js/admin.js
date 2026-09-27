@@ -53,15 +53,55 @@ let painelIniciado = false;
 // Guarda de acesso: o Firebase mantém a sessão salva no navegador, então
 // quem já entrou continua logado ao recarregar. Se não for a conta admin,
 // volta para a página de login.
+// Roda `f` quando todos os <script> da página já foram carregados.
+function aoCarregarScripts(f) {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => setTimeout(f, 0));
+  else setTimeout(f, 0);
+}
+
+// Sai por inatividade: 24h sem uso em nenhuma aba (ver js/auth-admin.js).
+async function sairPorInatividade() {
+  elPainel.classList.add("oculto");
+  await auth.signOut();
+  window.location.replace(PAGINA_LOGIN);
+}
+
+let ultimaGravacaoAtividade = 0;
+function aoUsarPainel() {
+  // No máximo uma gravação por minuto (o mousemove dispara sem parar).
+  const agora = Date.now();
+  if (agora - ultimaGravacaoAtividade < 60 * 1000) return;
+  if (sessaoAdminExpirada()) {
+    sairPorInatividade();
+    return;
+  }
+  ultimaGravacaoAtividade = agora;
+  registrarAtividadeAdmin();
+}
+["click", "keydown", "scroll", "pointermove", "touchstart"].forEach((ev) =>
+  window.addEventListener(ev, aoUsarPainel, { passive: true, capture: true }));
+// Confere de tempos em tempos (e ao voltar para a aba) se o prazo acabou.
+setInterval(() => { if (auth.currentUser && sessaoAdminExpirada()) sairPorInatividade(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") aoUsarPainel();
+});
+
 auth.onAuthStateChanged((user) => {
+  if (ehContaAdmin(user) && sessaoAdminExpirada()) {
+    sairPorInatividade();
+    return;
+  }
   if (ehContaAdmin(user)) {
+    registrarAtividadeAdmin();
     if (elEmailLogado) elEmailLogado.textContent = user.email;
     elPainel.classList.remove("oculto");
     if (!painelIniciado) {
       painelIniciado = true;
-      // Adiado com setTimeout para garantir que as declarações let/const do
-      // restante do arquivo já existam quando rodarem (evita "TDZ").
-      setTimeout(() => {
+      // Só começa depois de TODOS os scripts da página carregarem: entre um
+      // script e outro o navegador pode rodar o login, e o painel desenharia
+      // antes de producao.js/artes.js existirem (erro e editor pela metade).
+      // Também garante que as declarações let/const deste arquivo existam.
+      aoCarregarScripts(() => {
         escutarClientes();
         escutarTimes();
         carregarPainelConfig();
@@ -70,7 +110,7 @@ auth.onAuthStateChanged((user) => {
         // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
         if (typeof escutarMoldes === "function") escutarMoldes();
         if (typeof escutarLayout === "function") escutarLayout();
-      }, 0);
+      });
     }
   } else {
     elPainel.classList.add("oculto");
@@ -384,7 +424,9 @@ function renderizarClientesAdmin() {
     const camisetas = times.reduce((soma, e) => soma + e.alunos.length, 0);
 
     card.innerHTML = `
-      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}</h2>
+      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}${
+        cliente.oculto === true ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}</h2>
+      ${cliente.oculto === true ? '<p class="pix-ajuda">Este cliente e os times dele não aparecem na loja. Os links diretos dos times continuam funcionando.</p>' : ""}
       ${cliente.contato ? `<p>Contato: ${escapeHtmlAdmin(cliente.contato)}</p>` : ""}
       <p>${times.length} time(s) &middot; ${camisetas} camiseta(s) &middot; Link: <code>index.html?cliente=${cliente.id}</code></p>
     `;
@@ -413,6 +455,14 @@ function renderizarClientesAdmin() {
     };
     botoes.appendChild(btnEditar);
 
+    const btnOcultar = document.createElement("button");
+    btnOcultar.className = "secundario";
+    btnOcultar.innerHTML = cliente.oculto === true
+      ? icone("eye") + " Mostrar na loja"
+      : icone("eye-off") + " Ocultar da loja";
+    btnOcultar.onclick = () => alternarClienteOculto(cliente, btnOcultar);
+    botoes.appendChild(btnOcultar);
+
     const btnExcluir = document.createElement("button");
     btnExcluir.className = "perigo";
     btnExcluir.textContent = "Excluir cliente";
@@ -422,6 +472,20 @@ function renderizarClientesAdmin() {
     card.appendChild(botoes);
     elListaClientesAdmin.appendChild(card);
   });
+}
+
+// Ocultar/mostrar o cliente na loja: com ele oculto, nenhum time dele aparece
+// em index.html (os links diretos dos times continuam abrindo).
+async function alternarClienteOculto(cliente, botao) {
+  const ocultar = cliente.oculto !== true;
+  botao.disabled = true;
+  try {
+    await db.collection(COL_CLIENTES).doc(cliente.id).update({ oculto: ocultar });
+  } catch (erro) {
+    console.error(erro);
+    botao.disabled = false;
+    alert("Erro ao salvar. Tente novamente.");
+  }
 }
 
 // Formulário inline de edição do nome/contato do cliente.
@@ -817,7 +881,7 @@ function renderizarListaTimes() {
       if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
     });
     elArquivados.innerHTML =
-      `<summary>📦 Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
+      `<summary>${icone("archive")} Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
       '<p class="pix-ajuda">Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.</p>';
     elArquivados.appendChild(criarListaDeLinhas(idsArquivados, termosBusca));
     elListaTimesAdmin.appendChild(elArquivados);
@@ -855,6 +919,9 @@ function criarLinhaTime(timeId, termosBusca) {
   if (achado.alunos.length > 0) sinais.push(`<span class="sinal sinal-busca">🔎 ${achado.alunos.length}</span>`);
   if (nAjustes > 0) sinais.push(`<span class="sinal sinal-ajuste" title="Ajustes solicitados">! ${nAjustes}</span>`);
   if (nConfirmar > 0) sinais.push(`<span class="sinal sinal-pix" title="PIX avisado, a confirmar">PIX ${nConfirmar}</span>`);
+  if (timeOcultoNaLoja(time, estadoClientes)) {
+    sinais.push(`<span class="sinal sinal-oculto" title="${time.oculto === true ? "Time oculto na loja" : "Cliente oculto na loja"}">${icone("eye-off")}</span>`);
+  }
 
   linha.innerHTML = `
     <span class="linha-time-avatar">${avatar}</span>
@@ -889,8 +956,8 @@ function representanteCurtoHtml(time) {
   const texto = escapeHtmlAdmin(nome || "Representante") +
     (telefone ? ` · ${escapeHtmlAdmin(formatarTelefone(telefone))}` : "");
   return url
-    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">💬 ${texto}</a>`
-    : `<span title="Sem um WhatsApp válido (informe com DDD)">👤 ${texto}</span>`;
+    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">${icone("message-circle")} ${texto}</a>`
+    : `<span title="Sem um WhatsApp válido (informe com DDD)">${icone("user")} ${texto}</span>`;
 }
 
 // ---------------- Time aberto ----------------
@@ -900,7 +967,7 @@ function renderizarTimeAberto(timeId) {
   const voltar = document.createElement("button");
   voltar.type = "button";
   voltar.className = "botao-voltar";
-  voltar.textContent = "← Todos os times";
+  voltar.innerHTML = icone("arrow-left") + " Todos os times";
   voltar.onclick = voltarParaListaAdmin;
 
   if (!estado) {
@@ -926,7 +993,7 @@ function renderizarTimeAberto(timeId) {
   verPagina.href = "time.html?id=" + encodeURIComponent(timeId);
   verPagina.target = "_blank";
   verPagina.rel = "noopener";
-  verPagina.textContent = "Ver a página do pedido ↗";
+  verPagina.innerHTML = "Ver a página do pedido " + icone("arrow-up-right");
   topo.appendChild(verPagina);
   elListaTimesAdmin.appendChild(topo);
 
@@ -937,7 +1004,8 @@ function renderizarTimeAberto(timeId) {
     <div class="detalhe-titulo">
       <p class="detalhe-cliente">${escapeHtmlAdmin(nomeClienteDoTime(time))}${
         time.modeloCamiseta ? ` · Modelo: ${escapeHtmlAdmin(time.modeloCamiseta)}` : ""}</p>
-      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span></h2>
+      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span>${
+        timeOcultoNaLoja(time, estadoClientes) ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}</h2>
       <p class="linha-time-rep">${representanteCurtoHtml(time)}</p>
     </div>`;
 
@@ -1017,8 +1085,8 @@ function renderizarListaDoTime(timeId) {
     `<span class="numero-chip"><strong>${alunos.length - nPagos}</strong> pendente(s)</span>`
   ];
   if (nConfirmar) numeros.push(`<span class="numero-chip alerta"><strong>${nConfirmar}</strong> PIX a confirmar</span>`);
-  if (nGoleiros) numeros.push(`<span class="numero-chip">🧤 <strong>${nGoleiros}</strong> goleiro(s)</span>`);
-  if (nProfs) numeros.push(`<span class="numero-chip">🎓 <strong>${nProfs}</strong> prof</span>`);
+  if (nGoleiros) numeros.push(`<span class="numero-chip">${icone("hand")} <strong>${nGoleiros}</strong> goleiro(s)</span>`);
+  if (nProfs) numeros.push(`<span class="numero-chip">${icone("graduation-cap")} <strong>${nProfs}</strong> prof</span>`);
   if (nAjustes) numeros.push(`<span class="numero-chip alerta"><span class="marca-ajuste">!</span> <strong>${nAjustes}</strong> ajuste(s)</span>`);
 
   const cab = document.createElement("div");
@@ -1408,6 +1476,34 @@ function renderizarConfigTime(timeId) {
   cardPrecos.appendChild(blocoPrecos);
   elListaTimesAdmin.appendChild(cardPrecos);
 
+  // Visibilidade na loja (vale na hora, fora do rascunho da configuração).
+  const clienteOculto = !!(estadoClientes[clienteIdDoTime(time)] && estadoClientes[clienteIdDoTime(time)].oculto === true);
+  const cardVisivel = document.createElement("div");
+  cardVisivel.className = "card";
+  cardVisivel.innerHTML = '<h3 class="titulo-bloco">Visibilidade na loja</h3>' +
+    `<p class="pix-ajuda">${time.oculto === true
+      ? "Este time está <strong>oculto</strong>: não aparece na loja (index.html). O link direto do pedido continua funcionando."
+      : "Este time aparece na loja (index.html). Ocultando, ele some da loja, mas o link direto do pedido continua funcionando."}${
+      clienteOculto ? " <strong>O cliente deste time está oculto</strong>, então ele já não aparece na loja (aba Clientes)." : ""}</p>`;
+  const btnOcultar = document.createElement("button");
+  btnOcultar.type = "button";
+  btnOcultar.className = "secundario";
+  btnOcultar.innerHTML = time.oculto === true
+    ? icone("eye") + " Mostrar na loja"
+    : icone("eye-off") + " Ocultar da loja";
+  btnOcultar.onclick = async () => {
+    btnOcultar.disabled = true;
+    try {
+      await db.collection(COL_TIMES).doc(timeId).update({ oculto: time.oculto !== true });
+    } catch (erro) {
+      console.error(erro);
+      btnOcultar.disabled = false;
+      alert("Erro ao salvar. Tente novamente.");
+    }
+  };
+  cardVisivel.appendChild(btnOcultar);
+  elListaTimesAdmin.appendChild(cardVisivel);
+
   // Zona de perigo.
   const cardPerigo = document.createElement("div");
   cardPerigo.className = "card zona-perigo";
@@ -1426,10 +1522,10 @@ function renderizarConfigTime(timeId) {
 
 function renderizarEditarArteTime(timeId) {
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "card tema-escuro";
   card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
-    '<p class="pix-ajuda">Escolha a peça e clique num elemento (nome, número, brasão…) para mudar a posição, o tamanho da letra, as cores ou ocultá-lo — só neste time. ' +
-    'O que não for mudado aqui segue o layout geral (aba <strong>Artes</strong>). A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
+    '<p class="pix-ajuda">Clique num elemento (no desenho ou na lista) para mudar a posição, a letra, as cores ou ocultá-lo — só neste time. ' +
+    'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
   // Camiseta comum ou a do goleiro (o mesmo seletor da aba Arquivos).
   if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
   const host = document.createElement("div");
@@ -1448,9 +1544,9 @@ function renderizarArquivosTime(timeId) {
   // Arquivos da folha EPS: arte de cada peça (PNG 600 dpi), brasão e fonte.
   if (typeof criarBlocoProducaoTime === "function") {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card tema-escuro";
     card.innerHTML = '<h3 class="titulo-bloco">Arquivos para impressão</h3>' +
-      '<p class="pix-ajuda">A arte de cada peça em PNG 600 dpi (feita para o molde do tamanho base), o brasão em EPS e a fonte do nome e do número.</p>';
+      '<p class="pix-ajuda">Clique num espaço ou arraste o arquivo para cima dele. Arquivos grandes vão ao Drive em partes.</p>';
     // Camiseta comum ou a do goleiro: o que o goleiro não tiver usa o da comum.
     if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
     const bloco = criarBlocoProducaoTime(timeId, time);
@@ -1463,16 +1559,16 @@ function renderizarArquivosTime(timeId) {
   // Prévia montada com os arquivos acima: a arte plana e no mockup.
   if (typeof criarPreviaArteTime === "function") {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card tema-escuro";
     const golPrevia = typeof editandoGoleiro === "function" && editandoGoleiro(timeId);
-    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — 🧤 goleiro" : ""}</h3>`;
+    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — " + icone("hand") + " goleiro" : ""}</h3>`;
     card.appendChild(criarPreviaArteTime(timeId, time));
     elListaTimesAdmin.appendChild(card);
   }
 
   // Imagens que o cliente vê na loja e na página do pedido.
   const cardImagens = document.createElement("div");
-  cardImagens.className = "card";
+  cardImagens.className = "card tema-escuro";
   cardImagens.innerHTML = '<h3 class="titulo-bloco">Imagens da página do pedido</h3>' +
     '<p class="pix-ajuda">É o que o cliente vê na loja e no topo da página do pedido: a simulação na camiseta (mockup) e a arte sem simulação.</p>';
   cardImagens.appendChild(criarBlocoImagemTime(timeId, time));
@@ -1595,9 +1691,9 @@ function renderizarKanban() {
       coluna.classList.add("kanban-coluna-arquivo");
       const aviso = document.createElement("p");
       aviso.className = "kanban-vazio";
-      aviso.textContent = timesDaColuna.length > 0
-        ? `📦 ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
-        : "📦 Solte aqui para arquivar";
+      aviso.innerHTML = icone("archive") + (timesDaColuna.length > 0
+        ? ` ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
+        : " Solte aqui para arquivar");
       listaCards.appendChild(aviso);
       coluna.appendChild(listaCards);
       board.appendChild(coluna);
@@ -1679,7 +1775,7 @@ function criarCardKanban(timeId, statusId) {
     link.target = "_blank";
     link.rel = "noopener";
     const contato = contatoDoTime(time);
-    link.textContent = "💬 " + (contato.nome || formatarTelefone(contato.telefone));
+    link.innerHTML = icone("message-circle") + " " + escapeHtmlAdmin(contato.nome || formatarTelefone(contato.telefone));
     link.title = "Falar no WhatsApp com o representante do time";
     // O card é arrastável: sem isso, clicar no link viraria um arraste.
     link.addEventListener("pointerdown", (ev) => ev.stopPropagation());
@@ -1758,10 +1854,10 @@ function renderizarResumoPagamentos() {
   const pendentes = total - pagos - aguardando;
   // Quantas camisetas saem na cor de goleiro (só aparece quando há alguma).
   const marcaGoleiros = goleiros > 0
-    ? `<span class="badge goleiro" title="Camiseta de cor especial">🧤 Goleiros: ${goleiros}</span>`
+    ? `<span class="badge goleiro" title="Camiseta de cor especial">${icone("hand")} Goleiros: ${goleiros}</span>`
     : "";
   const marcaProfs = profs > 0
-    ? `<span class="badge prof" title="Camisetas de professor">🎓 Prof: ${profs}</span>`
+    ? `<span class="badge prof" title="Camisetas de professor">${icone("graduation-cap")} Prof: ${profs}</span>`
     : "";
 
   el.innerHTML = `
@@ -3263,7 +3359,7 @@ function abrirNovaCamiseta(timeId) {
     const statusId = statusPedidoDe(time);
     let aviso = "";
     if (pedidoEmProducao(time)) {
-      aviso = `⚠️ Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
+      aviso = `${icone("triangle-alert")} Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
         "a camiseta nova entra como pendente e não está nos CSVs já exportados. " +
         "Confirme o pagamento e exporte de novo (ou leve na próxima leva).";
     } else if (statusId !== "aberto") {
