@@ -293,7 +293,7 @@ leva das demais.
 
 ## Aba Financeiro (Super Admin)
 
-A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
+A aba **Financeiro** tem seis visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
 - **Visão geral** — previsto, recebido e a receber; percentual recebido; custos, taxas do Mercado Pago e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time. Os cards **Custos previstos** e **Lucro realizado** abrem um detalhe ao clique: o primeiro quebra o custo em impressão e costureira; o segundo mostra a conta inteira — receita recebida, os **custos realizados** (impressão + costureira das camisetas já pagas) e as taxas do Mercado Pago e o custo das **camisetas internas** (que não têm receita, mas são produzidas). Na tabela por time, a coluna *Custo prev.* também abre o detalhe daquele time.
 - **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia, taxa do Mercado Pago e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho, forma, taxa e líquido).
@@ -301,9 +301,13 @@ A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas
 - **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por time e as maiores pendências individuais.
 - **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira, as camisetas internas e as taxas do Mercado Pago), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
 
+- **Movimentações** — o **caixa**: lance à mão os **saques** (dinheiro que você retira), os **pagamentos** (despesas pagas: impressão, costureira, malha, frete...) e **entradas** avulsas (aporte, ajuste). Cada lançamento tem valor, data, descrição, forma (PIX, transferência, dinheiro...), categoria (nos pagamentos) e, se quiser, o time. O card **Saldo em caixa** mostra *recebido dos pedidos (líquido da taxa do Mercado Pago) + entradas − saques − pagamentos*. Abaixo fica o **histórico**, com filtro de período, time e tipo. Nada é apagado: **Cancelar** tira o lançamento do saldo, mas ele continua no histórico (riscado, com a data e o motivo) — marque *Mostrar canceladas* para vê-los. Os pagamentos lançados aqui não mudam o DRE, que continua usando os custos por tamanho.
+
 O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por time; a visão **A receber** tem só o filtro por time, porque mostra sempre a situação de hoje.
 
-O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
+O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`), o DRE completo (`resultado-interclasse.csv`) ou o histórico de movimentações (`movimentacoes-interclasse.csv`).
+
+> As movimentações ficam na coleção `movimentacoes` do Firestore, que só a conta administradora lê e grava. Depois de atualizar, **republique o `firestore.rules`** no console do Firebase — sem isso a aba mostra um aviso e não consegue lançar.
 
 ### Taxas do Mercado Pago
 

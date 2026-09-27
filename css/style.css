@@ -2896,3 +2896,23 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .lupa-conta-gotas canvas { display: block; width: 99px; height: 99px; border-radius: 8px; image-rendering: pixelated; }
 .lupa-cor { display: flex; align-items: center; gap: 6px; margin-top: 6px; font: 600 12px ui-monospace, monospace; color: #e5e7eb; }
 .lupa-cor i { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #4b5563; display: inline-block; }
+
+/* Financeiro → Movimentações (saques, pagamentos e entradas) */
+.mov-form { margin: 12px 0; border: 1px solid var(--cinza-borda); }
+.mov-tipos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.mov-tipo {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0;
+  padding: 6px 12px; border: 1px solid var(--cinza-borda); border-radius: 999px;
+  cursor: pointer; font-weight: 600;
+}
+.mov-tipo input { margin: 0; }
+.mov-tipo.ativo { border-color: var(--azul); color: var(--azul); background: #eff6ff; }
+.mov-form-acoes { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.mov-tabela .mov-valor { white-space: nowrap; }
+.mov-cancelado td { color: #9ca3af; }
+.mov-cancelado .mov-valor { text-decoration: line-through; color: #9ca3af; }
+.mov-cancelado-info { font-size: 0.78rem; color: #991b1b; }
+.mov-btn-cancelar { margin: 0; padding: 4px 10px; font-size: 0.8rem; }
+.badge.mov-saque { background: #fee2e2; color: #991b1b; }
+.badge.mov-pagamento { background: #fef3c7; color: #92400e; }
+.badge.mov-entrada { background: #dcfce7; color: #166534; }
