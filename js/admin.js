@@ -4349,13 +4349,25 @@ elFormPix.addEventListener("submit", async (ev) => {
     mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(
-      elMsgPix,
-      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
-      "erro"
-    );
+    mostrarMensagem(elMsgPix, textoErroConfig(erro, "geral"), "erro");
   }
 });
+
+// Explica o erro do Firestore ao salvar configurações: o código real ajuda a
+// saber se foi falta de permissão (sessão do admin caiu / regras antigas no
+// console) ou um dado recusado.
+function textoErroConfig(erro, docId) {
+  const code = (erro && erro.code) || "";
+  if (code === "permission-denied") {
+    const user = auth.currentUser;
+    if (!ehContaAdmin(user)) {
+      return "Erro ao salvar: você não está logado como administrador (a sessão pode ter caído). Saia e entre de novo no Super Admin.";
+    }
+    return `Erro ao salvar: o Firestore recusou a escrita em config/${docId}. Publique o firestore.rules atualizado no console do Firebase.`;
+  }
+  if (code === "unavailable") return "Erro ao salvar: sem conexão com o Firebase. Confira a internet e tente de novo.";
+  return `Erro ao salvar em config/${docId}: ${(erro && erro.message) || erro}${code ? ` (${code})` : ""}`;
+}
 
 // ---------------- Configurações gerais ----------------
 
@@ -4377,11 +4389,7 @@ elFormConfigGeral.addEventListener("submit", async (ev) => {
     mostrarMensagem(elMsgConfigGeral, "Configurações salvas.", "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(
-      elMsgConfigGeral,
-      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral (ver firestore.rules).",
-      "erro"
-    );
+    mostrarMensagem(elMsgConfigGeral, textoErroConfig(erro, "geral"), "erro");
   }
 });
 
@@ -4732,10 +4740,6 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
     mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro dos times.", "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(
-      elMsgTamanhos,
-      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/tamanhos (ver firestore.rules).",
-      "erro"
-    );
+    mostrarMensagem(elMsgTamanhos, textoErroConfig(erro, "tamanhos"), "erro");
   }
 });
