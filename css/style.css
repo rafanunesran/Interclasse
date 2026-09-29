@@ -2919,6 +2919,9 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .badge.mov-saque { background: #fee2e2; color: #991b1b; }
 .badge.mov-pagamento { background: #fef3c7; color: #92400e; }
 .badge.mov-entrada { background: #dcfce7; color: #166534; }
+.badge.mov-apagar { background: #ffedd5; color: #9a3412; margin-top: 4px; }
+.mov-tabela td .mov-btn-cancelar + .mov-btn-cancelar { margin-top: 4px; }
+.leva-custos { margin: 6px 0; font-size: 0.9rem; }
 .badge.selo-do-time { background: rgba(255, 91, 34, 0.18); color: #fdba74; font-size: 0.64rem; }
 
 /* Preço especial de uma camiseta (lista do time no Super Admin) */

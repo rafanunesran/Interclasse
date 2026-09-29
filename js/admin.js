@@ -2108,8 +2108,11 @@ function taxaMpDoAluno(a) {
 // Percorre os times/alunos que passam pelo filtro de cliente e calcula os
 // números do financeiro. venda = preço do tamanho no time (o geral da aba
 // Pagamentos ou o preço personalizado do time); custo = Impressão +
-// Costureira do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" =
-// declarado mas não confirmado; "pendente" = nem declarado.
+// Costureira do grupo (aba Tamanhos). Quando a camiseta está num lote (leva
+// da Produção) com custos lançados, vale o custo REAL por unidade do lote no
+// lugar da estimativa — ver custosDosLotes() em js/movimentacoes.js.
+// "Já chegou" = pagos; "aguardando" = declarado mas não confirmado;
+// "pendente" = nem declarado.
 function calcularFinanceiro() {
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
@@ -2117,6 +2120,11 @@ function calcularFinanceiro() {
     // Mesma quebra dos custos, mas só das camisetas já pagas: é o que entra
     // no lucro realizado.
     custoImpressaoRecebido: 0, custoCostureiraRecebido: 0,
+    // Custos dos lotes fora de impressão/costureira (malha, frete...), rateados
+    // por unidade; e o custo das unidades do lote que não são de nenhum pedido
+    // (avulsas), que só entra na visão sem cliente escolhido.
+    custoOutros: 0, custoOutrosRecebido: 0, custoAvulsas: 0, qtdAvulsasLotes: 0,
+    qtdCustoReal: 0,
     // Taxas do Mercado Pago já descontadas do que entrou: só existem nos
     // pagamentos online, que o webhook grava camiseta a camiseta.
     taxas: 0, qtdComTaxa: 0, recebidoOnline: 0,
@@ -2131,23 +2139,34 @@ function calcularFinanceiro() {
   // Acumulado por cliente (nome -> totais), montado junto com o por time.
   const clientes = {};
 
+  // Custo real por unidade dos lotes com custos lançados (Financeiro → Custos por lote).
+  const lotes = typeof custosDosLotes === "function" ? custosDosLotes() : null;
+
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, taxas: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
+    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, taxas: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, custoOutros: 0, qtdCustoReal: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
       // O preço especial da camiseta (lista do time) ganha do preço do tamanho.
       const venda = interno ? 0 : Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0);
-      const cImp = custoImpressaoDoTamanho(a.tamanho);
-      const cCos = custoCostureiraDoTamanho(a.tamanho);
-      const custo = cImp + cCos; // custo entra sempre (a camiseta é produzida)
+      const real = lotes && lotes.porItem.get(`${timeId}__${a.id}`);
+      const cImp = real && real.impressao !== null ? real.impressao : custoImpressaoDoTamanho(a.tamanho);
+      const cCos = real && real.costureira !== null ? real.costureira : custoCostureiraDoTamanho(a.tamanho);
+      const cOut = real ? real.outros : 0;
+      const custo = cImp + cCos + cOut; // custo entra sempre (a camiseta é produzida)
       fin.custos += custo;
       fin.custoImpressao += cImp;
       fin.custoCostureira += cCos;
+      fin.custoOutros += cOut;
       fin.qtd++;
       t.custos += custo;
       t.custoImpressao += cImp;
       t.custoCostureira += cCos;
+      t.custoOutros += cOut;
+      if (real) {
+        fin.qtdCustoReal++;
+        t.qtdCustoReal++;
+      }
 
       const g = grupoDoTamanho(a.tamanho);
       const gnome = g ? g.grupo : "Sem grupo";
@@ -2173,6 +2192,7 @@ function calcularFinanceiro() {
         fin.custosRecebido += custo;
         fin.custoImpressaoRecebido += cImp;
         fin.custoCostureiraRecebido += cCos;
+        fin.custoOutrosRecebido += cOut;
         fin.taxas += taxa;
         fin.qtdPagas++;
         t.recebido += venda;
@@ -2217,14 +2237,21 @@ function calcularFinanceiro() {
     }))
     .sort((a, b) => b.previsto - a.previsto);
 
+  // Unidades dos lotes que não vêm de pedido nenhum (avulsas): não têm cliente,
+  // então o custo delas só entra quando o seletor está em "Todos".
+  if (lotes && !clienteFiltro) {
+    fin.custoAvulsas = lotes.custoAvulsas;
+    fin.qtdAvulsasLotes = lotes.qtdAvulsas;
+  }
+
   fin.qtdVendaveis = fin.qtd - fin.qtdInternas;
   fin.aReceber = fin.previsto - fin.recebido;
-  fin.lucroPrevisto = fin.previsto - fin.custos;
+  fin.lucroPrevisto = fin.previsto - fin.custos - fin.custoAvulsas;
   // O que entrou de verdade na conta: o preço menos a taxa do Mercado Pago.
   fin.recebidoLiquido = fin.recebido - fin.taxas;
   // As internas não têm receita, mas são produzidas: o custo delas sai do
   // lucro realizado (como já sai do previsto).
-  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas - fin.custoInterno;
+  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas - fin.custoInterno - fin.custoAvulsas;
   fin.taxaMedia = fin.recebidoOnline > 0 ? (fin.taxas / fin.recebidoOnline) * 100 : 0;
   fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
   fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
@@ -2382,7 +2409,7 @@ function renderizarFinanceiro() {
   const f = calcularFinanceiro();
   finUltimo = f;
 
-  if (f.qtd === 0 && finVisao !== "movimentacoes") {
+  if (f.qtd === 0 && finVisao !== "movimentacoes" && finVisao !== "lotes") {
     el.innerHTML = "<p>Nenhuma camiseta cadastrada ainda. Assim que houver pedidos, os números aparecem aqui.</p>" +
       '<button type="button" class="secundario" data-fin-visao="movimentacoes">Ver movimentações (saques e pagamentos)</button>';
     el.querySelector("[data-fin-visao]").onclick = () => { finVisao = "movimentacoes"; renderizarFinanceiro(); };
@@ -2416,6 +2443,7 @@ function renderizarVisaoFinanceira(f) {
   if (finVisao === "cobranca") return finViewCobranca(alvo, f);
   if (finVisao === "resultado") return finViewResultado(alvo, f);
   if (finVisao === "movimentacoes" && typeof finViewMovimentacoes === "function") return finViewMovimentacoes(alvo, f);
+  if (finVisao === "lotes" && typeof finViewLotes === "function") return finViewLotes(alvo, f);
   return finViewGeral(alvo, f);
 }
 
@@ -2575,7 +2603,7 @@ function finViewGeral(alvo, f) {
       <div class="fin-card fin-card-click" data-fin-modal="total" role="button" tabindex="0" title="Ver detalhe do custo">
         <span class="fin-rotulo">Custos previstos</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
-        <span class="fin-sub fin-link">Impressão + Costureira · ver detalhe ›</span>
+        <span class="fin-sub fin-link">${f.qtdCustoReal > 0 ? `${f.qtdCustoReal} un. com custo real do lote` : "Impressão + Costureira"} · ver detalhe ›</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Taxas do Mercado Pago</span>
@@ -2635,7 +2663,9 @@ function finViewGeral(alvo, f) {
 
   ligarDetalhe(alvo.querySelector('[data-fin-modal="total"]'), () =>
     abrirModalCusto("Custo previsto — total", {
-      impressao: f.custoImpressao, costureira: f.custoCostureira, total: f.custos, qtd: f.qtd
+      impressao: f.custoImpressao, costureira: f.custoCostureira, outros: f.custoOutros,
+      avulsas: f.custoAvulsas, qtdAvulsas: f.qtdAvulsasLotes,
+      total: f.custos + f.custoAvulsas, qtd: f.qtd, qtdReal: f.qtdCustoReal
     }));
 
   ligarDetalhe(alvo.querySelector('[data-fin-modal="lucro-realizado"]'), () =>
@@ -2644,7 +2674,8 @@ function finViewGeral(alvo, f) {
     const t = f.porTime[Number(cel.dataset.timeIdx)];
     if (!t) return;
     ligarDetalhe(cel, () => abrirModalCusto("Custo previsto — " + t.nome, {
-      impressao: t.custoImpressao, costureira: t.custoCostureira, total: t.custos, qtd: t.qtd
+      impressao: t.custoImpressao, costureira: t.custoCostureira, outros: t.custoOutros,
+      total: t.custos, qtd: t.qtd, qtdReal: t.qtdCustoReal
     }));
   });
 }
@@ -3059,11 +3090,14 @@ function finViewResultado(alvo, f) {
     ["Receita prevista (camisetas vendáveis)", f.previsto, "linha"],
     ["(-) Custo de impressão", -f.custoImpressao, "linha"],
     ["(-) Custo de costureira", -f.custoCostureira, "linha"],
+    ...(f.custoOutros > 0 ? [["(-) Outros custos dos lotes (malha, frete…)", -f.custoOutros, "linha"]] : []),
+    ...(f.custoAvulsas > 0 ? [["(-) Custo das avulsas dos lotes (sem pedido)", -f.custoAvulsas, "linha"]] : []),
     ["(=) Lucro previsto", f.lucroPrevisto, "total"],
     ["Receita já recebida", f.recebido, "linha"],
     ["(-) Custo das camisetas já pagas", -f.custosRecebido, "linha"],
     ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
     ["(-) Custo das camisetas internas (sem receita)", -f.custoInterno, "linha"],
+    ...(f.custoAvulsas > 0 ? [["(-) Custo das avulsas dos lotes", -f.custoAvulsas, "linha"]] : []),
     ["(=) Lucro realizado", f.lucroRealizado, "total"],
     ["(=) Caixa a receber", f.aReceber, "total"]
   ].map(([rotulo, valor, tipo]) => `
@@ -3152,11 +3186,17 @@ function abrirModalDetalhe(titulo, linhas, nota) {
 
 // Detalhe do custo (Impressão + Costureira) do total ou de um time.
 function abrirModalCusto(titulo, d) {
+  const nota = `${d.qtd} camiseta(s) considerada(s) (inclui as internas).` +
+    (d.qtdReal > 0
+      ? ` ${d.qtdReal} delas com o custo real por unidade do lote (Financeiro → Custos por lote); as demais pela tabela da aba Tamanhos.`
+      : " Custos pela tabela da aba Tamanhos (nenhuma está num lote com custos lançados).");
   abrirModalDetalhe(titulo, [
     ["Impressão", d.impressao, "linha"],
     ["Costureira", d.costureira, "linha"],
+    ...(d.outros > 0 ? [["Outros custos dos lotes (malha, frete…)", d.outros, "linha"]] : []),
+    ...(d.avulsas > 0 ? [[`Unidades avulsas dos lotes (${d.qtdAvulsas})`, d.avulsas, "linha"]] : []),
     ["Total", d.total, "total"]
-  ], `${d.qtd} camiseta(s) considerada(s) (inclui as internas).`);
+  ], nota);
 }
 
 // Detalhe do lucro realizado: o que já entrou, menos os custos das camisetas
@@ -3170,9 +3210,11 @@ function abrirModalLucroRealizado(f) {
     ["Receita já recebida", f.recebido, "linha"],
     ["(-) Custo de impressão", -f.custoImpressaoRecebido, "linha"],
     ["(-) Custo de costureira", -f.custoCostureiraRecebido, "linha"],
+    ...(f.custoOutrosRecebido > 0 ? [["(-) Outros custos dos lotes", -f.custoOutrosRecebido, "linha"]] : []),
     ["(=) Custos realizados", -f.custosRecebido, "subtotal"],
     ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
     ...(f.qtdInternas > 0 ? [["(-) Custo das camisetas internas", -f.custoInterno, "linha"]] : []),
+    ...(f.custoAvulsas > 0 ? [["(-) Custo das avulsas dos lotes", -f.custoAvulsas, "linha"]] : []),
     ["(=) Lucro realizado", f.lucroRealizado, "total"]
   ], nota);
 }
@@ -3187,6 +3229,7 @@ function fecharModalCusto() {
 function exportarFinanceiro() {
   // Movimentações (js/movimentacoes.js) não dependem de haver camisetas.
   if (finVisao === "movimentacoes" && typeof exportarMovimentacoes === "function") return exportarMovimentacoes();
+  if (finVisao === "lotes" && typeof exportarCustosLotes === "function") return exportarCustosLotes();
   const f = finUltimo || calcularFinanceiro();
   if (f.qtd === 0) {
     alert("Não há dados financeiros para exportar.");
@@ -3312,12 +3355,15 @@ function exportarResultado(f) {
     ["Receita prevista", f.previsto],
     ["Custo de impressao", -f.custoImpressao],
     ["Custo de costureira", -f.custoCostureira],
+    ["Outros custos dos lotes", -f.custoOutros],
+    ["Custo das avulsas dos lotes", -f.custoAvulsas],
     ["Lucro previsto", f.lucroPrevisto],
     ["Receita recebida", f.recebido],
     ["Custo das camisetas pagas", -f.custosRecebido],
     ["Taxas do Mercado Pago", -f.taxas],
     ["Receita liquida recebida", f.recebidoLiquido],
     ["Custo das camisetas internas", -f.custoInterno],
+    ["Custo das avulsas dos lotes", -f.custoAvulsas],
     ["Lucro realizado", f.lucroRealizado],
     ["Caixa a receber", f.aReceber]
   ].forEach(([r, v]) => linhas.push([r, v.toFixed(2)]));
