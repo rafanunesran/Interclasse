@@ -1007,7 +1007,8 @@ function renderizarTimeAberto(timeId) {
       <p class="detalhe-cliente">${escapeHtmlAdmin(nomeClienteDoTime(time))}${
         time.modeloCamiseta ? ` · Modelo: ${escapeHtmlAdmin(time.modeloCamiseta)}` : ""}</p>
       <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span>${
-        timeOcultoNaLoja(time, estadoClientes) ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}</h2>
+        timeOcultoNaLoja(time, estadoClientes) ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}${
+        precoOculto(time) ? ` <span class="badge oculto-loja">${icone("eye-off")} Preço oculto</span>` : ""}</h2>
       <p class="linha-time-rep">${representanteCurtoHtml(time)}</p>
     </div>`;
 
@@ -1482,7 +1483,7 @@ function renderizarConfigTime(timeId) {
   const clienteOculto = !!(estadoClientes[clienteIdDoTime(time)] && estadoClientes[clienteIdDoTime(time)].oculto === true);
   const cardVisivel = document.createElement("div");
   cardVisivel.className = "card";
-  cardVisivel.innerHTML = '<h3 class="titulo-bloco">Visibilidade na loja</h3>' +
+  cardVisivel.innerHTML = '<h3 class="titulo-bloco">Visibilidade para o cliente</h3>' +
     `<p class="pix-ajuda">${time.oculto === true
       ? "Este time está <strong>oculto</strong>: não aparece na loja (index.html). O link direto do pedido continua funcionando."
       : "Este time aparece na loja (index.html). Ocultando, ele some da loja, mas o link direto do pedido continua funcionando."}${
@@ -1504,6 +1505,31 @@ function renderizarConfigTime(timeId) {
     }
   };
   cardVisivel.appendChild(btnOcultar);
+
+  // Preço oculto: o pedido continua na loja, só sem mostrar o valor.
+  const pPreco = document.createElement("p");
+  pPreco.className = "pix-ajuda";
+  pPreco.innerHTML = precoOculto(time)
+    ? "O <strong>preço está oculto</strong>: a loja e a página do pedido não mostram o valor da camiseta. O pagamento continua funcionando — o valor aparece só na hora de pagar (no PIX)."
+    : "O preço aparece na loja e na página do pedido. Ocultando, o pedido continua visível, mas sem o valor da camiseta (ele só aparece na hora de pagar).";
+  cardVisivel.appendChild(pPreco);
+  const btnPreco = document.createElement("button");
+  btnPreco.type = "button";
+  btnPreco.className = "secundario";
+  btnPreco.innerHTML = precoOculto(time)
+    ? icone("eye") + " Mostrar o preço"
+    : icone("eye-off") + " Ocultar o preço";
+  btnPreco.onclick = async () => {
+    btnPreco.disabled = true;
+    try {
+      await db.collection(COL_TIMES).doc(timeId).update({ ocultarPreco: !precoOculto(time) });
+    } catch (erro) {
+      console.error(erro);
+      btnPreco.disabled = false;
+      alert("Erro ao salvar. Tente novamente.");
+    }
+  };
+  cardVisivel.appendChild(btnPreco);
   elListaTimesAdmin.appendChild(cardVisivel);
 
   // Zona de perigo.

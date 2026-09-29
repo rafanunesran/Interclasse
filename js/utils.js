@@ -239,6 +239,14 @@ function timeOcultoNaLoja(time, clientes) {
   return !!(c && c.oculto === true);
 }
 
+// Preço oculto (campo ocultarPreco = true, ligado no Super Admin): o pedido
+// continua na loja, mas o preço não aparece no card, no topo da página do
+// pedido nem na aba de tamanhos. O pagamento continua: o valor só aparece na
+// hora de pagar (na tela do PIX).
+function precoOculto(time) {
+  return !!time && time.ocultarPreco === true;
+}
+
 // Um time pertence ao cliente escolhido no filtro? Filtro vazio = todos.
 function timeDoCliente(time, filtro) {
   if (!filtro) return true;

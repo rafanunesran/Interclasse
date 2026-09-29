@@ -266,7 +266,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261016b";
+const VERSAO_MOCKUP3D = "20261016c";
 let botao3d = null;
 
 function texturas3D(goleiro) {
@@ -417,6 +417,10 @@ function atualizarBadge() {
 // preços em vigor aqui: os gerais, com o preço próprio do time por cima.
 function mostrarPrecosDaTime() {
   if (!elInfoPrecos) return;
+  if (precoOculto(timeAtual)) {
+    elInfoPrecos.classList.add("oculto");
+    return;
+  }
   const precos = precosDoTime(configGeral, timeId);
   const partes = GRUPOS_TAMANHO
     .filter((g) => precos[g.grupo] != null)
@@ -443,6 +447,13 @@ function mostrarPrecosDaTime() {
 function renderizarGrupos() {
   if (!elTabelaGrupos) return;
   const precos = precosDoTime(configGeral, timeId);
+  const semPreco = precoOculto(timeAtual);
+  // Com o preço oculto, a aba vira só "Tamanhos".
+  const titulo = semPreco ? "Tamanhos" : "Tamanhos e preços";
+  const abaTamanhos = document.querySelector('[data-aba-pedido="tamanhos"]');
+  if (abaTamanhos) abaTamanhos.innerHTML = icone("ruler") + " " + titulo;
+  const h2 = document.querySelector("#abaPedido-tamanhos h2");
+  if (h2) h2.textContent = titulo;
   elTabelaGrupos.innerHTML = "";
   GRUPOS_TAMANHO.forEach((g) => {
     const bloco = document.createElement("div");
@@ -450,7 +461,7 @@ function renderizarGrupos() {
     bloco.innerHTML = `
       <div class="grupo-pedido-topo">
         <h3>${escapeHtml(g.grupo)}</h3>
-        <span class="grupo-pedido-preco">${precos[g.grupo] != null ? formatarReais(precos[g.grupo]) : "—"}</span>
+        ${semPreco ? "" : `<span class="grupo-pedido-preco">${precos[g.grupo] != null ? formatarReais(precos[g.grupo]) : "—"}</span>`}
       </div>
       <div class="chips-tamanho-pedido">${g.tamanhos.map((t) => `<span>${escapeHtml(t)}</span>`).join("")}</div>`;
     if (g.imagemUrl) {
@@ -728,12 +739,14 @@ function renderizarCarrinho() {
   document.body.classList.toggle("com-carrinho", carrinho.length > 0);
   if (carrinho.length === 0) return;
 
-  const { total, semPreco } = carrinhoTotal(carrinho);
+  const { total: totalReal, semPreco } = carrinhoTotal(carrinho);
+  // Preço oculto neste time: a barra não mostra valores (só na hora de pagar).
+  const total = precoOculto(timeAtual) ? 0 : totalReal;
   const times = carrinhoTimes(carrinho);
   const valor = total > 0 ? " · " + formatarReais(total) : "";
   // Com filhos em times diferentes, dizer de quantos times é o carrinho ajuda.
   const deQuemE = times.length > 1 ? ` · ${times.length} times` : "";
-  const aviso = semPreco > 0 ? ` (${semPreco} sem preço definido)` : "";
+  const aviso = semPreco > 0 && !precoOculto(timeAtual) ? ` (${semPreco} sem preço definido)` : "";
   elCarrinhoResumo.textContent = `${carrinho.length} camiseta(s)${deQuemE}${valor}${aviso}`;
   elCarrinhoResumo.title = times.join(" · ");
   if (elBtnPagarCarrinho) {
@@ -903,7 +916,7 @@ function renderizarTabela() {
         btnPagar.className = "primario";
         // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
         const valorLinha = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
-        btnPagar.textContent = valorLinha ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
+        btnPagar.textContent = valorLinha && !precoOculto(timeAtual) ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
         btnPagar.title = "Pagar só esta camiseta (para juntar várias, use o carrinho)";
         btnPagar.onclick = () => abrirPagamento([itemDoAluno(aluno)]);
         tdAcoes.appendChild(btnPagar);
