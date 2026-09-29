@@ -4790,6 +4790,9 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
       if (inp.value !== "") digitados[inp.dataset.grupo] = inp.value;
     });
     renderizarPrecosPorGrupo(digitados);
+    // Os moldes de corte (e o editor de layout) mostram uma linha por tamanho.
+    if (typeof renderizarMoldes === "function") renderizarMoldes();
+    if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
     mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro dos times.", "aviso");
   } catch (erro) {
     console.error(erro);
