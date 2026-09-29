@@ -268,7 +268,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261007a";
+const VERSAO_MOCKUP3D = "20261016c";
 let botao3d = null;
 
 function texturas3D(goleiro) {
@@ -354,7 +354,7 @@ async function abrirVer3D() {
       }));
       if (!fundo.isConnected || minha !== vez) return;
       if (vivo) { vivo.destruir(); vivo = null; }
-      vivo = await M.visualizador(palco, pecas, { manequim: true });
+      vivo = await M.visualizador(palco, pecas);
       aviso.textContent = "Arraste para girar · dois dedos para aproximar";
     } catch (e) {
       console.error(e);

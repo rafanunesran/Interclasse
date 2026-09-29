@@ -1024,7 +1024,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261007a";
+const VERSAO_MOCKUP3D = "20261016c";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -1322,7 +1322,7 @@ function criarPreviaArteTime(timeId, timeComum) {
       if (vez !== desenhoMockup) return;
       if (!M.suportado()) throw new Error("Este navegador não tem WebGL.");
       area.innerHTML = '<div class="mockup-3d-vivo"></div>';
-      vivo3d = await M.visualizador(area.firstChild, pecas, { manequim: true });
+      vivo3d = await M.visualizador(area.firstChild, pecas);
       nota.textContent = "Arraste para girar; use a roda do mouse (ou dois dedos) para aproximar.";
     } catch (e) {
       console.error(e);

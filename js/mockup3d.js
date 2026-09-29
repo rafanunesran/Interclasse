@@ -1,9 +1,9 @@
 // ============================================================
 // MOCKUP 3D (modelos gerados no Tripo + a arte do time)
 // ============================================================
-// A camiseta gola V (img/mockup3d/camiseta-v.glb) e o manequim
-// (img/mockup3d/manequim.glb) vieram do Tripo e foram simplificados (ver
-// tools/simplificar-glb.mjs): só a forma, sem a textura/UV do Tripo.
+// A camiseta gola V "fantasma" (img/mockup3d/camiseta-v.glb, sem manequim)
+// veio do Tripo e foi simplificada (ver tools/simplificar-glb.mjs): só a
+// forma, sem a textura/UV do Tripo.
 //
 // A arte entra por PROJEÇÃO, calculada uma vez por modelo:
 //   • cada triângulo da camiseta vai para uma região — frente, costas,
@@ -14,9 +14,7 @@
 //   • gola: a cor média da arte da gola (como no mockup em foto).
 // As peças planas são as mesmas do mockup em foto (pecasParaMockup).
 //
-// Na Cena a camiseta veste o manequim: do modelo só ficam as pernas (o
-// arquivo já vem cortado — tools/simplificar-glb.mjs --abaixo-de 0.28); o
-// pescoço é gerado aqui, e a camiseta é a mesma gola V.
+// Na Cena ficam duas camisetas fantasma: uma de frente e outra de costas.
 //
 // Coordenadas do modelo da camiseta: y para cima (barra em 0, topo da gola
 // ≈ 0,98), frente para +z, direita de quem veste para −x.
@@ -40,16 +38,8 @@ const CAL = {
     cava: [[0.50, 0.255], [0.68, 0.262], [0.80, 0.285], [0.88, 0.30], [1.0, 0.30]],
     gola: { raio: 0.17, faixa: 0.028, yMin: 0.74 }
   },
-  manequim: {
-    arquivo: "manequim.glb",
-    // A camiseta veste o manequim com esta escala e deslocamento.
-    camisa: { escala: [0.72, 0.668, 0.82], y: 0.232, z: 0.0 },
-    // Do modelo ficam só as pernas (abaixo da barra). O pescoço é gerado (o
-    // do modelo some por baixo da gola da camiseta que veio junto): perfil
-    // torneado [raio, altura], do peito (dentro da camiseta) à tampa.
-    pernasAte: 0.255,
-    pescoco: { z: 0.012, perfil: [[0.066, 0.76], [0.063, 0.82], [0.059, 0.87], [0.056, 0.91], [0.055, 0.95], [0.052, 0.972], [0.044, 0.98], [0, 0.98]] }
-  }
+  // Altura em que a camiseta "flutua" acima do chão (a sombra fica embaixo).
+  flutua: 0.05
 };
 
 const MAT = { frente: 0, costas: 1, mangaDir: 2, mangaEsq: 3, gola: 4 };
@@ -189,31 +179,10 @@ function prepararCamisa(geoOrig) {
   return novo;
 }
 
-// Manequim: só as pernas (a camiseta e o pescoço dele saem; o pescoço é
-// gerado em boneco()).
-function prepararManequim(geoOrig) {
-  const m = CAL.manequim;
-  const geo = geoOrig.index ? geoOrig.toNonIndexed() : geoOrig.clone();
-  const P = geo.attributes.position;
-  const fica = [];
-  for (let t = 0; t < P.count / 3; t++) {
-    let x = 0, y = 0, z = 0;
-    for (let k = 0; k < 3; k++) { x += P.getX(t * 3 + k); y += P.getY(t * 3 + k); z += P.getZ(t * 3 + k); }
-    x /= 3; y /= 3; z /= 3;
-    if (y < m.pernasAte) fica.push(t);
-  }
-  const arr = new Float32Array(fica.length * 9);
-  fica.forEach((t, j) => arr.set(P.array.subarray(t * 9, t * 9 + 9), j * 9));
-  const novo = new THREE.BufferGeometry();
-  novo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
-  novo.computeVertexNormals();
-  return novo;
-}
-
 async function modelos() {
   if (!cacheModelos) {
-    cacheModelos = Promise.all([carregarGlb(CAL.camisa.arquivo), carregarGlb(CAL.manequim.arquivo)])
-      .then(([camisa, manequim]) => ({ camisa: prepararCamisa(camisa), manequim: prepararManequim(manequim) }))
+    cacheModelos = carregarGlb(CAL.camisa.arquivo)
+      .then((camisa) => ({ camisa: prepararCamisa(camisa) }))
       .catch((e) => { cacheModelos = null; throw e; });
   }
   return cacheModelos;
@@ -245,10 +214,6 @@ function materiais(pecas, opcoes) {
   };
   const golaCor = (p.gola && p.gola.cor) || "#f3f3f3";
   return [tex("frente"), tex("costas"), tex("mangaDir"), tex("mangaEsq"), tecido({ color: new THREE.Color(golaCor) })];
-}
-
-function materialManequim() {
-  return new THREE.MeshStandardMaterial({ color: 0xf2eee8, roughness: 0.35, metalness: 0, transparent: true, opacity: 0.9 });
 }
 
 // ---------------- Cena ----------------
@@ -289,24 +254,12 @@ function chao(cena) {
   cena.add(plano);
 }
 
-// Uma camiseta (opcionalmente vestindo o manequim), como um grupo.
-function boneco(mod, mats, comManequim) {
+// Uma camiseta fantasma (acima do chão, com sombra).
+function boneco(mod, mats) {
   const g = new THREE.Group();
   const camisa = new THREE.Mesh(mod.camisa, mats);
   camisa.castShadow = true;
-  if (comManequim) {
-    const m = CAL.manequim.camisa;
-    camisa.scale.set(...m.escala);
-    camisa.position.set(0, m.y, m.z);
-    const matMan = materialManequim();
-    const man = new THREE.Mesh(mod.manequim, matMan);
-    man.castShadow = true;
-    const pc = CAL.manequim.pescoco;
-    const pesc = new THREE.Mesh(new THREE.LatheGeometry(pc.perfil.map(([r, y]) => new THREE.Vector2(r, y)), 48), matMan);
-    pesc.position.z = pc.z;
-    pesc.castShadow = true;
-    g.add(man, pesc);
-  }
+  camisa.position.y = CAL.flutua;
   g.add(camisa);
   return g;
 }
@@ -319,17 +272,17 @@ function montar(vista, mod, mats) {
   chao(cena);
   const camera = new THREE.PerspectiveCamera(26, 1024 / 1536, 0.05, 50);
   if (vista === "cena") {
-    const frente = boneco(mod, mats, true);
-    frente.rotation.y = -0.38;
-    frente.position.set(-0.08, 0, 0.3);
-    const tras = boneco(mod, mats, true);
-    tras.rotation.y = Math.PI + 0.3;
-    tras.position.set(0.6, 0, -0.85);
+    const frente = boneco(mod, mats);
+    frente.rotation.y = -0.35;
+    frente.position.set(-0.3, 0, 0.35);
+    const tras = boneco(mod, mats);
+    tras.rotation.y = Math.PI + 0.35;
+    tras.position.set(0.5, 0, -0.8);
     cena.add(frente, tras);
-    camera.position.set(0.2, 0.6, 4.1);
-    camera.lookAt(0.2, 0.5, 0);
+    camera.position.set(0.08, 0.95, 5.6);
+    camera.lookAt(0.08, 0.55, 0);
   } else {
-    const camisa = boneco(mod, mats, false);
+    const camisa = boneco(mod, mats);
     if (vista === "costas") camisa.rotation.y = Math.PI;
     cena.add(camisa);
     camera.position.set(0, 0.52, 3.2);
@@ -387,7 +340,7 @@ async function visualizador(container, pecas, opcoes) {
   cena.background = fundoBege();
   luzes(cena);
   chao(cena);
-  const obj = boneco(mod, mats, op.manequim !== false);
+  const obj = boneco(mod, mats);
   cena.add(obj);
   const r = new THREE.WebGLRenderer({ antialias: true });
   r.outputColorSpace = THREE.SRGBColorSpace;
@@ -399,7 +352,7 @@ async function visualizador(container, pecas, opcoes) {
   r.domElement.style.height = "100%";
   r.domElement.style.touchAction = "none";
   const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
-  const alvoY = op.manequim !== false ? 0.58 : 0.49;
+  const alvoY = 0.5;
   camera.position.set(0, alvoY + 0.05, 2.6);
   const controles = new OrbitControls(camera, r.domElement);
   controles.target.set(0, alvoY, 0);
