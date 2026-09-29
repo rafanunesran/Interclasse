@@ -402,11 +402,12 @@ async function carregarPrecosEspeciais(cfg, times) {
   if (!cfg) return;
   cfg._precosTime = cfg._precosTime || {};
   cfg._precosCliente = cfg._precosCliente || {};
+  cfg._precosAluno = cfg._precosAluno || {};
   if (typeof cfg._clienteDoTime !== "function") cfg._clienteDoTime = cfg._clienteDoTime || {};
   const ler = async (docId) => {
     try {
       const doc = await db.collection(COL_PRECOS).doc(docId).get();
-      return doc.exists ? (doc.data().precos || {}) : null;
+      return doc.exists ? doc.data() : null;
     } catch (e) {
       return null;
     }
@@ -416,18 +417,36 @@ async function carregarPrecosEspeciais(cfg, times) {
     if (!id) return;
     if (typeof cfg._clienteDoTime !== "function") cfg._clienteDoTime[id] = clienteId || "";
     if (clienteId) clientes.add(clienteId);
-    const p = await ler(idDocPrecoTime(id));
-    if (p) cfg._precosTime[id] = p;
+    const d = await ler(idDocPrecoTime(id));
+    if (d && d.precos) cfg._precosTime[id] = d.precos;
+    if (d && d.porAluno) cfg._precosAluno[id] = d.porAluno;
   }));
   await Promise.all([...clientes].map(async (id) => {
-    const p = await ler(idDocPrecoCliente(id));
-    if (p) cfg._precosCliente[id] = p;
+    const d = await ler(idDocPrecoCliente(id));
+    if (d && d.precos) cfg._precosCliente[id] = d.precos;
   }));
 }
 
 // Preço de um tamanho já considerando o preço personalizado do time.
 function precoDoTamanhoNoTime(tamanho, cfg, timeId) {
   return precoDoTamanho(tamanho, precosDoTime(cfg, timeId));
+}
+
+// Preço especial de UMA camiseta (definido na lista do Super Admin, ao lado
+// da forma de pagamento). Fica no documento de preços do time (precos/time_ID
+// → porAluno), então segue o mesmo sigilo dos preços do time. null = não tem.
+function precoEspecialDoAluno(cfg, timeId, alunoId) {
+  const m = cfg && cfg._precosAluno && cfg._precosAluno[timeId];
+  const v = m ? Number(m[alunoId]) : NaN;
+  return m && m[alunoId] != null && m[alunoId] !== "" && !isNaN(v) ? v : null;
+}
+
+// Preço de venda de uma camiseta: o especial dela, se houver; senão, o do
+// tamanho no time (geral → cliente → time). É o que vale no pagamento, no
+// Financeiro e no DRE.
+function precoDoAluno(cfg, timeId, alunoId, tamanho) {
+  const especial = precoEspecialDoAluno(cfg, timeId, alunoId);
+  return especial != null ? especial : precoDoTamanhoNoTime(tamanho, cfg, timeId);
 }
 
 // Grupo de tamanho ao qual um tamanho pertence (ou null).
@@ -1102,7 +1121,7 @@ async function revalidarItens(cfg, lista) {
         numero: aluno.numero || "",
         nomeCamiseta: aluno.nomeCamiseta || "",
         time: time.nome || item.timeId,
-        valor: Number(precoDoTamanhoNoTime(aluno.tamanho, cfg, item.timeId) || 0)
+        valor: Number(precoDoAluno(cfg, item.timeId, item.alunoId, aluno.tamanho) || 0)
       });
     })
   );
