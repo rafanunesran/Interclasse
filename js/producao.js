@@ -111,6 +111,8 @@ function escutarItensDaLeva(levaId) {
         if (!estadoLevas[levaId]) return;
         estadoLevas[levaId].itens = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         renderizarProducao();
+        // Entrou/saiu camiseta de um lote com custos: muda o custo por unidade.
+        if (typeof levaTemCustos === "function" && levaTemCustos(levaId)) renderizarFinanceiro();
       },
       (erro) => console.error("Erro ao carregar os itens da leva:", erro)
     );
@@ -271,6 +273,7 @@ function renderizarListaLevas() {
       <p><strong>${itens.length} camiseta(s)</strong> em <strong>${grupos.length} modelo(s)</strong>
          &middot; ${nPagos} paga(s), ${itens.length - nPagos} não paga(s)</p>
       <p class="pix-ajuda">Modelos: ${resumoModelos}</p>
+      ${htmlCustosDaLeva(leva.id, itens.length)}
       ${nRemovidos > 0
         ? `<p class="aviso-ajustes"><span class="marca-ajuste">!</span> ${nRemovidos} camiseta(s) desta leva já não existe(m) no pedido de origem — confira antes de imprimir.</p>`
         : ""}
@@ -363,6 +366,21 @@ function renderizarListaLevas() {
 
     elListaLevas.appendChild(card);
   });
+}
+
+// Resumo do custo do lote (lançado em Financeiro → Custos por lote).
+function htmlCustosDaLeva(levaId, unidades) {
+  if (typeof movCustosDoLote !== "function") return "";
+  const movs = movCustosDoLote(levaId);
+  if (movs.length === 0) {
+    return '<p class="pix-ajuda leva-custos">Custos do lote: nenhum lançado — use <strong>Financeiro → Custos por lote</strong>.</p>';
+  }
+  const total = movs.reduce((s, m) => s + (Number(m.valor) || 0), 0);
+  const aPagar = movs.filter((m) => m.aPagar === true).reduce((s, m) => s + (Number(m.valor) || 0), 0);
+  return `<p class="leva-custos">Custos do lote: <strong>${formatarReais(total)}</strong>` +
+    (unidades > 0 ? ` &middot; <strong>${formatarReais(total / unidades)}</strong> por unidade` : "") +
+    (aPagar > 0 ? ` &middot; <span class="badge mov-apagar">A pagar ${formatarReais(aPagar)}</span>` : "") +
+    "</p>";
 }
 
 // Bloco de um modelo dentro da leva: é exatamente o que sai num CSV.
