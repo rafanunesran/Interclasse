@@ -594,6 +594,12 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
 - **Cores**: o **conta-gotas** pega a cor de um ponto da arte (clique nele e depois no desenho); a amostra
   abre o seletor de cor. A cor vira CMYK pela conversão simples (K = 1 − máx(R,G,B)).
 
+- **Dentro do pedido** (time aberto → **Editar arte**) valem as mesmas ferramentas. Além de ajustar os
+  elementos do layout geral só para aquele time, dá para **adicionar elementos só dele** (nome, número,
+  brasão, logo, detalhe), duplicar, copiar/colar e reordenar — eles aparecem nas Camadas com o selo
+  **só do time** e não mudam os outros times. Do layout geral, <kbd>Delete</kbd> apenas oculta no time.
+  No goleiro, a primeira mudança nos elementos do time copia a lista da camiseta comum para ele.
+
 Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
 
 ### Gerar (aba **Produção**)
