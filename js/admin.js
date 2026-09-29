@@ -4737,6 +4737,13 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
     GRUPOS_TAMANHO = clonarGrupos(grupos);
     TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
     renderizarEditorTamanhos();
+    // O grupo novo já ganha o campo de preço na aba Pagamentos (sem perder o
+    // que foi digitado lá e ainda não salvo).
+    const digitados = { ...precosPorGrupoAtual };
+    elPrecosPorGrupo.querySelectorAll("input").forEach((inp) => {
+      if (inp.value !== "") digitados[inp.dataset.grupo] = inp.value;
+    });
+    renderizarPrecosPorGrupo(digitados);
     mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro dos times.", "aviso");
   } catch (erro) {
     console.error(erro);
