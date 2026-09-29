@@ -1986,14 +1986,14 @@ function renderizarResumoPrecosTimes() {
   const linhas = ids.map((id) => {
     const proprios = precosPersonalizadosDoTime(configGeralAtual, id);
     const efetivos = precosDoTime(configGeralAtual, id);
+    const clienteId = clienteIdDoTime(estadoTimes[id].time);
+    const doCliente = precosPersonalizadosDoCliente(configGeralAtual, clienteId);
     const celulas = GRUPOS_TAMANHO.map((g) => {
       const valor = efetivos[g.grupo];
       if (valor == null) return '<td class="fin-sub">—</td>';
       const proprio = proprios[g.grupo] != null || doCliente[g.grupo] != null;
       return `<td class="${proprio ? "preco-proprio" : "fin-sub"}">${formatarReais(valor)}</td>`;
     }).join("");
-    const clienteId = clienteIdDoTime(estadoTimes[id].time);
-    const doCliente = precosPersonalizadosDoCliente(configGeralAtual, clienteId);
     const marca = (Object.keys(proprios).length > 0 ? ' <span class="badge interno">próprio</span>' : "") +
       (Object.keys(doCliente).length > 0 ? ' <span class="badge aguardando">do cliente</span>' : "");
     return `<tr><td>${escapeHtmlAdmin(estadoTimes[id].time.nome)}${marca}</td>${celulas}</tr>`;
