@@ -518,6 +518,40 @@ O seu logo em **EPS**, o mesmo para todos os times, para usar como detalhe das c
 aba Artes, **+ Logo** coloca uma caixa dele em qualquer peça (proporção mantida, ajuste por time
 como o brasão). O EPS entra intacto na folha.
 
+### Reforço de ombro (aba **Tamanhos**)
+
+Cada camiseta leva na folha um **retalho de reforço de ombro**: uma tira de **25 mm** de largura,
+em cor sólida, com a mesma faca de 3 mm das outras peças e o marcador da costureira
+("TIME-TAM-Reforço de ombro").
+
+- **Comprimento:** coluna **Reforço de ombro** da tabela de moldes, em mm por tamanho. Tamanho sem
+  comprimento fica sem reforço, e a geração avisa.
+- **Cor:** a padrão fica logo abaixo da tabela, em CMYK %. Cada time pode ter a sua em
+  **Arquivos de produção → Cor do reforço de ombro**, com o botão "Usar a padrão" para voltar.
+  Tudo 0 = sem tinta.
+
+### Etiqueta de tamanho (aba **Artes** → **Etiqueta**)
+
+Uma **etiqueta modelo**, montada uma vez só e gerada sozinha para cada camiseta. Sai uma por
+camiseta na folha, com a faca de 3 mm em volta.
+
+- **Medidas e fundo:** sem nada selecionado, o painel mostra a largura e a altura (mm) e a cor de
+  fundo (CMYK).
+- **Elementos:**
+  - **+ Tamanho**: o tamanho da camiseta (P, M, G…).
+  - **+ Nome do time**.
+  - **+ Nome / apelido**.
+  - **+ Texto fixo**: escreva o texto no painel, por exemplo "LAVAR DO AVESSO".
+  - **+ Logo** e **+ Brasão**.
+- **Estilo dos textos:** usam a fonte do time e têm o mesmo painel de cor, contorno e alinhamento.
+  No campo "Texto" dá para trocar o que cada um mostra.
+- **Ver outro tamanho:** o seletor de tamanho do rodapé troca só o tamanho de amostra; a etiqueta
+  tem o mesmo tamanho em todas as camisetas.
+- **Ajuste por time:** como nas outras peças, em **Editar arte** do pedido.
+
+A etiqueta só entra na folha quando tem pelo menos um elemento. A prévia "Arte" do time mostra o
+reforço e a etiqueta do tamanho escolhido.
+
 ### Editar arte (time aberto → aba **Editar arte**)
 
 O mesmo editor da aba Artes, travado no time aberto. O que mudar ali vale **só para este time**;

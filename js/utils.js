@@ -30,7 +30,9 @@ const PECAS_PRODUCAO = [
 
 function nomePecaProducao(id) {
   const p = PECAS_PRODUCAO.find((x) => x.id === id);
-  return p ? p.nome : id;
+  if (p) return p.nome;
+  const v = typeof EPS !== "undefined" && EPS.PECAS_VIRTUAIS && EPS.PECAS_VIRTUAIS[id];
+  return v || id;
 }
 
 // Tamanhos padrão (usados quando ainda não há nada salvo no Firestore

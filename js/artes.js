@@ -401,7 +401,7 @@ function criarSeletorVariante(timeId) {
 
 // Algum elemento (do layout geral ou só deste time) passa no teste?
 function usaNoTime(prod, teste) {
-  return PECAS_PRODUCAO.some((pc) => EPS.elementosDaPecaNoTime(layoutConfig, prod, pc.id).some(teste));
+  return PECAS_EDITOR.some((pc) => EPS.elementosDaPecaNoTime(layoutConfig, prod, pc.id).some(teste));
 }
 
 // O checklist dos arquivos de produção: cada item diz se o layout usa aquilo
@@ -525,6 +525,35 @@ function criarBlocoProducaoTime(timeId, time) {
     };
   });
   bloco.appendChild(opcoes);
+
+  // Cor do reforço de ombro deste time (vazio = a cor padrão da aba Tamanhos).
+  if (Object.values(moldesConfig.reforcoOmbro || {}).some((v) => Number(v) > 0)) {
+    const cor = comum.reforcoCmyk || moldesConfig.reforcoCmyk || [0, 0, 0, 0];
+    const ref = document.createElement("div");
+    ref.className = "producao-opcoes producao-reforco";
+    ref.innerHTML = `<span>Cor do reforço de ombro (CMYK %)</span>
+      <span class="arte-amostra-cor" style="background:${cmykParaCss(cor)}"></span>
+      ${["C", "M", "Y", "K"].map((l, i) =>
+        `<label>${l}<input type="number" min="0" max="100" step="1" class="input-curto" data-reforco-time="${i}" value="${Number(cor[i]) || 0}" /></label>`).join("")}
+      <span class="pix-ajuda">${comum.reforcoCmyk ? "Cor própria deste time" : "Cor padrão (aba Tamanhos)"}</span>
+      ${comum.reforcoCmyk ? '<button type="button" class="secundario" data-reforco-padrao>Usar a padrão</button>' : ""}`;
+    ref.querySelectorAll("[data-reforco-time]").forEach((inp) => {
+      inp.onchange = async () => {
+        const p = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
+        const c = (p.reforcoCmyk || moldesConfig.reforcoCmyk || [0, 0, 0, 0]).slice();
+        c[Number(inp.dataset.reforcoTime)] = Math.max(0, Math.min(100, Number(inp.value) || 0));
+        p.reforcoCmyk = c;
+        await gravarProducaoTime(timeId, p);
+      };
+    });
+    const bPadrao = ref.querySelector("[data-reforco-padrao]");
+    if (bPadrao) bPadrao.onclick = async () => {
+      const p = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
+      delete p.reforcoCmyk;
+      await gravarProducaoTime(timeId, p);
+    };
+    bloco.appendChild(ref);
+  }
 
   const rodape = document.createElement("div");
   rodape.className = "producao-rodape";
@@ -793,11 +822,13 @@ const FACA_MM = 3;
 
 function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soArte) {
   const prod = producaoDoTime(time);
-  const ad = EPS.arteDaPeca(prod, pecaId);
+  const virtual = !!EPS.PECAS_VIRTUAIS[pecaId];
+  const ad = virtual ? null : EPS.arteDaPeca(prod, pecaId);
   const arte = ad && ad.arte;
-  const moldes = moldesConfig.pecas[pecaId] || {};
-  const molde = tam ? moldes[tam] : null;
+  const moldes = virtual ? {} : moldesConfig.pecas[pecaId] || {};
+  const molde = tam ? moldeDaPecaNoTam(pecaId, tam) : null;
   const mb = moldes[moldesConfig.tamanhoBase];
+  amostra = amostraComTam(amostra, tam, time);
 
   let dim;
   let base;
@@ -817,6 +848,13 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   // Recorte no formato do molde (a arte, o brasão, o logo e os textos).
   const idClip = "pc" + Math.random().toString(36).slice(2, 8);
   const recorte = !semRecorte && molde && molde.contorno ? molde.contorno : "";
+  // Reforço de ombro e etiqueta: fundo de cor sólida.
+  if (virtual) {
+    const fundo = pecaId === "reforcoOmbro"
+      ? prod.reforcoCmyk || moldesConfig.reforcoCmyk || [0, 0, 0, 0]
+      : (layoutConfig.pecas.etiquetaTam || {}).fundoCmyk || [0, 0, 0, 0];
+    partes.push(`<rect x="0" y="0" width="${n(dim.w)}" height="${n(dim.h)}" fill="${cmykParaCss(fundo)}" />`);
+  }
   if (arte && arte.previaUrl && soArte !== "elementos") {
     const c = EPS.caixaArte(arte, base, dim, sangriaDaPrevia());
     partes.push(`<image href="${escAttr(urlPreviaGrande(arte.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
@@ -851,7 +889,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   });
 
   // Marcador da costureira (só na prévia "Arte", como vai sair na folha).
-  if (comMolde && fonte && tam && molde) {
+  if (comMolde && fonte && tam && molde && pecaId !== "etiquetaTam") {
     const cmds = EPS.marcadorDaPeca(fonte, EPS.textoDoMarcador(time.nome, tam, nomePecaProducao(pecaId)), dim.w, dim.h, pecaId === "gola",
       molde.contorno ? EPS.comandosDoContorno(molde.contorno) : null);
     if (cmds.length) {
@@ -878,7 +916,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
     svg += `<image href="${escAttr(urlPreviaGrande(molde.previaUrl))}" x="0" y="0" ` +
       `width="${n(dim.w)}" height="${n(dim.h)}" preserveAspectRatio="none" />`;
   }
-  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte, margem };
+  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte || virtual, margem };
 }
 
 // ---------------- Mockup nas fotos base (js/mockup.js) ----------------
@@ -1267,7 +1305,7 @@ function criarPreviaArteTime(timeId, timeComum) {
       return;
     }
 
-    const pecas = PECAS_PRODUCAO
+    const pecas = PECAS_PRODUCAO.concat(pecasVirtuaisDoTime(time).map((id) => ({ id, nome: nomePecaProducao(id) })))
       .map((p) => ({ p, s: pecaEmSvg(time, timeId, p.id, tamAtual, amostraPrevia, true) }))
       .filter((x) => x.s);
     if (pecas.length === 0) {
@@ -1279,7 +1317,7 @@ function criarPreviaArteTime(timeId, timeComum) {
     }
     // Como a folha do molde: gola em cima, mangas no meio, frente e costas
     // embaixo — todas na MESMA escala (a manga do tamanho certo perto do corpo).
-    const linhas = [["gola"], ["mangaEsq", "mangaDir", "detalheMangaEsq", "detalheMangaDir"], ["frente", "costas"]]
+    const linhas = [["gola"], ["mangaEsq", "mangaDir", "detalheMangaEsq", "detalheMangaDir"], ["frente", "costas"], ["reforcoOmbro", "etiquetaTam"]]
       .map((ids) => pecas.filter(({ p }) => ids.includes(p.id)))
       .filter((l) => l.length);
     const larguraTela = Math.max(280, area.clientWidth || 800);
@@ -1368,6 +1406,21 @@ let layoutElSel = "";
 let layoutArrastando = false;
 let layoutZoom = 1;         // zoom do palco (1 = a peça inteira cabendo)
 const amostraLayout = { nomeCamiseta: "JOÃO PEDRO", nome: "João Pedro Silva", numero: "10" };
+// Abas do editor: as peças da camiseta e a etiqueta de tamanho (que não tem
+// molde EPS: é um retângulo do tamanho definido na própria aba).
+const PECAS_EDITOR = PECAS_PRODUCAO.concat([{ id: "etiquetaTam", nome: "Etiqueta" }]);
+
+// Molde de uma peça num tamanho: o EPS da aba Tamanhos ou, no reforço de
+// ombro e na etiqueta, o retângulo "virtual".
+function moldeDaPecaNoTam(pecaId, tam) {
+  if (EPS.PECAS_VIRTUAIS[pecaId]) return EPS.moldeVirtual(moldesConfig, layoutConfig, pecaId, tam);
+  return (moldesConfig.pecas[pecaId] || {})[tam] || null;
+}
+
+// A amostra do editor com o tamanho e o nome do time (textos da etiqueta).
+function amostraComTam(amostra, tam, time) {
+  return { ...amostra, tamanho: tam || "", nomeTime: time ? time.nome : "TIME" };
+}
 
 // "Ajustar layout deste time": abre a aba "Editar arte" do pedido.
 function abrirLayoutDoTime(timeId) {
@@ -1425,6 +1478,8 @@ function timeDaPrevia() {
 }
 
 function tamanhosComMolde(pecaId) {
+  if (pecaId === "etiquetaTam") return TODOS_TAMANHOS.slice();
+  if (EPS.PECAS_VIRTUAIS[pecaId]) return TODOS_TAMANHOS.filter((t) => moldeDaPecaNoTam(pecaId, t));
   const m = moldesConfig.pecas[pecaId] || {};
   return TODOS_TAMANHOS.filter((t) => m[t]);
 }
@@ -1482,16 +1537,23 @@ function renderizarEditorLayout() {
       <div class="estudio-corpo">
         <div class="estudio-canvas">
           ${`<div class="estudio-ferramentas" role="toolbar" aria-label="${layoutModo ? "Adicionar só neste time" : "Adicionar à peça"}">
+            ${layoutPeca === "etiquetaTam" ? `
+            ${ferramenta("tamanho", "shirt", "Adicionar o tamanho da camiseta")}
+            ${ferramenta("time", "users", "Adicionar o nome do time")}
+            ${ferramenta("nome", "type", "Adicionar nome / apelido")}
+            ${ferramenta("fixo", "case-upper", "Adicionar texto fixo")}
+            ${ferramenta("logo", "tag", "Adicionar logo da empresa")}
+            ${ferramenta("brasao", "shield", "Adicionar brasão do time")}` : `
             ${ferramenta("nome", "type", "Adicionar nome")}
             ${ferramenta("numero", "hash", "Adicionar número")}
             ${ferramenta("brasao", "shield", "Adicionar brasão do time")}
             ${ferramenta("logo", "tag", "Adicionar logo da empresa")}
-            ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}
+            ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}`}
           </div>`}
           <p class="estudio-peca-rotulo">${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}${tam ? ` · ${escapeHtmlAdmin(tam)}${tam === moldesConfig.tamanhoBase ? " (base)" : ""}` : ""}</p>
           <div class="arte-palco-wrap estudio-palco-fundo"><div class="palco-reguas"><svg class="regua regua-h" aria-hidden="true"></svg><svg class="regua regua-v" aria-hidden="true"></svg><div id="layoutPalco" class="arte-palco"></div></div></div>
           <div class="estudio-rodape">
-            <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_PRODUCAO.map((p) =>
+            <nav class="estudio-pecas" role="tablist" aria-label="Peça da camiseta">${PECAS_EDITOR.map((p) =>
               `<button type="button" role="tab" aria-selected="${p.id === layoutPeca}" class="estudio-peca${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}${qtdNaPeca(p.id) ? ` <span class="estudio-peca-qtd">${qtdNaPeca(p.id)}</span>` : ""}</button>`).join("")}</nav>
             <span class="estudio-divisor"></span>
             <label class="campo-inline campo-rodape">${icone("ruler")}<select data-l="tam" aria-label="Tamanho">${tamanhosComMolde(layoutPeca).map((t) =>
@@ -1581,10 +1643,12 @@ function renderizarEditorLayout() {
 // Medidas do molde mostrado e do molde base (mm) e a escala do palco.
 function medidasLayout() {
   const tam = tamanhoDoEditor();
-  const moldes = moldesConfig.pecas[layoutPeca] || {};
-  const molde = moldes[tam];
+  const virtual = !!EPS.PECAS_VIRTUAIS[layoutPeca];
+  const moldes = virtual ? {} : moldesConfig.pecas[layoutPeca] || {};
+  const molde = moldeDaPecaNoTam(layoutPeca, tam);
   if (!molde) return null;
   const dim = EPS.tamanhoMmDoBbox(molde.bbox);
+  // Peça virtual: a mesma caixa em todos os tamanhos (sem base).
   const mb = moldes[moldesConfig.tamanhoBase];
   const base = mb ? EPS.tamanhoMmDoBbox(mb.bbox) : dim;
   const palco = document.getElementById("layoutPalco");
@@ -1687,6 +1751,9 @@ function iconeElementoLayout(el) {
   if (el.tipo === "logo") return icone("tag");
   if (el.tipo === "detalhe") return icone("waves");
   if (el.tipo === "numero") return icone("hash");
+  if (el.campo === "tamanho") return icone("shirt");
+  if (el.campo === "time") return icone("users");
+  if (el.campo === "fixo") return icone("case-upper");
   return icone("type");
 }
 
@@ -1695,6 +1762,9 @@ function rotuloElementoLayout(el) {
   if (el.tipo === "logo") return "Logo da empresa";
   if (el.tipo === "detalhe") return "Detalhe da manga";
   if (el.tipo === "numero") return "Número";
+  if (el.campo === "tamanho") return "Tamanho";
+  if (el.campo === "time") return "Nome do time";
+  if (el.campo === "fixo") return "Texto: " + (el.texto || "(vazio)");
   return el.campo === "nomeCompleto" ? "Nome completo" : "Nome na camiseta";
 }
 
@@ -1718,7 +1788,12 @@ function renderizarPalcoLayout() {
 
   // Arte do time (por baixo) e o molde por cima (a prévia do molde é
   // transparente, só as linhas).
-  const adEd = EPS.arteDaPeca(prod, layoutPeca);
+  if (m.molde.virtual) {
+    const fundo = ((layoutConfig.pecas.etiquetaTam || {}).fundoCmyk) || [0, 0, 0, 0];
+    palco.insertAdjacentHTML("beforeend",
+      `<div class="layout-fundo-etiqueta" style="position:absolute;inset:0;background:${cmykParaCss(fundo)}"></div>`);
+  }
+  const adEd = m.molde.virtual ? null : EPS.arteDaPeca(prod, layoutPeca);
   const arte = adEd && adEd.arte;
   if (arte && arte.previaUrl) {
     const c = EPS.caixaArte(arte, base, dim, sangriaDaPrevia());
@@ -1764,7 +1839,7 @@ function renderizarPalcoLayout() {
         : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
     } else if (fonte) {
       // Sem o giro: quem gira é a caixa inteira (a div), com a seleção junto.
-      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el, { semGiro: true });
+      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraComTam(amostraLayout, m.tam, time)), { w: c.w, h: c.h }, el, { semGiro: true });
       div.innerHTML = `<svg class="arte-el-svg" width="${c.w * s}" height="${c.h * s}" overflow="visible">` +
         `${svgDoTexto(l.comandos, el, s)}</svg>`;
     } else {
@@ -2316,7 +2391,18 @@ function adicionarElementoLayout(tipo) {
     return;
   }
   const b = m.base;
-  const caixa = tipo === "numero" ? { x: b.w * 0.3, y: b.h * 0.3, w: b.w * 0.4, h: b.h * 0.28 }
+  // Etiqueta: textos em faixas; logo e brasão num canto.
+  const naEtiqueta = layoutPeca === "etiquetaTam";
+  const campoEtiqueta = { tamanho: "tamanho", time: "time", fixo: "fixo" }[tipo];
+  if (campoEtiqueta) tipo = "texto";
+  const caixa = naEtiqueta
+    ? (tipo === "logo" || tipo === "brasao"
+      ? { x: tipo === "logo" ? b.w * 0.04 : b.w * 0.96 - b.h * 0.36, y: b.h * 0.26, w: b.h * 0.36, h: b.h * 0.36 }
+      : campoEtiqueta === "tamanho" ? { x: b.w * 0.3, y: b.h * 0.26, w: b.w * 0.4, h: b.h * 0.34 }
+        : campoEtiqueta === "time" ? { x: b.w * 0.08, y: b.h * 0.06, w: b.w * 0.84, h: b.h * 0.13 }
+          : campoEtiqueta === "fixo" ? { x: b.w * 0.08, y: b.h * 0.85, w: b.w * 0.84, h: b.h * 0.08 }
+            : { x: b.w * 0.08, y: b.h * 0.67, w: b.w * 0.84, h: b.h * 0.12 })
+    : tipo === "numero" ? { x: b.w * 0.3, y: b.h * 0.3, w: b.w * 0.4, h: b.h * 0.28 }
     : tipo === "nome" ? { x: b.w * 0.2, y: b.h * 0.18, w: b.w * 0.6, h: b.h * 0.07 }
       : tipo === "logo" ? caixaLogoInicial(b)
         : tipo === "detalhe" ? caixaDetalheInicial(b)
@@ -2325,7 +2411,8 @@ function adicionarElementoLayout(tipo) {
   const el = { id: novoIdLayout("e"), tipo, caixa };
   if (tipo !== "brasao" && tipo !== "logo" && tipo !== "detalhe") {
     Object.assign(el, {
-      campo: tipo === "nome" ? "nomeCamiseta" : "numero",
+      campo: campoEtiqueta || (tipo === "nome" ? "nomeCamiseta" : "numero"),
+      ...(campoEtiqueta === "fixo" ? { texto: "TEXTO" } : {}),
       corCmyk: [0, 0, 0, 100], contornoMm: 0, contornoCmyk: [0, 0, 0, 0],
       alinhamento: "centro", ajuste: "encolher", maiusculas: true, espacamento: 0, usarNomeSeVazio: true
     });
@@ -2338,6 +2425,54 @@ function adicionarElementoLayout(tipo) {
   elementosDaPeca(layoutPeca).push(el);
   salvarLayout(true);
   renderizarEditorLayout();
+}
+
+// Medidas e fundo da etiqueta de tamanho (layout geral, vale para todos).
+function renderizarPainelEtiqueta() {
+  const box = document.getElementById("layoutPainelEl");
+  if (!box) return;
+  const cfg = layoutConfig.pecas.etiquetaTam || {};
+  const med = EPS.medidasEtiqueta(layoutConfig);
+  const fundo = cfg.fundoCmyk || [0, 0, 0, 0];
+  box.innerHTML = `
+    <section class="painel-secao" data-etiqueta-config>
+      <h4 class="painel-titulo">${icone("tag")} Etiqueta</h4>
+      <div class="arte-grade">
+        <label>Largura (mm)<input type="number" min="5" max="300" step="0.5" data-etq="larguraMm" value="${med.w}" /></label>
+        <label>Altura (mm)<input type="number" min="5" max="300" step="0.5" data-etq="alturaMm" value="${med.h}" /></label>
+      </div>
+      <p class="pix-ajuda">Cor de fundo (CMYK %; tudo 0 = sem tinta)</p>
+      <div class="arte-cor">
+        <span class="arte-amostra-cor" style="background:${cmykParaCss(fundo)}"></span>
+        ${["C", "M", "Y", "K"].map((l, i) =>
+          `<label>${l}<input type="number" min="0" max="100" step="1" data-etq-cor="${i}" value="${Number(fundo[i]) || 0}" /></label>`).join("")}
+      </div>
+      <p class="pix-ajuda">Sai uma etiqueta por camiseta na folha de impressão, com a faca de 3 mm em volta. Os textos "Tamanho", "Nome do time" e "Nome / apelido" mudam sozinhos em cada uma.</p>
+    </section>`;
+  const cfgEtq = () => {
+    elementosDaPeca("etiquetaTam");
+    return layoutConfig.pecas.etiquetaTam;
+  };
+  box.querySelectorAll("[data-etq]").forEach((inp) => {
+    inp.onchange = () => {
+      const v = Number(inp.value);
+      if (!(v > 0)) return;
+      cfgEtq()[inp.dataset.etq] = v;
+      salvarLayout(true);
+      renderizarPalcoLayout();
+    };
+  });
+  box.querySelectorAll("[data-etq-cor]").forEach((inp) => {
+    inp.onchange = () => {
+      const c = cfgEtq();
+      const cor = (c.fundoCmyk || [0, 0, 0, 0]).slice();
+      cor[Number(inp.dataset.etqCor)] = Math.max(0, Math.min(100, Number(inp.value) || 0));
+      c.fundoCmyk = cor;
+      salvarLayout(true);
+      renderizarPalcoLayout();
+      box.querySelector(".arte-amostra-cor").style.background = cmykParaCss(cor);
+    };
+  });
 }
 
 // Selos da lista de elementos: o que este time mudou.
@@ -2400,6 +2535,7 @@ function renderizarPainelLayout() {
     li.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); } };
   });
   const m = medidasLayout();
+  if (!el && layoutPeca === "etiquetaTam" && !layoutModo) renderizarPainelEtiqueta();
   if (!el || !m) return;
   const aj = ajusteNoEditor(layoutPeca, el.id);
   // No goleiro, os botões de "voltar" desfazem só o ajuste dele.
@@ -2502,8 +2638,9 @@ function renderizarPainelLayout() {
       <section class="painel-secao">
         <h4 class="painel-titulo">${icone("type")} Texto</h4>
         <div class="arte-grade">
-          ${el.tipo === "nome" && edicaoCompleta ? `<label>Texto
-            <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
+          ${(el.tipo === "nome" || el.tipo === "texto") && edicaoCompleta ? `<label>Texto
+            <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option><option value="tamanho">Tamanho da camiseta</option><option value="time">Nome do time</option><option value="fixo">Texto fixo</option></select></label>` : ""}
+          ${elT.campo === "fixo" ? `<label>Texto fixo<input type="text" data-p="texto" value="${escAttr(elT.texto || "")}" /></label>` : ""}
           <div class="campo-alinhar"><span>Alinhamento</span><span class="segmentado-icones" role="group" aria-label="Alinhamento">${[["esquerda", "align-left"], ["centro", "align-center"], ["direita", "align-right"]].map(([v, ic]) =>
             `<button type="button" data-alinhar="${v}" class="${(elT.alinhamento || "centro") === v ? "ativo" : ""}" title="${v === "centro" ? "Centro" : v === "esquerda" ? "Esquerda" : "Direita"}" aria-pressed="${(elT.alinhamento || "centro") === v}">${icone(ic)}</button>`).join("")}</span></div>
           <label>Texto maior que a caixa
@@ -2748,7 +2885,18 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
 function pecasDoTime(time) {
   const prod = producaoDoTime(time);
   return PECAS_PRODUCAO.map((p) => p.id).filter((id) =>
-    EPS.arteDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutConfig, prod, id).length);
+    EPS.arteDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutConfig, prod, id).length)
+    .concat(pecasVirtuaisDoTime(time));
+}
+
+// Reforço de ombro (quando há a tabela de comprimentos na aba Tamanhos) e
+// etiqueta de tamanho (quando ela tem elementos): um de cada por camiseta.
+function pecasVirtuaisDoTime(time) {
+  const prod = producaoDoTime(time);
+  const ids = [];
+  if (Object.values(moldesConfig.reforcoOmbro || {}).some((v) => Number(v) > 0)) ids.push("reforcoOmbro");
+  if (EPS.elementosDaPecaNoTime(layoutConfig, prod, "etiquetaTam").length) ids.push("etiquetaTam");
+  return ids;
 }
 
 // Time de cada linha da leva: o do pedido; para o avulso, o time com o

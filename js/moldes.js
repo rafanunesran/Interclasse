@@ -27,7 +27,11 @@ function escutarMoldes() {
   db.collection("config").doc("moldes").onSnapshot(
     (doc) => {
       const d = doc.exists ? doc.data() : {};
-      moldesConfig = { tamanhoBase: d.tamanhoBase || "", baseAutomatica: d.baseAutomatica === true, pecas: d.pecas || {} };
+      moldesConfig = {
+        tamanhoBase: d.tamanhoBase || "", baseAutomatica: d.baseAutomatica === true, pecas: d.pecas || {},
+        // Reforço de ombro: comprimento (mm) por tamanho e a cor padrão (CMYK).
+        reforcoOmbro: d.reforcoOmbro || {}, reforcoCmyk: d.reforcoCmyk || null
+      };
       renderizarMoldes();
       if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
       if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
@@ -174,9 +178,15 @@ function renderizarMoldes() {
       ${feitos ? `<button type="button" class="${semContorno ? "primario" : "secundario"}" data-acao="contornos" title="Lê de novo o formato de todas as peças enviadas (corrige as que ficaram quadradas)">Reler contornos${semContorno ? ` (${semContorno} com problema)` : ""}</button>` : ""}
     </div>
     <div class="moldes-tabela-wrap"><table class="moldes-tabela">
-      <thead><tr><th>Tamanho</th>${PECAS_PRODUCAO.map((p) => `<th>${escapeHtmlAdmin(p.nome)}</th>`).join("")}</tr></thead>
-      <tbody>${tamanhos.map((t) => `<tr><th>${escapeHtmlAdmin(t)}</th>${PECAS_PRODUCAO.map((p) => celulaMolde(p.id, t)).join("")}</tr>`).join("")}</tbody>
-    </table></div>`;
+      <thead><tr><th>Tamanho</th>${PECAS_PRODUCAO.map((p) => `<th>${escapeHtmlAdmin(p.nome)}</th>`).join("")}<th>Reforço de ombro<br><span class="pix-ajuda">comprimento (mm)</span></th></tr></thead>
+      <tbody>${tamanhos.map((t) => `<tr><th>${escapeHtmlAdmin(t)}</th>${PECAS_PRODUCAO.map((p) => celulaMolde(p.id, t)).join("")}` +
+        `<td class="molde-celula"><input type="number" min="0" step="1" class="input-curto" data-reforco="${escAttr(t)}" value="${escAttr((moldesConfig.reforcoOmbro || {})[t] || "")}" placeholder="mm" /></td></tr>`).join("")}</tbody>
+    </table></div>
+    <div class="reforco-config">
+      <p><strong>Reforço de ombro</strong>: um retalho de ${EPS.REFORCO_LARGURA_MM} mm de largura por camiseta, com o comprimento da tabela acima, sai na folha junto das peças (tamanho sem comprimento = sem reforço). Cor padrão (CMYK %; o time pode ter a sua nos Arquivos de produção; tudo 0 = sem tinta):</p>
+      <div class="arte-cmyk" data-reforco-cor>${["C", "M", "Y", "K"].map((l, i) =>
+        `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number(((moldesConfig.reforcoCmyk) || [])[i]) || 0}" /></label>`).join("")}</div>
+    </div>`;
 
   elMoldesCorte.querySelector('[data-acao="varios"]').onclick = enviarVariosMoldes;
   const btnContornos = elMoldesCorte.querySelector('[data-acao="contornos"]');
@@ -189,6 +199,23 @@ function renderizarMoldes() {
   elMoldesCorte.querySelectorAll("[data-molde]").forEach((b) => {
     const [pecaId, tam, acao] = b.dataset.molde.split("|");
     b.onclick = () => acaoMolde(pecaId, tam, acao);
+  });
+  elMoldesCorte.querySelectorAll("[data-reforco]").forEach((inp) => {
+    inp.onchange = async () => {
+      const v = Math.max(0, Math.round(Number(inp.value) || 0));
+      moldesConfig.reforcoOmbro = { ...(moldesConfig.reforcoOmbro || {}) };
+      if (v) moldesConfig.reforcoOmbro[inp.dataset.reforco] = v;
+      else delete moldesConfig.reforcoOmbro[inp.dataset.reforco];
+      await gravarMoldes();
+    };
+  });
+  const corReforco = elMoldesCorte.querySelector("[data-reforco-cor]");
+  corReforco.querySelectorAll("input").forEach((inp) => {
+    inp.onchange = async () => {
+      moldesConfig.reforcoCmyk = [0, 1, 2, 3].map((i) =>
+        Math.max(0, Math.min(100, Number(corReforco.querySelector(`[data-i="${i}"]`).value) || 0)));
+      await gravarMoldes();
+    };
   });
 }
 

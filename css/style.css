@@ -2580,6 +2580,9 @@ kbd { font: 600 0.72rem ui-monospace, monospace; background: #fff; border: 1px s
 .botao-remover { color: #b91c1c !important; }
 .producao-time .producao-opcoes { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f1f5f9; gap: 4px 24px; }
 .producao-time .producao-opcoes .interruptor { margin: 0; }
+.producao-reforco { align-items: center; }
+.producao-reforco label { display: inline-flex; align-items: center; gap: 4px; }
+.producao-reforco .arte-amostra-cor { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #cbd5e1; }
 .producao-time .producao-rodape { margin-top: 14px; padding: 12px; border-radius: 10px; background: #f8fafc; }
 .producao-time .producao-rodape button { margin: 0; }
 .ajuda-recolhivel { margin: 0 0 14px; font-size: 0.88rem; }

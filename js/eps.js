@@ -259,6 +259,9 @@ const EPS = (function () {
   // Valor de texto de um elemento para uma camiseta.
   function textoDoCampo(el, camiseta) {
     if (el.tipo === "numero" || el.campo === "numero") return String(camiseta.numero == null ? "" : camiseta.numero);
+    if (el.campo === "tamanho") return camiseta.tamanho || "";
+    if (el.campo === "time") return camiseta.nomeTime || "";
+    if (el.campo === "fixo") return el.texto || "";
     if (el.campo === "nomeCompleto") return camiseta.nome || "";
     // Nome na camiseta (apelido): sem apelido, usa o nome (se permitido).
     const apelido = camiseta.nomeCamiseta || "";
@@ -798,6 +801,46 @@ const EPS = (function () {
     return extras.length ? gerais.concat(extras) : gerais;
   }
 
+  // ---------------- Peças virtuais (sem molde EPS) ----------------
+  // Retângulos que vão na folha junto das peças de cada camiseta:
+  //   • reforcoOmbro — retalho de reforço de ombro, 25 mm de largura e o
+  //     comprimento do tamanho (moldes.reforcoOmbro[tam], aba Tamanhos), em
+  //     cor sólida;
+  //   • etiquetaTam — etiqueta de tamanho, com o tamanho definido na aba
+  //     Etiqueta do editor (layout.pecas.etiquetaTam) e os elementos dela.
+  const REFORCO_LARGURA_MM = 25;
+  const PECAS_VIRTUAIS = { reforcoOmbro: "Reforço de ombro", etiquetaTam: "Etiqueta" };
+
+  function medidasEtiqueta(layout) {
+    const e = ((layout && layout.pecas) || {}).etiquetaTam || {};
+    return { w: Number(e.larguraMm) > 0 ? Number(e.larguraMm) : 50, h: Number(e.alturaMm) > 0 ? Number(e.alturaMm) : 30 };
+  }
+
+  // { bbox (pt), contorno (retângulo, mm), virtual } ou null (sem medida).
+  function moldeVirtual(moldes, layout, pecaId, tam) {
+    let d = null;
+    if (pecaId === "reforcoOmbro") {
+      const c = Number(((moldes && moldes.reforcoOmbro) || {})[tam]);
+      if (c > 0) d = { w: c, h: REFORCO_LARGURA_MM };
+    } else if (pecaId === "etiquetaTam") {
+      d = medidasEtiqueta(layout);
+    }
+    if (!d) return null;
+    const r = (v) => Math.round(v * 100) / 100;
+    return {
+      virtual: true,
+      bbox: { x1: 0, y1: 0, x2: d.w * PT_POR_MM, y2: d.h * PT_POR_MM },
+      contorno: `M 0 0 L ${r(d.w)} 0 L ${r(d.w)} ${r(d.h)} L 0 ${r(d.h)} Z`
+    };
+  }
+
+  // Cor de fundo de uma peça virtual (null = sem fundo).
+  function fundoVirtual(moldes, layout, prod, pecaId) {
+    if (pecaId === "reforcoOmbro") return (prod && prod.reforcoCmyk) || (moldes && moldes.reforcoCmyk) || [0, 0, 0, 0];
+    if (pecaId === "etiquetaTam") return (((layout && layout.pecas) || {}).etiquetaTam || {}).fundoCmyk || [0, 0, 0, 0];
+    return null;
+  }
+
   // Giro/espelho que vai na op de imagem ou EPS (o escritor aplica).
   function giroDaOp(el) {
     const o = {};
@@ -817,23 +860,34 @@ const EPS = (function () {
     const pecasIds = op.pecas || Object.keys((layout && layout.pecas) || {});
 
     const blocos = [];
-    camisetas.forEach((cam) => {
+    camisetas.forEach((camOrig) => {
+      // O nome do time serve aos textos da etiqueta (campo "time").
+      const cam = { ...camOrig, nomeTime: op.nomeTime || "" };
       pecasIds.forEach((pecaId) => {
+        const virtual = !!PECAS_VIRTUAIS[pecaId];
         const moldesPeca = (moldes.pecas || {})[pecaId] || {};
-        const molde = moldesPeca[cam.tamanho];
-        const ad = arteDaPeca(prod, pecaId);
+        const molde = virtual ? moldeVirtual(moldes, layout, pecaId, cam.tamanho) : moldesPeca[cam.tamanho];
+        const ad = virtual ? null : arteDaPeca(prod, pecaId);
         const arte = ad && ad.arte;
         const elementos = elementosDaPecaNoTime(layout, prod, pecaId);
-        if (!arte && !elementos.length) return; // peça sem nada deste time
+        if (!virtual && !arte && !elementos.length) return; // peça sem nada deste time
         if (!molde || !molde.bbox) {
-          avisar(`Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
+          avisar(pecaId === "reforcoOmbro"
+            ? `Sem o comprimento do reforço de ombro para o tamanho ${cam.tamanho || "(vazio)"} (aba Tamanhos) — o reforço ficou de fora.`
+            : `Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
           return;
         }
         const tam = tamanhoMmDoBbox(molde.bbox);
-        const mb = moldesPeca[moldes.tamanhoBase];
+        const mb = virtual ? null : moldesPeca[moldes.tamanhoBase];
         const tamBase = mb && mb.bbox ? tamanhoMmDoBbox(mb.bbox) : tam;
 
         const ops = [];
+        // Peça virtual: fundo de cor sólida (reforço, fundo da etiqueta).
+        const fundo = virtual ? fundoVirtual(moldes, layout, prod, pecaId) : null;
+        if (fundo && fundo.some((v) => Number(v) > 0)) {
+          ops.push({ tipo: "caminho", recortar: true, cmyk: fundo,
+            comandos: [{ type: "M", x: -5, y: -5 }, { type: "L", x: tam.w + 5, y: -5 }, { type: "L", x: tam.w + 5, y: tam.h + 5 }, { type: "L", x: -5, y: tam.h + 5 }, { type: "Z" }] });
+        }
         const opMolde = { tipo: "eps", chave: "molde:" + pecaId + ":" + cam.tamanho, x: 0, y: 0, w: tam.w, h: tam.h };
         // Faca a partir do contorno (3 mm por fora); sem contorno lido, vai o
         // EPS do molde como veio (com a espessura de linha do arquivo).
@@ -905,7 +959,7 @@ const EPS = (function () {
 
         // Marcador para a costureira, DENTRO da área de impressão:
         // "Time-Tamanho-Peça" (ex.: 7B-P-Frente), ver marcadorDaPeca().
-        if (op.etiqueta !== false && rec.fonteEtiqueta) {
+        if (op.etiqueta !== false && rec.fonteEtiqueta && pecaId !== "etiquetaTam") {
           const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId);
           const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola",
             molde.contorno ? comandosDoContorno(molde.contorno) : null);
@@ -1208,6 +1262,10 @@ const EPS = (function () {
     elementoDoTime,
     imagemLivre,
     montarBlocos,
+    moldeVirtual,
+    medidasEtiqueta,
+    PECAS_VIRTUAIS,
+    REFORCO_LARGURA_MM,
     arteDaPeca,
     detalheDaPeca,
     textoDoMarcador,
