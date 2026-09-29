@@ -325,7 +325,7 @@ function producaoGoleiroPropria(prod) {
 function temVarianteGoleiro(time) {
   const g = producaoGoleiroPropria(producaoDoTime(time));
   return !!(Object.keys(g.pecas || {}).length || g.brasao || g.fonte || g.detalheManga || g.detalheMangaDir ||
-    Object.keys(g.layoutAjustes || {}).length);
+    Object.keys(g.layoutAjustes || {}).length || Object.keys(g.elementosExtras || {}).length);
 }
 
 // Ajuste do goleiro por cima do da comum: a posição vem inteira de um ou do
@@ -351,6 +351,8 @@ function producaoDoGoleiro(prod) {
   const saida = { ...p, pecas: { ...(p.pecas || {}), ...(g.pecas || {}) } };
   delete saida.goleiro;
   ["brasao", "fonte", "detalheManga", "detalheMangaDir"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
+  // Elementos só do time: o goleiro pode ter a lista própria de uma peça.
+  if (p.elementosExtras || g.elementosExtras) saida.elementosExtras = { ...(p.elementosExtras || {}), ...(g.elementosExtras || {}) };
   const ajustes = {};
   const pecasAj = new Set([...Object.keys(p.layoutAjustes || {}), ...Object.keys(g.layoutAjustes || {})]);
   pecasAj.forEach((pecaId) => {
@@ -397,11 +399,16 @@ function criarSeletorVariante(timeId) {
   return wrap;
 }
 
+// Algum elemento (do layout geral ou só deste time) passa no teste?
+function usaNoTime(prod, teste) {
+  return PECAS_PRODUCAO.some((pc) => EPS.elementosDaPecaNoTime(layoutConfig, prod, pc.id).some(teste));
+}
+
 // O checklist dos arquivos de produção: cada item diz se o layout usa aquilo
 // (necessário) e se o time já enviou (tem).
 function requisitosProducao(time) {
   const p = producaoDoTime(time);
-  const usa = (teste) => Object.values(layoutConfig.pecas || {}).some((l) => (l.elementos || []).some(teste));
+  const usa = (teste) => usaNoTime(p, teste);
   const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id]).length;
   return [
     { id: "artes", rotulo: "Artes das peças", necessario: true, tem: nArtes > 0, detalhe: `${nArtes} enviada(s)` },
@@ -418,14 +425,11 @@ function pendenciasProducao(time) {
   const falta = [];
   const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id]);
   if (!temArte) falta.push("arte das peças");
-  const usaTexto = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => !ehCaixaImagem(e)));
-  const usaBrasao = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo === "brasao"));
+  const usaTexto = usaNoTime(p, (e) => !ehCaixaImagem(e));
+  const usaBrasao = usaNoTime(p, (e) => e.tipo === "brasao");
   if (usaTexto && !p.fonte) falta.push("fonte");
   if (usaBrasao && !p.brasao) falta.push("brasão");
-  const usaDetalhe = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo === "detalhe"));
+  const usaDetalhe = usaNoTime(p, (e) => e.tipo === "detalhe");
   if (usaDetalhe && !p.detalheManga) falta.push("detalhe da manga");
   return falta;
 }
@@ -634,6 +638,7 @@ function limparGoleiroVazio(prod) {
   if (!g) return;
   if (g.pecas && !Object.keys(g.pecas).length) delete g.pecas;
   if (g.layoutAjustes && !Object.keys(g.layoutAjustes).length) delete g.layoutAjustes;
+  if (g.elementosExtras && !Object.keys(g.elementosExtras).length) delete g.elementosExtras;
   if (!Object.keys(g).length) delete prod.goleiro;
 }
 
@@ -819,7 +824,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   }
 
   const fonte = fonteProntaDoTime(time);
-  const elementos = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
+  const elementos = EPS.elementosDaPecaNoTime(layoutConfig, prod, pecaId);
   (soArte === true ? [] : elementos).forEach((elGeral) => {
     const ajTime = ajusteDaProducao(prod, pecaId, elGeral.id);
     const el = EPS.elementoDoTime(elGeral, ajTime);
@@ -1449,7 +1454,7 @@ function renderizarEditorLayout() {
   const opcTimes = (sel) => times.map(([id, e]) =>
     `<option value="${escAttr(id)}"${id === sel ? " selected" : ""}>${escapeHtmlAdmin(e.time.nome)}</option>`).join("");
 
-  const qtdNaPeca = (id) => ((layoutConfig.pecas[id] && layoutConfig.pecas[id].elementos) || []).length;
+  const qtdNaPeca = (id) => ((layoutConfig.pecas[id] && layoutConfig.pecas[id].elementos) || []).length + extrasNoEditor(id).length;
   const nomeTime = layoutModo && estadoTimes[layoutModo] ? escapeHtmlAdmin(estadoTimes[layoutModo].time.nome) : "";
   const ferramenta = (tipo, ic, titulo) =>
     `<button type="button" class="ferramenta" data-add="${tipo}" title="${escAttr(titulo)}" aria-label="${escAttr(titulo)}">${icone(ic)}</button>`;
@@ -1473,10 +1478,10 @@ function renderizarEditorLayout() {
       </header>
       ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutGoleiro
         ? `${icone("hand")} Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
-        : `${icone("pencil")} Ajustes só de <strong>${nomeTime}</strong>. O que não mudar aqui segue o layout geral (aba Artes).`}</p>`}
+        : `${icone("pencil")} Editando <strong>${nomeTime}</strong>: o que mudar ou adicionar aqui vale só para este time. O resto segue o layout geral (aba Artes).`}</p>`}
       <div class="estudio-corpo">
         <div class="estudio-canvas">
-          ${layoutModo ? "" : `<div class="estudio-ferramentas" role="toolbar" aria-label="Adicionar à peça">
+          ${`<div class="estudio-ferramentas" role="toolbar" aria-label="${layoutModo ? "Adicionar só neste time" : "Adicionar à peça"}">
             ${ferramenta("nome", "type", "Adicionar nome")}
             ${ferramenta("numero", "hash", "Adicionar número")}
             ${ferramenta("brasao", "shield", "Adicionar brasão do time")}
@@ -1736,8 +1741,8 @@ function renderizarPalcoLayout() {
   }
 
   const fonte = fonteProntaDoTime(time);
-  elementosDaPeca(layoutPeca).forEach((elGeral) => {
-    const ajTime = ajusteNoEditor(layoutPeca, elGeral.id);
+  elementosNoEditor().forEach((elGeral) => {
+    const ajTime = ehExtra(elGeral.id) ? undefined : ajusteNoEditor(layoutPeca, elGeral.id);
     // Oculto neste time: aparece apagado (dá para selecionar e mostrar de novo).
     const el = EPS.elementoDoTime(elGeral, ajTime) || elGeral;
     const oculto = !!(ajTime && ajTime.oculto);
@@ -1795,7 +1800,7 @@ function editorLayoutVisivel() {
 }
 
 function empurrarSelecionado(dx, dy) {
-  const el = elementosDaPeca(layoutPeca).find((e) => e.id === layoutElSel);
+  const el = elementosNoEditor().find((e) => e.id === layoutElSel);
   const m = medidasLayout();
   if (!el || !m) return;
   if (!empurraoLayout || empurraoLayout.elId !== el.id) {
@@ -1824,24 +1829,98 @@ function empurrarSelecionado(dx, dy) {
 // ---------------- Operações de elemento (atalhos e botões) ----------------
 let elementoCopiado = null; // Ctrl+C (só no layout geral)
 
+// ---------------- Elementos só do time (no "Editar arte" do pedido) ----------------
+// Além de ajustar os do layout geral, o pedido pode ter elementos próprios:
+// producao.elementosExtras[pecaId] (no goleiro, producao.goleiro.elementosExtras,
+// que substitui a lista da camiseta comum naquela peça).
+
+// Os extras que valem no editor (time e variante abertos), só leitura.
+function extrasNoEditor(pecaId) {
+  if (!layoutModo) return [];
+  const t = timeDaPrevia();
+  return ((producaoDoTime(t).elementosExtras) || {})[pecaId || layoutPeca] || [];
+}
+
+function ehExtra(elId) {
+  return extrasNoEditor().some((e) => e.id === elId);
+}
+
+// Todos os elementos da peça aberta no editor: os gerais e, no pedido, os do time.
+function elementosNoEditor() {
+  return elementosDaPeca(layoutPeca).concat(extrasNoEditor());
+}
+
+// Muda a lista de extras da peça aberta e grava no time (com desfazer).
+function mudarExtrasTime(mudar) {
+  const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
+  if (!time) return Promise.resolve();
+  const antes = JSON.stringify(producaoDoTime(time));
+  const prod = limparParaFirestore(producaoDoTime(time));
+  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+  alvo.elementosExtras = alvo.elementosExtras || {};
+  if (!alvo.elementosExtras[layoutPeca]) {
+    // Goleiro mexendo pela primeira vez: parte da lista da camiseta comum.
+    alvo.elementosExtras[layoutPeca] = layoutGoleiro
+      ? limparParaFirestore(((prod.elementosExtras || {})[layoutPeca]) || []) : [];
+  }
+  mudar(alvo.elementosExtras[layoutPeca]);
+  if (!alvo.elementosExtras[layoutPeca].length && !layoutGoleiro) delete alvo.elementosExtras[layoutPeca];
+  if (!Object.keys(alvo.elementosExtras).length) delete alvo.elementosExtras;
+  if (layoutGoleiro) limparGoleiroVazio(prod);
+  registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
+  return gravarProducaoTime(layoutModo, prod)
+    .then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
+    .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
+}
+
+// Muda um extra (pelo id) e grava.
+function mudarExtra(elId, mudar) {
+  return mudarExtrasTime((lista) => {
+    const e = lista.find((x) => x.id === elId);
+    if (e) mudar(e);
+  });
+}
+
 function elementoSelecionado() {
-  return elementosDaPeca(layoutPeca).find((e) => e.id === layoutElSel) || null;
+  return elementosNoEditor().find((e) => e.id === layoutElSel) || null;
 }
 
 function duplicarElementoLayout(el, deslocar) {
-  const copia = limparParaFirestore(el);
+  // No pedido, a cópia leva o que vale no time (posição e estilo próprios).
+  const base = layoutModo && !ehExtra(el.id) ? elementoNoEditor(el) : el;
+  const copia = limparParaFirestore(base);
   copia.id = novoIdLayout("e");
   const d = deslocar == null ? 10 : deslocar;
-  copia.caixa = { ...copia.caixa, x: arred1(copia.caixa.x + d), y: arred1(copia.caixa.y + d) };
+  const m = medidasLayout();
+  const caixaBase = layoutModo && m && !ehExtra(el.id)
+    ? caixaNoEditor(el, { ...m, tam: moldesConfig.tamanhoBase || m.tam, dim: m.base })
+    : copia.caixa;
+  copia.caixa = { ...caixaBase, x: arred1(caixaBase.x + d), y: arred1(caixaBase.y + d) };
   delete copia.ajustes;
   delete copia.travado;
-  elementosDaPeca(layoutPeca).push(copia);
   layoutElSel = copia.id;
+  if (layoutModo) {
+    mudarExtrasTime((lista) => lista.push(copia)).then(() => renderizarEditorLayout());
+    return;
+  }
+  elementosDaPeca(layoutPeca).push(copia);
   salvarLayout(true);
   renderizarEditorLayout();
 }
 
 function excluirElementoLayout(el) {
+  if (layoutModo) {
+    if (ehExtra(el.id)) {
+      layoutElSel = "";
+      mudarExtrasTime((lista) => lista.splice(lista.findIndex((x) => x.id === el.id), 1))
+        .then(() => { estadoSalvarLayout("Excluído — Ctrl+Z desfaz"); renderizarEditorLayout(); });
+    } else {
+      // Do layout geral não se apaga no pedido: oculta só neste time.
+      gravarAjusteTime(el.id, (a) => { a.oculto = true; }).then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+      estadoSalvarLayout("Oculto neste time — Ctrl+Z desfaz");
+    }
+    return;
+  }
   const els = elementosDaPeca(layoutPeca);
   const i = els.indexOf(el);
   if (i < 0) return;
@@ -1855,13 +1934,24 @@ function excluirElementoLayout(el) {
 // Ordem das camadas: o fim da lista fica por cima. `para`: "frente",
 // "tras", "topo" ou "fundo".
 function moverCamadaLayout(el, para) {
+  const mover = (els, i) => {
+    const [item] = els.splice(i, 1);
+    const j = para === "topo" ? els.length : para === "fundo" ? 0
+      : para === "frente" ? Math.min(els.length, i + 1) : Math.max(0, i - 1);
+    els.splice(j, 0, item);
+  };
+  if (layoutModo) {
+    // No pedido, a ordem é entre os elementos do time (que ficam por cima).
+    if (ehExtra(el.id)) {
+      mudarExtrasTime((lista) => mover(lista, lista.findIndex((x) => x.id === el.id)))
+        .then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+    }
+    return;
+  }
   const els = elementosDaPeca(layoutPeca);
   const i = els.indexOf(el);
   if (i < 0) return;
-  els.splice(i, 1);
-  const j = para === "topo" ? els.length : para === "fundo" ? 0
-    : para === "frente" ? Math.min(els.length, i + 1) : Math.max(0, i - 1);
-  els.splice(j, 0, el);
+  mover(els, i);
   salvarLayout(true);
   renderizarPalcoLayout();
   renderizarPainelLayout();
@@ -1878,13 +1968,13 @@ document.addEventListener("keydown", (ev) => {
 
   if (ctrl && tecla === "z") { ev.preventDefault(); (ev.shiftKey ? refazerEditor : desfazerEditor)(); return; }
   if (ctrl && tecla === "y") { ev.preventDefault(); refazerEditor(); return; }
-  if (ctrl && tecla === "c" && el && !layoutModo) {
-    elementoCopiado = limparParaFirestore(el);
+  if (ctrl && tecla === "c" && el) {
+    elementoCopiado = limparParaFirestore(layoutModo ? elementoNoEditor(el) : el);
     estadoSalvarLayout("Copiado — Ctrl+V cola");
     return;
   }
-  if (ctrl && tecla === "v" && elementoCopiado && !layoutModo) { ev.preventDefault(); duplicarElementoLayout(elementoCopiado); return; }
-  if (ctrl && tecla === "d" && el && !layoutModo) { ev.preventDefault(); duplicarElementoLayout(el); return; }
+  if (ctrl && tecla === "v" && elementoCopiado) { ev.preventDefault(); duplicarElementoLayout(elementoCopiado); return; }
+  if (ctrl && tecla === "d" && el) { ev.preventDefault(); duplicarElementoLayout(el); return; }
   if (ctrl) return;
 
   if (ev.key === "Escape") {
@@ -1894,13 +1984,7 @@ document.addEventListener("keydown", (ev) => {
   }
   if ((ev.key === "Delete" || ev.key === "Backspace") && el) {
     ev.preventDefault();
-    if (layoutModo) {
-      // No time não se apaga do layout geral: oculta só neste time.
-      gravarAjusteTime(el.id, (a) => { a.oculto = true; }).then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
-      estadoSalvarLayout("Oculto neste time — Ctrl+Z desfaz");
-    } else {
-      excluirElementoLayout(el);
-    }
+    excluirElementoLayout(el);
     return;
   }
   const passos = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -2086,7 +2170,7 @@ function ligarArrasteLayout(div, alca, el, alcaGiro) {
     // Guias magnéticas: bordas e centro da peça e dos outros elementos.
     const palco = document.getElementById("layoutPalco");
     const alvos = { x: [0, m.dim.w / 2, m.dim.w], y: [0, m.dim.h / 2, m.dim.h] };
-    elementosDaPeca(layoutPeca).forEach((o) => {
+    elementosNoEditor().forEach((o) => {
       if (o.id === el.id) return;
       const oT = EPS.elementoDoTime(o, ajusteNoEditor(layoutPeca, o.id));
       if (!oT) return;
@@ -2162,9 +2246,12 @@ function elementoNoEditor(el) {
 // Grava um estilo (cor, giro, efeito, travado...) de um elemento da peça
 // aberta: no layout geral muda o elemento; no time, o estilo próprio dele.
 function gravarEstiloElemento(elId, k, v) {
-  const el = elementosDaPeca(layoutPeca).find((e) => e.id === elId);
+  const el = elementosNoEditor().find((e) => e.id === elId);
   if (!el) return Promise.resolve();
   const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
+  if (layoutModo && ehExtra(elId)) {
+    return mudarExtra(elId, (e) => { e[k] = v; }).then(redesenhar);
+  }
   if (layoutModo) {
     return gravarAjusteTime(el.id, (a) => { a.estilo = { ...(a.estilo || {}), [k]: v }; }).then(redesenhar);
   }
@@ -2178,6 +2265,17 @@ function gravarEstiloElemento(elId, k, v) {
 // elemento; outro tamanho = ajuste daquele tamanho) ou no ajuste do time.
 function gravarCaixaLayout(el, m, caixa) {
   const c = { x: arred1(caixa.x), y: arred1(caixa.y), w: arred1(caixa.w), h: arred1(caixa.h) };
+  if (layoutModo && ehExtra(el.id)) {
+    // Elemento só do time: muda a caixa dele mesmo (base ou o tamanho).
+    mudarExtra(el.id, (e) => {
+      if (m.ehBase) e.caixa = c;
+      else {
+        e.ajustes = e.ajustes || {};
+        e.ajustes[m.tam] = c;
+      }
+    });
+    return;
+  }
   if (layoutModo) {
     const time = estadoTimes[layoutModo].time;
     const antes = JSON.stringify(producaoDoTime(time));
@@ -2232,11 +2330,14 @@ function adicionarElementoLayout(tipo) {
       alinhamento: "centro", ajuste: "encolher", maiusculas: true, espacamento: 0, usarNomeSeVazio: true
     });
   }
-  elementosDaPeca(layoutPeca).push(el);
   layoutElSel = el.id;
+  if (layoutModo) {
+    mudarExtrasTime((lista) => lista.push(el)).then(() => renderizarEditorLayout());
+    return;
+  }
+  elementosDaPeca(layoutPeca).push(el);
   salvarLayout(true);
-  renderizarPalcoLayout();
-  renderizarPainelLayout();
+  renderizarEditorLayout();
 }
 
 // Selos da lista de elementos: o que este time mudou.
@@ -2252,25 +2353,30 @@ function seloAjusteTime(aj) {
 function renderizarPainelLayout() {
   const painel = document.getElementById("layoutPainel");
   if (!painel) return;
-  const els = elementosDaPeca(layoutPeca);
+  const els = elementosNoEditor();
   const el = els.find((e) => e.id === layoutElSel);
+  // Elemento só do time: no pedido ele se edita inteiro, como no layout geral.
+  const extra = !!(el && layoutModo && ehExtra(el.id));
+  const edicaoCompleta = !layoutModo || extra;
   painel.innerHTML = `
     <div class="painel-cabecalho"><span class="ativo">Design</span></div>
     <section class="painel-secao">
       <h4 class="painel-titulo">${icone("layers")} Camadas <span>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</span></h4>
       <ul class="lista-elementos">${els.slice().reverse().map((e) => {
-        const ajE = ajusteNoEditor(layoutPeca, e.id);
+        const doTime = layoutModo && ehExtra(e.id);
+        const ajE = doTime ? undefined : ajusteNoEditor(layoutPeca, e.id);
         const eT = EPS.elementoDoTime(e, ajE) || { ...e, ...((ajE && ajE.estilo) || {}) };
         return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ajE && ajE.oculto ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
           `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
           `${seloAjusteTime(ajE)}` +
+          (doTime ? ' <span class="badge selo-do-time" title="Elemento só deste time">só do time</span>' : "") +
           `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}` +
           `<span class="camada-acoes">` +
-          (layoutModo ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ajE && ajE.oculto ? "Mostrar neste time" : "Ocultar neste time"}">${icone(ajE && ajE.oculto ? "eye-off" : "eye")}</button>` : "") +
+          (layoutModo && !doTime ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ajE && ajE.oculto ? "Mostrar neste time" : "Ocultar neste time"}">${icone(ajE && ajE.oculto ? "eye-off" : "eye")}</button>` : "") +
           `<button type="button" class="camada-botao${eT.travado ? " ligado" : ""}" data-camada-trava="${escAttr(e.id)}" title="${eT.travado ? "Destravar" : "Travar (não deixa mover sem querer)"}">${icone(eT.travado ? "lock" : "lock-open")}</button>` +
           `</span></li>`;
       }).join("") ||
-        `<li class="lista-elementos-vazia">Nada nesta peça${layoutModo ? " no layout geral" : " — use <strong>+ Adicionar</strong>"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+        `<li class="lista-elementos-vazia">Nada nesta peça — use as ferramentas à esquerda do desenho para adicionar${layoutModo ? " (o que adicionar aqui vale só para este time)" : ""}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
       ${els.length && !layoutElSel ? '<p class="pix-ajuda">Clique num elemento (aqui ou no desenho) para editar.</p>' : ""}
     </section>
     <div id="layoutPainelEl"></div>`;
@@ -2309,7 +2415,9 @@ function renderizarPainelLayout() {
   const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
   const ehTexto = !ehCaixaImagem(el);
 
-  const estado = layoutGoleiro
+  const estado = extra
+    ? `Elemento só ${layoutGoleiro ? "da camiseta do goleiro" : "deste time"} — não aparece nos outros times.`
+    : layoutGoleiro
     ? ajProprio ? `O goleiro tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
       : "Igual à camiseta comum deste time — mudar qualquer coisa aqui cria um ajuste só para o goleiro."
     : layoutModo
@@ -2327,7 +2435,7 @@ function renderizarPainelLayout() {
         <button type="button" class="painel-fechar" data-acao="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">${icone("x")}</button>
       </div>
       <p class="pix-ajuda">${estado}</p>
-      ${layoutModo ? `<label class="interruptor"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> <span>${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</span></label>` : ""}
+      ${layoutModo && !extra ? `<label class="interruptor"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> <span>${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</span></label>` : ""}
       ${layoutModo && ajProprio ? `<div class="arte-botoes-el">
         <button type="button" class="secundario" data-acao="voltarGeral">${icone("undo-2")} ${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>
         ${posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">' + icone("undo-2") + ' Só a posição</button>' : ""}
@@ -2348,7 +2456,7 @@ function renderizarPainelLayout() {
         <p class="pix-ajuda">Desmarque para esticar na largura e na altura, cada uma no seu.</p>` : ""}
       <div class="arte-botoes-el">
         <button type="button" class="secundario" data-acao="centralizar">${icone("move-horizontal")} Centralizar na largura</button>
-        ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">' + icone("undo-2") + ' Voltar ao proporcional</button>' : ""}
+        ${edicaoCompleta && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">' + icone("undo-2") + ' Voltar ao proporcional</button>' : ""}
       </div>
     </section>`;
 
@@ -2361,7 +2469,7 @@ function renderizarPainelLayout() {
       <h4 class="painel-titulo">${icone("layout-grid")} Organizar</h4>
       <div class="linha-icones" role="group" aria-label="Alinhar na peça">${alinhar.map(([v, ic, t]) =>
         `<button type="button" data-alinhar-peca="${v}" title="${t}" aria-label="${t}">${icone(ic)}</button>`).join("")}</div>
-      ${!layoutModo ? `<div class="linha-icones" role="group" aria-label="Ordem das camadas">
+      ${edicaoCompleta ? `<div class="linha-icones" role="group" aria-label="Ordem das camadas">
         <button type="button" data-camada="topo" title="Trazer para a frente de tudo">${icone("chevrons-up")}</button>
         <button type="button" data-camada="frente" title="Trazer uma camada para a frente">${icone("chevron-up")}</button>
         <button type="button" data-camada="tras" title="Enviar uma camada para trás">${icone("chevron-down")}</button>
@@ -2394,7 +2502,7 @@ function renderizarPainelLayout() {
       <section class="painel-secao">
         <h4 class="painel-titulo">${icone("type")} Texto</h4>
         <div class="arte-grade">
-          ${el.tipo === "nome" && !layoutModo ? `<label>Texto
+          ${el.tipo === "nome" && edicaoCompleta ? `<label>Texto
             <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
           <div class="campo-alinhar"><span>Alinhamento</span><span class="segmentado-icones" role="group" aria-label="Alinhamento">${[["esquerda", "align-left"], ["centro", "align-center"], ["direita", "align-right"]].map(([v, ic]) =>
             `<button type="button" data-alinhar="${v}" class="${(elT.alinhamento || "centro") === v ? "ativo" : ""}" title="${v === "centro" ? "Centro" : v === "esquerda" ? "Esquerda" : "Direita"}" aria-pressed="${(elT.alinhamento || "centro") === v}">${icone(ic)}</button>`).join("")}</span></div>
@@ -2403,7 +2511,7 @@ function renderizarPainelLayout() {
           <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
         </div>
         <label class="interruptor"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> <span>MAIÚSCULAS</span></label>
-        ${el.tipo === "nome" && !layoutModo ? `<label class="interruptor"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> <span>Sem apelido, usar o nome</span></label>` : ""}
+        ${el.tipo === "nome" && edicaoCompleta ? `<label class="interruptor"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> <span>Sem apelido, usar o nome</span></label>` : ""}
         <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>
       </section>
       <section class="painel-secao">
@@ -2428,24 +2536,16 @@ function renderizarPainelLayout() {
         ${Number(elT.contorno2Mm) > 0 ? `<p class="arte-rotulo-cor">Cor do segundo contorno</p>${cmyk("contorno2Cmyk", elT.contorno2Cmyk || [0, 0, 0, 100])}` : ""}
       </section>`;
   }
-  if (!layoutModo) {
-    html += `<section class="painel-secao painel-rodape">
-      <button type="button" class="secundario" data-acao="duplicar">${icone("copy")} Duplicar</button>
-      <button type="button" class="perigo" data-acao="excluir">${icone("trash-2")} Excluir</button></section>`;
-  }
+  // Duplicar vale sempre (no pedido a cópia vira elemento do time); excluir
+  // apaga do layout geral ou, no pedido, os elementos do time.
+  html += `<section class="painel-secao painel-rodape">
+    <button type="button" class="secundario" data-acao="duplicar" title="Ctrl+D">${icone("copy")} Duplicar${layoutModo && !extra ? " (só neste time)" : ""}</button>
+    ${edicaoCompleta ? `<button type="button" class="perigo" data-acao="excluir" title="Delete">${icone("trash-2")} Excluir</button>` : ""}</section>`;
   box.innerHTML = html;
 
   const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
   // Estilo: no layout geral muda o elemento; no time, o estilo próprio dele.
-  const gravarEstilo = (k, v) => {
-    if (layoutModo) {
-      gravarAjusteTime(el.id, (a) => { a.estilo = { ...(a.estilo || {}), [k]: v }; }).then(redesenhar);
-    } else {
-      el[k] = v;
-      salvarLayout();
-    }
-    redesenhar();
-  };
+  const gravarEstilo = (k, v) => gravarEstiloElemento(el.id, k, v);
 
   box.querySelectorAll("[data-alinhar]").forEach((b) => (b.onclick = () => gravarEstilo("alinhamento", b.dataset.alinhar)));
   box.querySelectorAll("[data-alinhar-peca]").forEach((b) => {
@@ -2540,21 +2640,19 @@ function renderizarPainelLayout() {
       } else if (a === "voltarPosicao") {
         await gravarAjusteTime(el.id, (x) => { delete x.base; delete x.tamanhos; });
       } else if (a === "semAjusteTam") {
-        delete el.ajustes[m.tam];
-        salvarLayout(true);
+        if (extra) {
+          await mudarExtra(el.id, (e) => { if (e.ajustes) delete e.ajustes[m.tam]; });
+        } else {
+          delete el.ajustes[m.tam];
+          salvarLayout(true);
+        }
       } else if (a === "duplicar") {
-        const copia = limparParaFirestore(el);
-        copia.id = novoIdLayout("e");
-        copia.caixa = { ...copia.caixa, x: copia.caixa.x + 10, y: copia.caixa.y + 10 };
-        delete copia.ajustes;
-        els.push(copia);
-        layoutElSel = copia.id;
-        salvarLayout(true);
+        duplicarElementoLayout(el);
+        return;
       } else if (a === "excluir") {
-        if (!confirm(`Excluir "${rotuloElementoLayout(el)}" da peça ${nomePecaProducao(layoutPeca)}? Vale para todos os times.`)) return;
-        els.splice(els.indexOf(el), 1);
-        layoutElSel = "";
-        salvarLayout(true);
+        if (!extra && !confirm(`Excluir "${rotuloElementoLayout(el)}" da peça ${nomePecaProducao(layoutPeca)}? Vale para todos os times.`)) return;
+        excluirElementoLayout(el);
+        return;
       }
       redesenhar();
     };
@@ -2604,8 +2702,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
     const bytes = await baixarArquivoDrive(driveScriptUrl, ref);
     return { bytes: EPS.extrairPostScript(bytes), bbox: bbox || EPS.lerBoundingBox(bytes) };
   };
-  const usaLogo = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo === "logo"));
+  const usaLogo = usaNoTime(prod, (e) => e.tipo === "logo");
   if (usaLogo && logoEmpresa) {
     aviso("Carregando o logo da empresa…");
     rec.eps.logo = await lerEps(logoEmpresa.partes || logoEmpresa.epsId, logoEmpresa.bbox);
@@ -2628,7 +2725,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
   pecasIds.forEach((pecaId) => {
     const ad = EPS.arteDaPeca(prod, pecaId);
     if (ad) imagens.push({ chave: ad.chave, img: ad.arte, nome: nomePecaProducao(pecaId) });
-    const usaDetalhe = elementosDaPeca(pecaId).some((e) => e.tipo === "detalhe");
+    const usaDetalhe = EPS.elementosDaPecaNoTime(layoutConfig, prod, pecaId).some((e) => e.tipo === "detalhe");
     const d = usaDetalhe && EPS.detalheDaPeca(prod, pecaId);
     if (d) imagens.push({ chave: d.chave, img: d.img, nome: "detalhe da manga" });
   });
@@ -2651,7 +2748,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
 function pecasDoTime(time) {
   const prod = producaoDoTime(time);
   return PECAS_PRODUCAO.map((p) => p.id).filter((id) =>
-    EPS.arteDaPeca(prod, id) || elementosDaPeca(id).length);
+    EPS.arteDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutConfig, prod, id).length);
 }
 
 // Time de cada linha da leva: o do pedido; para o avulso, o time com o

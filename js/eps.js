@@ -790,6 +790,14 @@ const EPS = (function () {
   //   { tipo: "eps", chave, x, y, w, h }
   //   { tipo: "imagem", chave, x, y, w, h }
   //   { tipo: "caminho", comandos, cmyk, contorno: { cmyk, mm } | null }
+  // Elementos de uma peça num time: os do layout geral e, por cima, os que
+  // só esse time tem (producao.elementosExtras[pecaId]).
+  function elementosDaPecaNoTime(layout, prod, pecaId) {
+    const gerais = ((((layout && layout.pecas) || {})[pecaId] || {}).elementos) || [];
+    const extras = ((prod && prod.elementosExtras) || {})[pecaId] || [];
+    return extras.length ? gerais.concat(extras) : gerais;
+  }
+
   // Giro/espelho que vai na op de imagem ou EPS (o escritor aplica).
   function giroDaOp(el) {
     const o = {};
@@ -815,8 +823,8 @@ const EPS = (function () {
         const molde = moldesPeca[cam.tamanho];
         const ad = arteDaPeca(prod, pecaId);
         const arte = ad && ad.arte;
-        const lay = ((layout && layout.pecas) || {})[pecaId] || {};
-        if (!arte && !(lay.elementos || []).length) return; // peça sem nada deste time
+        const elementos = elementosDaPecaNoTime(layout, prod, pecaId);
+        if (!arte && !elementos.length) return; // peça sem nada deste time
         if (!molde || !molde.bbox) {
           avisar(`Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
           return;
@@ -844,7 +852,7 @@ const EPS = (function () {
           ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam, op.sangriaMm == null ? 2 : op.sangriaMm) });
         }
 
-        (lay.elementos || []).forEach((elGeral) => {
+        elementos.forEach((elGeral) => {
           const ajTime = (ajustes[pecaId] || {})[elGeral.id];
           const el = elementoDoTime(elGeral, ajTime);
           if (!el) return; // oculto neste time
@@ -1187,6 +1195,7 @@ const EPS = (function () {
     lerBoundingBox,
     tamanhoMmDoBbox,
     layoutTexto,
+    elementosDaPecaNoTime,
     textoDoElemento,
     transformarComandos,
     transformacaoDoElemento,
