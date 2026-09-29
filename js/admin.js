@@ -4326,6 +4326,9 @@ async function carregarPainelConfig() {
   await carregarTamanhos();
   gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
   renderizarEditorTamanhos();
+  // Moldes, layout e produção podem ter desenhado antes (com os tamanhos
+  // padrão, sem os grupos novos): redesenha com a lista de verdade.
+  redesenharListasDeTamanho();
 
   // Pagamento (PIX)
   elPixChave.value = cfg.pixChave || "";
@@ -4440,6 +4443,16 @@ elFormConfigGeral.addEventListener("submit", async (ev) => {
 });
 
 // ---------------- Editor de tamanhos ----------------
+
+// Telas de outros arquivos que listam os tamanhos (moldes de corte, editor de
+// layout/prévias, filtros e avulsas da Produção, cards dos times). Chamado
+// quando a lista de tamanhos chega do Firestore e quando ela é salva.
+function redesenharListasDeTamanho() {
+  if (typeof renderizarMoldes === "function") renderizarMoldes();
+  if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
+  if (typeof renderizarProducao === "function") renderizarProducao();
+  if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+}
 
 function renderizarEditorTamanhos() {
   elEditorTamanhos.innerHTML = "";
@@ -4790,9 +4803,7 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
       if (inp.value !== "") digitados[inp.dataset.grupo] = inp.value;
     });
     renderizarPrecosPorGrupo(digitados);
-    // Os moldes de corte (e o editor de layout) mostram uma linha por tamanho.
-    if (typeof renderizarMoldes === "function") renderizarMoldes();
-    if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
+    redesenharListasDeTamanho();
     mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro dos times.", "aviso");
   } catch (erro) {
     console.error(erro);
