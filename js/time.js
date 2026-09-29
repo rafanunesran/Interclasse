@@ -678,7 +678,7 @@ function itemDoAluno(aluno) {
     numero: aluno.numero || "",
     nomeCamiseta: aluno.nomeCamiseta || "",
     time: (timeAtual && timeAtual.nome) || timeId,
-    valor: Number(precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId) || 0)
+    valor: Number(precoDoAluno(configGeral, timeId, aluno.id, aluno.tamanho) || 0)
   };
 }
 
@@ -917,7 +917,7 @@ function renderizarTabela() {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
         // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
-        const valorLinha = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
+        const valorLinha = precoDoAluno(configGeral, timeId, aluno.id, aluno.tamanho);
         btnPagar.textContent = valorLinha && !precoOculto(timeAtual) ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
         btnPagar.title = "Pagar só esta camiseta (para juntar várias, use o carrinho)";
         btnPagar.onclick = () => abrirPagamento([itemDoAluno(aluno)]);

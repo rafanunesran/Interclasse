@@ -1,7 +1,7 @@
 // Itens de uma cobrança: uma camiseta (o formato antigo) ou várias, quando o
 // pagador junta o carrinho. Fica aqui o que os dois endpoints de cobrança
 // (`criar-pagamento` e `criar-preferencia`) precisam fazer igual.
-const { precoDoTamanhoNoTime, carregarPrecosEspeciais } = require("./preco");
+const { precoDoAluno, carregarPrecosEspeciais } = require("./preco");
 
 // Teto de camisetas numa cobrança só. Existe para uma requisição estranha não
 // virar centenas de leituras no Firestore; 60 cobre até uma turma inteira.
@@ -61,7 +61,7 @@ async function carregarItens({ db, colecao, pares, geral: geralBase, grupos }) {
   for (let i = 0; i < snaps.length; i++) {
     if (!snaps[i].exists) return { erro: `Aluno não encontrado (${pares[i].alunoId}).`, status: 404 };
     const aluno = snaps[i].data();
-    const valor = precoDoTamanhoNoTime(aluno.tamanho, geral, pares[i].timeId, grupos);
+    const valor = precoDoAluno(geral, pares[i].timeId, pares[i].alunoId, aluno.tamanho, grupos);
     if (!valor || valor <= 0) {
       return { erro: `Não há preço definido para o tamanho de ${aluno.nome || pares[i].alunoId}.`, status: 400 };
     }

@@ -1238,6 +1238,51 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
   selPag.value = aluno.pago ? (aluno.pagamentoForma || "pix") : "pendente";
   selPag.onchange = () => atualizarPagamento(timeId, aluno.id, selPag.value);
   tdPag.appendChild(selPag);
+
+  // Preço especial desta camiseta: preenchido, ela é vendida por este valor
+  // (no pagamento, no Financeiro e no DRE). Em branco, vale o preço do tamanho.
+  if (!ehInterno(aluno)) {
+    const especial = precoEspecialDoAluno(configGeralAtual, timeId, aluno.id);
+    const normal = precoDoTamanhoNoTime(aluno.tamanho, configGeralAtual, timeId);
+    const lbl = document.createElement("label");
+    lbl.className = "preco-aluno" + (especial != null ? " ativo" : "");
+    lbl.title = "Preço especial desta camiseta. Em branco = preço do tamanho.";
+    lbl.innerHTML = '<span>R$</span>';
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.min = "0";
+    inp.inputMode = "decimal";
+    inp.placeholder = normal != null ? Number(normal).toFixed(2) : "preço";
+    inp.value = especial != null ? especial : "";
+    inp.setAttribute("aria-label", "Preço especial da camiseta de " + aluno.nome);
+    inp.disabled = precosAdminErro;
+    if (precosAdminErro) lbl.title = "Publique o firestore.rules atualizado para usar o preço especial.";
+    inp.onchange = async () => {
+      const bruto = inp.value.trim().replace(",", ".");
+      const v = bruto === "" ? null : Math.round(parseFloat(bruto) * 100) / 100;
+      if (v != null && (isNaN(v) || v < 0)) {
+        alert("Informe um valor válido (0 ou mais) ou deixe em branco.");
+        inp.value = especial != null ? especial : "";
+        return;
+      }
+      if ((v == null && especial == null) || v === especial) return;
+      if (aluno.pago && !confirm(`Esta camiseta já está paga. Mudar o valor dela para ${v == null ? "o preço do tamanho" : formatarReais(v)} altera o recebido e o lucro no Financeiro. Continuar?`)) {
+        inp.value = especial != null ? especial : "";
+        return;
+      }
+      inp.disabled = true;
+      try {
+        await gravarPrecoAluno(timeId, aluno.id, v);
+      } catch (erro) {
+        console.error(erro);
+        inp.disabled = false;
+        alert("Erro ao salvar o preço especial. Confira se o firestore.rules atualizado foi publicado.");
+      }
+    };
+    lbl.appendChild(inp);
+    tdPag.appendChild(lbl);
+  }
   if (aluno.pagamentoDeclarado && !aluno.pago) {
     const nota = document.createElement("small");
     nota.className = "motivo-ajuste";
@@ -2087,12 +2132,12 @@ function calcularFinanceiro() {
   const clientes = {};
 
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const precos = precosDoTime(configGeralAtual, timeId);
     const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, taxas: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
-      const venda = interno ? 0 : Number(precoDoTamanho(a.tamanho, precos) || 0);
+      // O preço especial da camiseta (lista do time) ganha do preço do tamanho.
+      const venda = interno ? 0 : Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0);
       const cImp = custoImpressaoDoTamanho(a.tamanho);
       const cCos = custoCostureiraDoTamanho(a.tamanho);
       const custo = cImp + cCos; // custo entra sempre (a camiseta é produzida)
@@ -2196,7 +2241,6 @@ function calcularFinanceiro() {
 function finLancamentos() {
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const precos = precosDoTime(configGeralAtual, timeId);
     alunos.forEach((a) => {
       if (!a.pago || ehInterno(a)) return; // interna não gera receita
       lista.push({
@@ -2206,7 +2250,7 @@ function finLancamentos() {
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
-        valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
+        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
         custo: custoDoTamanho(a.tamanho),
         taxa: taxaMpDoAluno(a), // o que o Mercado Pago descontou
         forma: a.pagamentoForma === "dinheiro" ? "dinheiro" : "pix",
@@ -2225,7 +2269,6 @@ function finLancamentos() {
 function finPendencias() {
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const precos = precosDoTime(configGeralAtual, timeId);
     const fechadoEm = finParaData(time.fechadoEm);
     const limite = time.dataLimite ? finParaData(time.dataLimite) : null;
     alunos.forEach((a) => {
@@ -2243,7 +2286,7 @@ function finPendencias() {
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
-        valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
+        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
         tipo: declarado ? "aguardando" : "pendente",
         bloqueado: !!a.ajusteSolicitado, // ajuste em aberto trava o pagamento
         contato: a.ajusteContato || "",
@@ -3686,7 +3729,7 @@ const IMAGENS_TIME = [
 // comentário em js/utils.js: qualquer um lê um documento pelo id, mas só o
 // admin lista a coleção, então um cliente não descobre o preço dos outros.
 
-const precosAdmin = { time: {}, cliente: {} }; // espelho da coleção `precos`
+const precosAdmin = { time: {}, cliente: {}, aluno: {} }; // espelho da coleção `precos`
 let precosAdminCarregados = false;
 let precosAdminErro = false;   // regras do Firestore ainda sem a coleção
 let precosMigracaoFeita = false;
@@ -3696,6 +3739,7 @@ let precosMigracaoFeita = false;
 function anexarPrecosAdmin() {
   configGeralAtual._precosTime = precosAdmin.time;
   configGeralAtual._precosCliente = precosAdmin.cliente;
+  configGeralAtual._precosAluno = precosAdmin.aluno;
   configGeralAtual._clienteDoTime = (id) => (estadoTimes[id] ? clienteIdDoTime(estadoTimes[id].time) : "");
 }
 
@@ -3704,10 +3748,15 @@ function escutarPrecos() {
     (snap) => {
       precosAdmin.time = {};
       precosAdmin.cliente = {};
+      precosAdmin.aluno = {};
       snap.forEach((doc) => {
-        const p = doc.data().precos || {};
-        if (doc.id.startsWith("time_")) precosAdmin.time[doc.id.slice(5)] = p;
-        else if (doc.id.startsWith("cliente_")) precosAdmin.cliente[doc.id.slice(8)] = p;
+        const d = doc.data();
+        if (doc.id.startsWith("time_")) {
+          if (d.precos) precosAdmin.time[doc.id.slice(5)] = d.precos;
+          if (d.porAluno) precosAdmin.aluno[doc.id.slice(5)] = d.porAluno;
+        } else if (doc.id.startsWith("cliente_")) {
+          precosAdmin.cliente[doc.id.slice(8)] = d.precos || {};
+        }
       });
       precosAdminCarregados = true;
       precosAdminErro = false;
@@ -3930,9 +3979,16 @@ async function gravarPrecosEspeciais(tipo, id, mapa) {
   const ehTime = tipo === "time";
   const ref = db.collection(COL_PRECOS).doc(ehTime ? idDocPrecoTime(id) : idDocPrecoCliente(id));
   const tem = Object.keys(mapa).length > 0;
+  // O documento do time também guarda os preços por camiseta (porAluno):
+  // só troca o campo `precos` e só apaga o documento quando não sobra nada.
+  const temPorAluno = ehTime && Object.keys(precosAdmin.aluno[id] || {}).length > 0;
   const lote = db.batch();
-  if (tem) lote.set(ref, { precos: mapa, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() });
-  else lote.delete(ref);
+  if (tem || temPorAluno) {
+    lote.set(ref, { precos: mapa, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
+      { mergeFields: ["precos", "atualizadoEm"] });
+  } else {
+    lote.delete(ref);
+  }
   const dono = ehTime ? estadoTimes[id] : estadoClientes[id];
   if (dono) {
     lote.update(db.collection(ehTime ? COL_TIMES : COL_CLIENTES).doc(id), { temPrecoEspecial: tem });
@@ -3946,6 +4002,14 @@ async function gravarPrecosEspeciais(tipo, id, mapa) {
   await lote.commit();
   if (ehTime && configGeralAtual.precosPorTime) delete configGeralAtual.precosPorTime[id];
   if (ehTime && configGeralAtual.precosPorTurma) delete configGeralAtual.precosPorTurma[id];
+}
+
+// Preço especial de UMA camiseta (valor = número, ou null para tirar).
+async function gravarPrecoAluno(timeId, alunoId, valor) {
+  await db.collection(COL_PRECOS).doc(idDocPrecoTime(timeId)).set({
+    porAluno: { [alunoId]: valor == null ? firebase.firestore.FieldValue.delete() : valor },
+    atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
 }
 
 // Apaga os preços próprios de um time excluído (o documento do time já não

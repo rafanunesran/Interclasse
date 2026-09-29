@@ -755,6 +755,26 @@ baixo (cada campo mostra qual: "Cliente: R$ 42,00" ou "Geral: R$ 50,00"). Vale n
 Mercado Pago, no carrinho e no Financeiro. A tabela **"Preço em vigor por time"** (aba
 Pagamentos) marca os times com preço *do cliente* e com preço *próprio*.
 
+### Preço especial de uma camiseta
+
+Para vender **uma unidade** por um valor diferente (desconto, irmão, bolsista, combinado
+com alguém): Super Admin → abra o time → aba **Lista** → na coluna **Pagamento** de cada
+camiseta, logo abaixo da forma de pagamento, há o campo **R$**. Preencha o valor e saia do
+campo: aquela camiseta passa a ser vendida por esse valor. Em branco, vale o preço do
+tamanho (o número em cinza no campo). O campo fica roxo quando a camiseta tem preço especial.
+
+O valor vale em tudo:
+
+- no **pagamento** (botão *Pagar* da linha, carrinho, PIX e Mercado Pago);
+- no **Financeiro** inteiro: previsto, recebido, a receber, extrato, **custos e lucros**, o
+  **DRE** (receita, lucro, margem, ticket médio e a rentabilidade por time e por grupo) e as
+  Movimentações. O custo da camiseta continua o do tamanho, então o lucro dela muda junto.
+
+Mudar o valor de uma camiseta **já paga** pede confirmação, porque altera o recebido e o
+lucro. Para uma cortesia (sem receita, só custo), use a forma **Interno (só custo)**. O valor
+fica no documento de preços do time (`precos/time_ID`, campo `porAluno`), com o mesmo
+sigilo dos outros preços especiais.
+
 ### Sigilo dos preços especiais
 
 O preço combinado com um cliente **não aparece para os outros**:

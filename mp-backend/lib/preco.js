@@ -47,7 +47,7 @@ function precosDoTime(geral, timeId) {
 // Lê os preços especiais dos times de uma cobrança (e dos clientes deles) e
 // devolve uma cópia de `geral` com eles. Documento que não existe só não conta.
 async function carregarPrecosEspeciais({ db, colecao, geral, timeIds }) {
-  const saida = { ...(geral || {}), _precosTime: {}, _precosCliente: {}, _clienteDoTime: {} };
+  const saida = { ...(geral || {}), _precosTime: {}, _precosCliente: {}, _clienteDoTime: {}, _precosAluno: {} };
   const unicos = [...new Set(timeIds)];
   const times = await Promise.all(unicos.map((id) => db.collection(colecao).doc(id).get()));
   const clientes = new Set();
@@ -58,7 +58,10 @@ async function carregarPrecosEspeciais({ db, colecao, geral, timeIds }) {
   });
   const precosTime = await Promise.all(unicos.map((id) => db.collection("precos").doc("time_" + id).get()));
   precosTime.forEach((snap, i) => {
-    if (snap.exists) saida._precosTime[unicos[i]] = snap.data().precos || {};
+    if (!snap.exists) return;
+    const d = snap.data();
+    if (d.precos) saida._precosTime[unicos[i]] = d.precos;
+    if (d.porAluno) saida._precosAluno[unicos[i]] = d.porAluno; // preço especial por camiseta
   });
   const idsClientes = [...clientes];
   const precosCliente = await Promise.all(idsClientes.map((id) => db.collection("precos").doc("cliente_" + id).get()));
@@ -73,4 +76,13 @@ function precoDoTamanhoNoTime(tamanho, geral, timeId, grupos) {
   return precoDoTamanho(tamanho, precosDoTime(geral, timeId), grupos);
 }
 
-module.exports = { GRUPOS_PADRAO, precoDoTamanho, precosDoTime, precoDoTamanhoNoTime, carregarPrecosEspeciais };
+// Preço de uma camiseta: o especial dela (precos/time_ID → porAluno), se
+// houver; senão, o do tamanho no time. Espelha precoDoAluno() de js/utils.js.
+function precoDoAluno(geral, timeId, alunoId, tamanho, grupos) {
+  const m = ((geral && geral._precosAluno) || {})[timeId];
+  const v = m ? Number(m[alunoId]) : NaN;
+  if (m && m[alunoId] != null && m[alunoId] !== "" && !isNaN(v)) return v;
+  return precoDoTamanhoNoTime(tamanho, geral, timeId, grupos);
+}
+
+module.exports = { GRUPOS_PADRAO, precoDoTamanho, precosDoTime, precoDoTamanhoNoTime, precoDoAluno, carregarPrecosEspeciais };
