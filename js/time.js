@@ -90,6 +90,8 @@ async function iniciar() {
   }
   timeAtual = doc.data();
   elNomeTime.textContent = timeAtual.nome;
+  // Preço especial deste time/cliente (só o dele: ninguém lista os outros).
+  await carregarPrecosEspeciais(configGeral, [{ id: timeId, clienteId: clienteIdDoTime(timeAtual) }]);
   await mostrarCliente();
   await aplicarFechamentoAutomatico();
   atualizarBadge();

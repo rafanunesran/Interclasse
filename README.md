@@ -690,7 +690,8 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 ### Preço personalizado por time
 
 Dá para cobrar um valor diferente em um time específico (patrocínio, tecido
-diferente, time que fechou em outra data…), sem mexer no preço dos outros.
+diferente, time que fechou em outra data…), sem mexer no preço dos outros. Para um
+cliente inteiro, veja [Preço por cliente](#preço-por-cliente).
 
 1. No **Super Admin → Inicial**, abra o time → **Configuração** → **Tabela especial de preço**.
 2. Preencha só os grupos que devem mudar (ex.: Normal R$ 50) e clique em **Salvar preços do time**.
@@ -709,14 +710,40 @@ Para conferir tudo de uma vez, a aba **Pagamentos** tem a tabela **"Preço em vi
 uma linha por time, uma coluna por grupo, com os preços próprios em destaque e os da tabela
 geral em cinza.
 
-> Onde ficam guardados: em `config/geral`, no campo `precosPorTime` (`{ "id-do-time": { "Normal": 50 } }`).
-> É de propósito: `config/geral` só pode ser gravado pela conta administradora, então o
-> representante do time não consegue alterar o próprio preço — nem no site, nem na cobrança
-> do Mercado Pago, que também calcula o valor a partir desse documento.
->
-> O campo se chamava `precosPorTurma` antes da renomeação. O site continua **lendo** o nome
-> antigo (para não perder o que já foi salvo) e **grava nos dois**, para o backend do
-> Mercado Pago ainda não republicado continuar cobrando o valor certo.
+### Preço por cliente
+
+Para um cliente inteiro (uma escola, uma empresa) pagar um valor diferente, sem configurar
+time por time: **Super Admin → Clientes** → no card do cliente, **Preço da camiseta para este
+cliente**. Preencha os grupos que mudam e clique em **Salvar preços do cliente**.
+
+A ordem é, grupo a grupo: **tabela geral → preço do cliente → preço do time**. Um time com
+tabela especial própria ainda ganha do preço do cliente; os campos em branco usam o nível de
+baixo (cada campo mostra qual: "Cliente: R$ 42,00" ou "Geral: R$ 50,00"). Vale no PIX, no
+Mercado Pago, no carrinho e no Financeiro. A tabela **"Preço em vigor por time"** (aba
+Pagamentos) marca os times com preço *do cliente* e com preço *próprio*.
+
+### Sigilo dos preços especiais
+
+O preço combinado com um cliente **não aparece para os outros**:
+
+- Na **loja** (`index.html`), o card de um time com preço especial (do cliente ou do time)
+  fica **sem preço** na vitrine de todos. O valor só aparece no card quando a loja está
+  filtrada pelo próprio cliente — o link `index.html?cliente=ID` que você manda a ele — e na
+  página do pedido.
+- Os valores ficam na coleção `precos` do Firestore (documentos `cliente_ID` e `time_ID`). As
+  regras deixam ler **um** documento pelo id (a página do pedido precisa do preço dela), mas
+  só a conta administradora consegue **listar** a coleção. Então nem pelas ferramentas do
+  navegador alguém consegue ver os preços de todos os clientes. O cliente e o time guardam só
+  a marca `temPrecoEspecial`, sem o valor.
+- Antes, os preços por time ficavam em `config/geral` (`precosPorTime`), que qualquer um
+  consegue ler. Ao abrir o Super Admin, o painel **move esses preços para a coleção nova
+  sozinho** e apaga o campo antigo.
+
+> Depois de atualizar: **republique o `firestore.rules`** no console do Firebase (sem isso a
+> tabela de preço mostra um aviso e a mudança de lugar dos preços fica para depois). Se você
+> usa o Mercado Pago, confira se a Vercel publicou o backend novo (`mp-backend`) — ele
+> passou a ler a coleção `precos`. Se o projeto da Vercel está ligado ao GitHub, isso
+> acontece sozinho quando o `main` é atualizado.
 
 ### Carrinho: pagar várias camisetas de uma vez
 

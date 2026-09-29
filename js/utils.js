@@ -320,42 +320,109 @@ function precoDoTamanho(tamanho, precosPorGrupo) {
   return null;
 }
 
-// ---------------- Preços personalizados por time ----------------
-// A tabela geral (config/geral -> precosPorGrupo) vale para todo mundo.
-// Cada time pode ter preços próprios em config/geral -> precosPorTime:
-//   precosPorTime: { "3o-ano-a-manha": { "Normal": 50, "Plus Size": 60 } }
-// A personalização é grupo a grupo: o que o time não define continua
-// usando o preço geral. Fica em config/geral (e não no time) porque só o
-// admin grava nesse documento — assim o representante não muda o próprio preço.
+// ---------------- Preços especiais (por cliente e por time) ----------------
+// A tabela geral (config/geral -> precosPorGrupo) vale para todo mundo. Por
+// cima dela, grupo a grupo:
+//   1. o preço do CLIENTE (vale para todos os times dele);
+//   2. o preço do TIME (vale só para ele e ganha do cliente).
+// Os preços especiais ficam na coleção `precos` (docs "cliente_ID" e
+// "time_ID", campo `precos: { grupo: valor }`). As regras deixam qualquer um
+// LER UM documento pelo id (a página do pedido precisa do preço dela), mas só
+// o admin LISTA a coleção — assim ninguém descobre o preço dos outros
+// clientes. Os documentos lidos entram em memória no cfg, nos campos
+// _precosCliente, _precosTime e _clienteDoTime (nunca gravados no Firestore).
+// O cliente e o time guardam só a marca `temPrecoEspecial` (sem o valor),
+// para a loja saber que não deve mostrar o preço para qualquer um.
+//
+// Antes, os preços por time ficavam em config/geral -> precosPorTime (legível
+// por todos). O painel move esses valores para a coleção nova sozinho; até
+// lá, o campo antigo continua sendo lido ("precosPorTurma" é o nome mais antigo).
 
-// Só os preços personalizados de um time (mapa {grupo: valor}), sem os gerais.
-// Mapa {timeId: {grupo: valor}} guardado em config/geral. "precosPorTurma" é
-// o nome antigo do campo, ainda lido para não perder os preços já salvos.
+const COL_PRECOS = "precos";
+const idDocPrecoCliente = (id) => "cliente_" + id;
+const idDocPrecoTime = (id) => "time_" + id;
+
 function mapaPrecosPorTime(cfg) {
   return (cfg && (cfg.precosPorTime || cfg.precosPorTurma)) || {};
 }
 
-function precosPersonalizadosDoTime(cfg, timeId) {
-  const mapa = mapaPrecosPorTime(cfg)[timeId] || {};
+// Só os números de um mapa {grupo: valor}.
+function precosLimpos(mapa) {
   const saida = {};
-  Object.keys(mapa).forEach((g) => {
+  Object.keys(mapa || {}).forEach((g) => {
     const v = Number(mapa[g]);
-    if (mapa[g] != null && !isNaN(v)) saida[g] = v;
+    if (mapa[g] != null && mapa[g] !== "" && !isNaN(v)) saida[g] = v;
   });
   return saida;
 }
 
-// Preços que valem de fato num time: os gerais com o personalizado por cima.
+// Só os preços próprios de um time (sem os gerais e sem os do cliente).
+function precosPersonalizadosDoTime(cfg, timeId) {
+  const novo = cfg && cfg._precosTime && cfg._precosTime[timeId];
+  return precosLimpos(novo || mapaPrecosPorTime(cfg)[timeId] || {});
+}
+
+// Só os preços próprios de um cliente.
+function precosPersonalizadosDoCliente(cfg, clienteId) {
+  if (!clienteId) return {};
+  return precosLimpos((cfg && cfg._precosCliente && cfg._precosCliente[clienteId]) || {});
+}
+
+// Cliente de um time, pelo que foi carregado junto com os preços.
+function clienteDoTimeNoCfg(cfg, timeId) {
+  const m = cfg && cfg._clienteDoTime;
+  if (typeof m === "function") return m(timeId) || "";
+  return (m && m[timeId]) || "";
+}
+
+// Preços que valem de fato num time: geral → cliente → time.
 function precosDoTime(cfg, timeId) {
-  const geral = (cfg && cfg.precosPorGrupo) || {};
-  const efetivos = {};
-  Object.keys(geral).forEach((g) => {
-    const v = Number(geral[g]);
-    if (geral[g] != null && !isNaN(v)) efetivos[g] = v;
-  });
+  const efetivos = precosLimpos((cfg && cfg.precosPorGrupo) || {});
+  const doCliente = precosPersonalizadosDoCliente(cfg, clienteDoTimeNoCfg(cfg, timeId));
+  Object.keys(doCliente).forEach((g) => (efetivos[g] = doCliente[g]));
   const proprios = precosPersonalizadosDoTime(cfg, timeId);
   Object.keys(proprios).forEach((g) => (efetivos[g] = proprios[g]));
   return efetivos;
+}
+
+// O time (ou o cliente dele) tem preço especial? Só a marca, sem o valor.
+function timeTemPrecoEspecial(time, clientes) {
+  if (time && time.temPrecoEspecial === true) return true;
+  const id = clienteIdDoTime(time);
+  if (!id) return false;
+  const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
+  const c = lista.find((x) => x.id === id);
+  return !!(c && c.temPrecoEspecial === true);
+}
+
+// Lê os preços especiais de alguns times (e dos clientes deles) e guarda no
+// cfg. `times`: [{ id, clienteId }]. Um documento que não existe (ou que as
+// regras ainda não deixam ler) só não muda nada.
+async function carregarPrecosEspeciais(cfg, times) {
+  if (!cfg) return;
+  cfg._precosTime = cfg._precosTime || {};
+  cfg._precosCliente = cfg._precosCliente || {};
+  if (typeof cfg._clienteDoTime !== "function") cfg._clienteDoTime = cfg._clienteDoTime || {};
+  const ler = async (docId) => {
+    try {
+      const doc = await db.collection(COL_PRECOS).doc(docId).get();
+      return doc.exists ? (doc.data().precos || {}) : null;
+    } catch (e) {
+      return null;
+    }
+  };
+  const clientes = new Set();
+  await Promise.all((times || []).map(async ({ id, clienteId }) => {
+    if (!id) return;
+    if (typeof cfg._clienteDoTime !== "function") cfg._clienteDoTime[id] = clienteId || "";
+    if (clienteId) clientes.add(clienteId);
+    const p = await ler(idDocPrecoTime(id));
+    if (p) cfg._precosTime[id] = p;
+  }));
+  await Promise.all([...clientes].map(async (id) => {
+    const p = await ler(idDocPrecoCliente(id));
+    if (p) cfg._precosCliente[id] = p;
+  }));
 }
 
 // Preço de um tamanho já considerando o preço personalizado do time.
@@ -1002,6 +1069,11 @@ async function revalidarItens(cfg, lista) {
       }
     })
   );
+
+  // Preços especiais dos times do carrinho (e dos clientes deles).
+  await carregarPrecosEspeciais(cfg, Object.entries(times)
+    .filter(([, t]) => t)
+    .map(([id, t]) => ({ id, clienteId: clienteIdDoTime(t) })));
 
   const validos = [];
   const removidos = [];

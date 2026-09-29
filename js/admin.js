@@ -13,8 +13,8 @@ const PAGINA_LOGIN = "admin.html";
 
 const estadoTimes = {}; // timeId -> { time, alunos, expandido }
 const estadoClientes = {}; // clienteId -> dados do cliente
-const precosTimeAbertos = {}; // timeId -> true quando o bloco de preços está aberto
-const precosTimeSalvos = {};  // timeId -> aviso a mostrar depois de salvar/limpar
+const precosTimeAbertos = {}; // "time:ID" / "cliente:ID" -> bloco de preços aberto
+const precosTimeSalvos = {};  // "time:ID" / "cliente:ID" -> aviso depois de salvar/limpar
 
 // Cliente escolhido no seletor do topo. "" = todos; SEM_CLIENTE = só os times
 // que ainda não foram atribuídos a nenhum cliente. Vale para o painel inteiro
@@ -110,6 +110,7 @@ auth.onAuthStateChanged((user) => {
         // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
         if (typeof escutarMoldes === "function") escutarMoldes();
         if (typeof escutarLayout === "function") escutarLayout();
+        escutarPrecos();
         // Financeiro → Movimentações (js/movimentacoes.js).
         if (typeof escutarMovimentacoes === "function") escutarMovimentacoes();
       });
@@ -472,6 +473,9 @@ function renderizarClientesAdmin() {
     botoes.appendChild(btnExcluir);
 
     card.appendChild(botoes);
+
+    // Tabela de preço do cliente (vale para todos os times dele).
+    card.appendChild(criarBlocoPrecos("cliente", cliente.id));
     elListaClientesAdmin.appendChild(card);
   });
 }
@@ -565,6 +569,8 @@ async function excluirCliente(cliente, qtdTimes) {
   if (!confirm(`Excluir o cliente "${cliente.nome}"?`)) return;
   try {
     await db.collection(COL_CLIENTES).doc(cliente.id).delete();
+    // Os preços do cliente vão junto (se falhar, não atrapalha).
+    db.collection(COL_PRECOS).doc(idDocPrecoCliente(cliente.id)).delete().catch(() => {});
   } catch (erro) {
     console.error(erro);
     alert("Erro ao excluir o cliente. Verifique as regras do Firestore (firestore.rules).");
@@ -662,6 +668,7 @@ function escutarTimes() {
           if (!idsAtuais.has(id)) delete estadoTimes[id];
         });
         timesCarregados = true;
+        if (typeof migrarPrecosAntigos === "function") migrarPrecosAntigos();
         aplicarFechamentoAutomatico();
         renderizarTimesAdmin();
       },
@@ -1937,12 +1944,13 @@ function renderizarResumoPrecosTimes() {
     const celulas = GRUPOS_TAMANHO.map((g) => {
       const valor = efetivos[g.grupo];
       if (valor == null) return '<td class="fin-sub">—</td>';
-      const proprio = proprios[g.grupo] != null;
+      const proprio = proprios[g.grupo] != null || doCliente[g.grupo] != null;
       return `<td class="${proprio ? "preco-proprio" : "fin-sub"}">${formatarReais(valor)}</td>`;
     }).join("");
-    const marca = Object.keys(proprios).length > 0
-      ? ' <span class="badge interno">próprio</span>'
-      : "";
+    const clienteId = clienteIdDoTime(estadoTimes[id].time);
+    const doCliente = precosPersonalizadosDoCliente(configGeralAtual, clienteId);
+    const marca = (Object.keys(proprios).length > 0 ? ' <span class="badge interno">próprio</span>' : "") +
+      (Object.keys(doCliente).length > 0 ? ' <span class="badge aguardando">do cliente</span>' : "");
     return `<tr><td>${escapeHtmlAdmin(estadoTimes[id].time.nome)}${marca}</td>${celulas}</tr>`;
   }).join("");
 
@@ -1953,7 +1961,7 @@ function renderizarResumoPrecosTimes() {
         <tbody>${linhas}</tbody>
       </table>
     </div>
-    <p class="pix-ajuda">Em destaque, os preços próprios do time; em cinza, os da tabela geral. Para mudar, abra o time (aba Inicial) → Configuração → Tabela especial de preço.</p>
+    <p class="pix-ajuda">Em destaque, os preços especiais (do cliente ou do próprio time); em cinza, os da tabela geral. Para mudar: aba <strong>Clientes</strong> → tabela de preço do cliente, ou abra o time (aba Inicial) → Configuração → Tabela especial de preço.</p>
   `;
 }
 
@@ -3328,15 +3336,15 @@ async function excluirTime(timeId, time) {
       await lote.commit();
     }
     await db.collection(COL_TIMES).doc(timeId).delete();
-    // Os preços próprios do time ficam em config/geral; apaga junto para não
-    // sobrar lixo (se falhar, não atrapalha: o time já não existe).
+    // Apaga os preços próprios do time junto, para não sobrar lixo (se
+    // falhar, não atrapalha: o time já não existe).
     try {
       await limparPrecosDoTime(timeId);
     } catch (e) {
       console.warn("Time excluído, mas não deu para apagar os preços dele.", e);
     }
-    delete precosTimeAbertos[timeId];
-    delete precosTimeSalvos[timeId];
+    delete precosTimeAbertos["time:" + timeId];
+    delete precosTimeSalvos["time:" + timeId];
     delete rascunhoConfigTime[timeId];
     // O onSnapshot dos times remove o time da lista; se ele estava aberto,
     // volta para a lista.
@@ -3671,26 +3679,108 @@ const IMAGENS_TIME = [
   }
 ];
 
-// ---------------- Preço personalizado por time ----------------
-// Cada time pode ter preços próprios, grupo a grupo. O que ele não define
-// continua valendo o preço geral (aba Pagamentos). Os valores ficam em
-// config/geral -> precosPorTime[timeId], documento que só o admin grava.
+// ---------------- Preços especiais (por cliente e por time) ----------------
+// Por cima da tabela geral (aba Pagamentos), grupo a grupo: o preço do
+// cliente (vale para todos os times dele) e o do time (ganha do cliente).
+// Ficam na coleção `precos` (docs "cliente_ID" e "time_ID") — ver o
+// comentário em js/utils.js: qualquer um lê um documento pelo id, mas só o
+// admin lista a coleção, então um cliente não descobre o preço dos outros.
 
-// Bloco da tabela especial de preço (aba Configuração do time), com um campo por grupo.
-function criarBlocoPrecosTime(timeId) {
+const precosAdmin = { time: {}, cliente: {} }; // espelho da coleção `precos`
+let precosAdminCarregados = false;
+let precosAdminErro = false;   // regras do Firestore ainda sem a coleção
+let precosMigracaoFeita = false;
+
+// Pendura os preços especiais no configGeralAtual (só em memória), para
+// precosDoTime() e companhia enxergarem cliente e time.
+function anexarPrecosAdmin() {
+  configGeralAtual._precosTime = precosAdmin.time;
+  configGeralAtual._precosCliente = precosAdmin.cliente;
+  configGeralAtual._clienteDoTime = (id) => (estadoTimes[id] ? clienteIdDoTime(estadoTimes[id].time) : "");
+}
+
+function escutarPrecos() {
+  db.collection(COL_PRECOS).onSnapshot(
+    (snap) => {
+      precosAdmin.time = {};
+      precosAdmin.cliente = {};
+      snap.forEach((doc) => {
+        const p = doc.data().precos || {};
+        if (doc.id.startsWith("time_")) precosAdmin.time[doc.id.slice(5)] = p;
+        else if (doc.id.startsWith("cliente_")) precosAdmin.cliente[doc.id.slice(8)] = p;
+      });
+      precosAdminCarregados = true;
+      precosAdminErro = false;
+      anexarPrecosAdmin();
+      migrarPrecosAntigos();
+      renderizarClientesAdmin();
+      renderizarTimesAdmin();
+    },
+    (erro) => {
+      console.error("Erro ao ler os preços especiais:", erro);
+      precosAdminErro = true;
+      renderizarClientesAdmin();
+      renderizarTimesAdmin();
+    }
+  );
+}
+
+// Os preços por time moravam em config/geral (legível por todos). Quando a
+// coleção nova já está acessível, move cada um para "time_ID", marca o time
+// e apaga o campo antigo. Roda uma vez, depois de carregar o config e os
+// preços (se as regras novas não estiverem publicadas, fica para depois).
+async function migrarPrecosAntigos() {
+  if (precosMigracaoFeita || !precosAdminCarregados || !painelConfigPronto || !timesCarregados) return;
+  const antigos = mapaPrecosPorTime(configGeralAtual);
+  const ids = Object.keys(antigos);
+  precosMigracaoFeita = true;
+  if (ids.length === 0) return;
+  try {
+    const lote = db.batch();
+    ids.forEach((id) => {
+      const p = precosLimpos(antigos[id]);
+      // Se já existe o documento novo, ele é o que vale.
+      if (!precosAdmin.time[id] && Object.keys(p).length > 0) {
+        lote.set(db.collection(COL_PRECOS).doc(idDocPrecoTime(id)), { precos: p, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+      }
+      if (estadoTimes[id] && Object.keys(p).length > 0) {
+        lote.update(db.collection(COL_TIMES).doc(id), { temPrecoEspecial: true });
+      }
+    });
+    lote.update(db.collection("config").doc("geral"), {
+      precosPorTime: firebase.firestore.FieldValue.delete(),
+      precosPorTurma: firebase.firestore.FieldValue.delete()
+    });
+    await lote.commit();
+    delete configGeralAtual.precosPorTime;
+    delete configGeralAtual.precosPorTurma;
+  } catch (erro) {
+    console.error("Não foi possível mover os preços por time para a coleção protegida.", erro);
+    precosMigracaoFeita = false; // tenta de novo no próximo carregamento
+  }
+}
+
+// Bloco da tabela especial de preço, com um campo por grupo.
+//   tipo "time": aba Configuração do time; a base é o geral com o do cliente.
+//   tipo "cliente": card do cliente (aba Clientes); a base é o geral.
+function criarBlocoPrecos(tipo, id) {
+  const chave = tipo + ":" + id;
+  const ehTime = tipo === "time";
   const bloco = document.createElement("details");
   bloco.className = "precos-time";
-  bloco.open = !!precosTimeAbertos[timeId];
+  bloco.open = !!precosTimeAbertos[chave];
   bloco.addEventListener("toggle", () => {
-    precosTimeAbertos[timeId] = bloco.open;
+    precosTimeAbertos[chave] = bloco.open;
   });
 
-  const personalizados = precosPersonalizadosDoTime(configGeralAtual, timeId);
+  const personalizados = ehTime
+    ? precosPersonalizadosDoTime(configGeralAtual, id)
+    : precosPersonalizadosDoCliente(configGeralAtual, id);
   const nPersonalizados = Object.keys(personalizados).length;
 
   const resumo = document.createElement("summary");
   resumo.innerHTML =
-    "Preço da camiseta neste time " +
+    (ehTime ? "Preço da camiseta neste time " : "Preço da camiseta para este cliente ") +
     (nPersonalizados > 0
       ? `<span class="badge interno">${nPersonalizados} preço(s) próprio(s)</span>`
       : '<span class="badge pendente">tabela geral</span>');
@@ -3704,18 +3794,26 @@ function criarBlocoPrecosTime(timeId) {
     bloco.appendChild(corpo);
     return bloco;
   }
+  if (precosAdminErro) {
+    corpo.innerHTML = '<p class="erro">Publique o <strong>firestore.rules</strong> atualizado no console do Firebase: os preços especiais agora ficam na coleção protegida <code>precos</code>.</p>';
+    bloco.appendChild(corpo);
+    return bloco;
+  }
+
+  // O que vale sem o preço próprio: no time, o geral com o do cliente por cima.
+  const gerais = precosLimpos(configGeralAtual.precosPorGrupo || {});
+  const clienteDoTime = ehTime && estadoTimes[id] ? clienteIdDoTime(estadoTimes[id].time) : "";
+  const doCliente = ehTime ? precosPersonalizadosDoCliente(configGeralAtual, clienteDoTime) : {};
 
   const ajuda = document.createElement("small");
   ajuda.className = "pix-ajuda";
-  ajuda.textContent =
-    "Deixe em branco para usar o preço geral (aba Pagamentos). O valor preenchido " +
-    "vale só para este time — no PIX, no Mercado Pago e no Financeiro.";
+  ajuda.textContent = ehTime
+    ? "Deixe em branco para usar o preço do cliente ou o geral. O valor preenchido vale só para este time — no PIX, no Mercado Pago e no Financeiro."
+    : "Deixe em branco para usar o preço geral. O valor preenchido vale para todos os times deste cliente (um time com preço próprio ainda ganha deste). Outros clientes não veem este valor.";
   corpo.appendChild(ajuda);
 
   const grade = document.createElement("div");
   grade.className = "linha-custos precos-time-grade";
-
-  const gerais = configGeralAtual.precosPorGrupo || {};
 
   GRUPOS_TAMANHO.forEach((g) => {
     const wrap = document.createElement("div");
@@ -3724,22 +3822,25 @@ function criarBlocoPrecosTime(timeId) {
     const lbl = document.createElement("label");
     lbl.textContent = `${g.grupo} (R$)`;
 
-    const geral = gerais[g.grupo] != null ? Number(gerais[g.grupo]) : null;
+    const doClienteG = doCliente[g.grupo];
+    const base = doClienteG != null ? doClienteG : gerais[g.grupo];
     const inp = document.createElement("input");
     inp.type = "number";
     inp.step = "0.01";
     inp.min = "0";
     inp.dataset.grupo = g.grupo;
-    inp.placeholder = geral != null ? Number(geral).toFixed(2) : "0,00";
+    inp.placeholder = base != null ? Number(base).toFixed(2) : "0,00";
     inp.value = personalizados[g.grupo] != null ? personalizados[g.grupo] : "";
 
-    const base = document.createElement("small");
-    base.className = "pix-ajuda";
-    base.textContent = geral != null ? `Geral: ${formatarReais(geral)}` : "Sem preço geral";
+    const dica = document.createElement("small");
+    dica.className = "pix-ajuda";
+    dica.textContent = doClienteG != null
+      ? `Cliente: ${formatarReais(doClienteG)}`
+      : gerais[g.grupo] != null ? `Geral: ${formatarReais(gerais[g.grupo])}` : "Sem preço geral";
 
     wrap.appendChild(lbl);
     wrap.appendChild(inp);
-    wrap.appendChild(base);
+    wrap.appendChild(dica);
     grade.appendChild(wrap);
   });
 
@@ -3751,57 +3852,34 @@ function criarBlocoPrecosTime(timeId) {
 
   const btnSalvar = document.createElement("button");
   btnSalvar.className = "sucesso";
-  btnSalvar.textContent = "Salvar preços do time";
+  btnSalvar.textContent = ehTime ? "Salvar preços do time" : "Salvar preços do cliente";
   btnSalvar.onclick = async () => {
-    const paraGravar = {};   // o que vai para o Firestore (número ou delete)
-    const paraEstado = {};   // espelho local, só com os números
+    const mapa = {};
     let invalido = false;
-
     grade.querySelectorAll("input").forEach((inp) => {
-      const grupo = inp.dataset.grupo;
       const bruto = inp.value.trim();
-      if (bruto === "") {
-        // Campo vazio = volta a usar o preço geral (apaga o personalizado).
-        paraGravar[grupo] = firebase.firestore.FieldValue.delete();
-        return;
-      }
-      const v = parseFloat(bruto);
-      if (isNaN(v) || v < 0) {
-        invalido = true;
-        return;
-      }
-      paraGravar[grupo] = v;
-      paraEstado[grupo] = v;
+      if (bruto === "") return; // vazio = usa a base
+      const v = parseFloat(bruto.replace(",", "."));
+      if (isNaN(v) || v < 0) invalido = true;
+      else mapa[inp.dataset.grupo] = v;
     });
-
     if (invalido) {
       mostrarMensagem(msg, "Informe valores válidos (0 ou mais) ou deixe em branco.", "erro");
       return;
     }
-
     btnSalvar.disabled = true;
     try {
-      await db.collection("config").doc("geral")
-        // Grava no campo novo e no antigo ("precosPorTurma"), para o backend
-        // do Mercado Pago ainda não republicado continuar cobrando certo.
-        .set({
-          precosPorTime: { [timeId]: paraGravar },
-          precosPorTurma: { [timeId]: paraGravar }
-        }, { merge: true });
-      aplicarPrecosTimeNoEstado(timeId, paraEstado);
-      precosTimeAbertos[timeId] = true;
-      precosTimeSalvos[timeId] = Object.keys(paraEstado).length > 0
-        ? "Preços deste time salvos."
-        : "Sem preço próprio: este time volta a usar a tabela geral.";
+      await gravarPrecosEspeciais(tipo, id, mapa);
+      precosTimeAbertos[chave] = true;
+      precosTimeSalvos[chave] = Object.keys(mapa).length > 0
+        ? (ehTime ? "Preços deste time salvos." : "Preços deste cliente salvos.")
+        : "Sem preço próprio: volta a valer a tabela geral.";
+      renderizarClientesAdmin();
       renderizarTimesAdmin();
     } catch (erro) {
       console.error(erro);
       btnSalvar.disabled = false;
-      mostrarMensagem(
-        msg,
-        "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
-        "erro"
-      );
+      mostrarMensagem(msg, "Erro ao salvar. Confira se o firestore.rules atualizado foi publicado no Firebase.", "erro");
     }
   };
   acoes.appendChild(btnSalvar);
@@ -3810,19 +3888,20 @@ function criarBlocoPrecosTime(timeId) {
     const btnLimpar = document.createElement("button");
     btnLimpar.className = "secundario";
     btnLimpar.textContent = "Usar a tabela geral";
-    btnLimpar.title = "Apaga os preços próprios deste time";
+    btnLimpar.title = ehTime ? "Apaga os preços próprios deste time" : "Apaga os preços próprios deste cliente";
     btnLimpar.onclick = async () => {
-      if (!confirm("Apagar os preços próprios deste time e voltar para a tabela geral?")) return;
+      if (!confirm(`Apagar os preços próprios deste ${ehTime ? "time" : "cliente"} e voltar para a tabela geral?`)) return;
       btnLimpar.disabled = true;
       try {
-        await limparPrecosDoTime(timeId);
-        precosTimeAbertos[timeId] = true;
-        precosTimeSalvos[timeId] = "Preços próprios apagados: vale a tabela geral.";
+        await gravarPrecosEspeciais(tipo, id, {});
+        precosTimeAbertos[chave] = true;
+        precosTimeSalvos[chave] = "Preços próprios apagados: vale a tabela geral.";
+        renderizarClientesAdmin();
         renderizarTimesAdmin();
       } catch (erro) {
         console.error(erro);
         btnLimpar.disabled = false;
-        mostrarMensagem(msg, "Erro ao apagar os preços deste time.", "erro");
+        mostrarMensagem(msg, "Erro ao apagar os preços.", "erro");
       }
     };
     acoes.appendChild(btnLimpar);
@@ -3832,33 +3911,53 @@ function criarBlocoPrecosTime(timeId) {
   corpo.appendChild(msg);
 
   // Aviso de "salvo" que sobrevive ao re-render disparado pelo próprio salvar.
-  if (precosTimeSalvos[timeId]) {
-    mostrarMensagem(msg, precosTimeSalvos[timeId], "aviso");
-    delete precosTimeSalvos[timeId];
+  if (precosTimeSalvos[chave]) {
+    mostrarMensagem(msg, precosTimeSalvos[chave], "aviso");
+    delete precosTimeSalvos[chave];
   }
   bloco.appendChild(corpo);
   return bloco;
 }
 
-// Espelha no estado local o que acabou de ser gravado, para o Financeiro e os
-// cards reagirem na hora (config/geral não é lido por onSnapshot).
-function aplicarPrecosTimeNoEstado(timeId, mapa) {
-  const todos = { ...mapaPrecosPorTime(configGeralAtual) };
-  if (Object.keys(mapa).length > 0) todos[timeId] = mapa;
-  else delete todos[timeId];
-  configGeralAtual = { ...configGeralAtual, precosPorTime: todos, precosPorTurma: todos };
+function criarBlocoPrecosTime(timeId) {
+  return criarBlocoPrecos("time", timeId);
 }
 
-// Apaga os preços próprios de um time (volta a valer só a tabela geral).
+// Grava (ou apaga, com mapa vazio) os preços especiais de um cliente/time e a
+// marca temPrecoEspecial no documento dele. Também tira o time do campo
+// antigo em config/geral, se ele ainda estiver lá.
+async function gravarPrecosEspeciais(tipo, id, mapa) {
+  const ehTime = tipo === "time";
+  const ref = db.collection(COL_PRECOS).doc(ehTime ? idDocPrecoTime(id) : idDocPrecoCliente(id));
+  const tem = Object.keys(mapa).length > 0;
+  const lote = db.batch();
+  if (tem) lote.set(ref, { precos: mapa, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+  else lote.delete(ref);
+  const dono = ehTime ? estadoTimes[id] : estadoClientes[id];
+  if (dono) {
+    lote.update(db.collection(ehTime ? COL_TIMES : COL_CLIENTES).doc(id), { temPrecoEspecial: tem });
+  }
+  if (ehTime && mapaPrecosPorTime(configGeralAtual)[id]) {
+    lote.set(db.collection("config").doc("geral"), {
+      precosPorTime: { [id]: firebase.firestore.FieldValue.delete() },
+      precosPorTurma: { [id]: firebase.firestore.FieldValue.delete() }
+    }, { merge: true });
+  }
+  await lote.commit();
+  if (ehTime && configGeralAtual.precosPorTime) delete configGeralAtual.precosPorTime[id];
+  if (ehTime && configGeralAtual.precosPorTurma) delete configGeralAtual.precosPorTurma[id];
+}
+
+// Apaga os preços próprios de um time excluído (o documento do time já não
+// existe, então só o de preços e o campo antigo).
 async function limparPrecosDoTime(timeId) {
-  await db.collection("config").doc("geral").set(
-    {
+  await db.collection(COL_PRECOS).doc(idDocPrecoTime(timeId)).delete();
+  if (mapaPrecosPorTime(configGeralAtual)[timeId]) {
+    await db.collection("config").doc("geral").set({
       precosPorTime: { [timeId]: firebase.firestore.FieldValue.delete() },
       precosPorTurma: { [timeId]: firebase.firestore.FieldValue.delete() }
-    },
-    { merge: true }
-  );
-  aplicarPrecosTimeNoEstado(timeId, {});
+    }, { merge: true });
+  }
 }
 
 // Bloco de imagens da camiseta no card do Super Admin (enviar/trocar/remover).
@@ -4091,7 +4190,8 @@ let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
 let precosPorGrupoAtual = {}; // preço de venda por grupo (aba Pagamentos) — usado p/ o lucro
-let configGeralAtual = {};    // config/geral inteiro (inclui precosPorTime)
+let configGeralAtual = {};    // config/geral inteiro (+ os preços especiais em memória)
+let painelConfigPronto = false; // config/geral já carregado (a migração de preços espera)
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -4108,6 +4208,9 @@ async function carregarPainelConfig() {
   driveScriptUrl = cfg.driveScriptUrl || "";
 
   configGeralAtual = cfg || {};
+  anexarPrecosAdmin();
+  painelConfigPronto = true;
+  migrarPrecosAntigos();
   precosPorGrupoAtual = cfg.precosPorGrupo || {};
 
   await carregarTamanhos();

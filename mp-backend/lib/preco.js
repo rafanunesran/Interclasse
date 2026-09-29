@@ -16,27 +16,56 @@ function precoDoTamanho(tamanho, precosPorGrupo, grupos) {
   return null;
 }
 
-// Preços que valem num time: a tabela geral (geral.precosPorGrupo) com o
-// preço personalizado do time por cima (geral.precosPorTime[timeId]),
-// grupo a grupo. Espelha precosDoTime() de js/utils.js.
-// Os dois mapas vêm de config/geral, que só o admin grava — por isso o valor
-// da cobrança continua confiável mesmo com preço por time.
+// Preços que valem num time: a tabela geral (geral.precosPorGrupo), depois
+// o preço do CLIENTE do time e, por cima, o do próprio TIME, grupo a grupo.
+// Espelha precosDoTime() de js/utils.js. Os preços especiais vêm da coleção
+// `precos` (lidos por carregarPrecosEspeciais, abaixo) e ficam em
+// geral._precosCliente / _precosTime / _clienteDoTime. O campo antigo
+// geral.precosPorTime ("precosPorTurma", mais antigo ainda) continua valendo
+// para o time que ainda não foi movido. Tudo isso só o admin grava — o valor
+// da cobrança continua confiável.
+function limpar(mapa) {
+  const saida = {};
+  Object.keys(mapa || {}).forEach((g) => {
+    const v = Number(mapa[g]);
+    if (mapa[g] != null && mapa[g] !== "" && !isNaN(v)) saida[g] = v;
+  });
+  return saida;
+}
+
 function precosDoTime(geral, timeId) {
-  const base = (geral && geral.precosPorGrupo) || {};
-  // "precosPorTurma" é o nome antigo do campo, ainda lido para não perder os
-  // preços salvos antes da renomeação.
-  const porTime = (geral && (geral.precosPorTime || geral.precosPorTurma)) || {};
-  const proprios = porTime[timeId] || {};
-  const efetivos = {};
-  Object.keys(base).forEach((g) => {
-    const v = Number(base[g]);
-    if (base[g] != null && !isNaN(v)) efetivos[g] = v;
-  });
-  Object.keys(proprios).forEach((g) => {
-    const v = Number(proprios[g]);
-    if (proprios[g] != null && !isNaN(v)) efetivos[g] = v;
-  });
+  const g = geral || {};
+  const efetivos = limpar(g.precosPorGrupo);
+  const clienteId = (g._clienteDoTime || {})[timeId];
+  const doCliente = limpar(clienteId ? (g._precosCliente || {})[clienteId] : null);
+  const antigo = (g.precosPorTime || g.precosPorTurma || {})[timeId];
+  const doTime = limpar((g._precosTime || {})[timeId] || antigo);
+  Object.assign(efetivos, doCliente, doTime);
   return efetivos;
+}
+
+// Lê os preços especiais dos times de uma cobrança (e dos clientes deles) e
+// devolve uma cópia de `geral` com eles. Documento que não existe só não conta.
+async function carregarPrecosEspeciais({ db, colecao, geral, timeIds }) {
+  const saida = { ...(geral || {}), _precosTime: {}, _precosCliente: {}, _clienteDoTime: {} };
+  const unicos = [...new Set(timeIds)];
+  const times = await Promise.all(unicos.map((id) => db.collection(colecao).doc(id).get()));
+  const clientes = new Set();
+  times.forEach((snap, i) => {
+    const clienteId = snap.exists ? (snap.data().clienteId || "") : "";
+    saida._clienteDoTime[unicos[i]] = clienteId;
+    if (clienteId) clientes.add(clienteId);
+  });
+  const precosTime = await Promise.all(unicos.map((id) => db.collection("precos").doc("time_" + id).get()));
+  precosTime.forEach((snap, i) => {
+    if (snap.exists) saida._precosTime[unicos[i]] = snap.data().precos || {};
+  });
+  const idsClientes = [...clientes];
+  const precosCliente = await Promise.all(idsClientes.map((id) => db.collection("precos").doc("cliente_" + id).get()));
+  precosCliente.forEach((snap, i) => {
+    if (snap.exists) saida._precosCliente[idsClientes[i]] = snap.data().precos || {};
+  });
+  return saida;
 }
 
 // Preço de um tamanho já considerando o preço personalizado do time.
@@ -44,4 +73,4 @@ function precoDoTamanhoNoTime(tamanho, geral, timeId, grupos) {
   return precoDoTamanho(tamanho, precosDoTime(geral, timeId), grupos);
 }
 
-module.exports = { GRUPOS_PADRAO, precoDoTamanho, precosDoTime, precoDoTamanhoNoTime };
+module.exports = { GRUPOS_PADRAO, precoDoTamanho, precosDoTime, precoDoTamanhoNoTime, carregarPrecosEspeciais };
