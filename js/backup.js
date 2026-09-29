@@ -281,7 +281,7 @@ async function abrirRestauracao(origem) {
   }
 
   const porColecao = (info.resumo && info.resumo.porColecao) || {};
-  const nomesColecao = { turmas: "Times", "turmas/*/alunos": "Camisetas", clientes: "Clientes", config: "Configurações", producao: "Levas de produção", "producao/*/itens": "Itens das levas", cobrancas: "Cobranças" };
+  const nomesColecao = { turmas: "Times", "turmas/*/alunos": "Camisetas", clientes: "Clientes", config: "Configurações", producao: "Levas de produção", "producao/*/itens": "Itens das levas", cobrancas: "Cobranças", movimentacoes: "Movimentações" };
   elRestaurarCorpo.innerHTML = `
     <p><strong>${escapeHtmlAdmin(origem.nome || "Backup")}</strong><br><span class="pix-ajuda">Feito em ${escapeHtmlAdmin(formatarDataHora(info.criadoEm))}</span></p>
     <div class="numeros-chips">${Object.keys(porColecao).map((c) =>

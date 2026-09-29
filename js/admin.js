@@ -110,6 +110,8 @@ auth.onAuthStateChanged((user) => {
         // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
         if (typeof escutarMoldes === "function") escutarMoldes();
         if (typeof escutarLayout === "function") escutarLayout();
+        // Financeiro → Movimentações (js/movimentacoes.js).
+        if (typeof escutarMovimentacoes === "function") escutarMovimentacoes();
       });
     }
   } else {
@@ -2303,8 +2305,10 @@ function renderizarFinanceiro() {
   const f = calcularFinanceiro();
   finUltimo = f;
 
-  if (f.qtd === 0) {
-    el.innerHTML = "<p>Nenhuma camiseta cadastrada ainda. Assim que houver pedidos, os números aparecem aqui.</p>";
+  if (f.qtd === 0 && finVisao !== "movimentacoes") {
+    el.innerHTML = "<p>Nenhuma camiseta cadastrada ainda. Assim que houver pedidos, os números aparecem aqui.</p>" +
+      '<button type="button" class="secundario" data-fin-visao="movimentacoes">Ver movimentações (saques e pagamentos)</button>';
+    el.querySelector("[data-fin-visao]").onclick = () => { finVisao = "movimentacoes"; renderizarFinanceiro(); };
     return;
   }
 
@@ -2334,6 +2338,7 @@ function renderizarVisaoFinanceira(f) {
   if (finVisao === "evolucao") return finViewEvolucao(alvo, f);
   if (finVisao === "cobranca") return finViewCobranca(alvo, f);
   if (finVisao === "resultado") return finViewResultado(alvo, f);
+  if (finVisao === "movimentacoes" && typeof finViewMovimentacoes === "function") return finViewMovimentacoes(alvo, f);
   return finViewGeral(alvo, f);
 }
 
@@ -3103,6 +3108,8 @@ function fecharModalCusto() {
 // ---------------- Exportação (segue a visão aberta) ----------------
 
 function exportarFinanceiro() {
+  // Movimentações (js/movimentacoes.js) não dependem de haver camisetas.
+  if (finVisao === "movimentacoes" && typeof exportarMovimentacoes === "function") return exportarMovimentacoes();
   const f = finUltimo || calcularFinanceiro();
   if (f.qtd === 0) {
     alert("Não há dados financeiros para exportar.");

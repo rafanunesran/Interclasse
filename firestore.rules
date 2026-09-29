@@ -56,6 +56,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Movimentações do caixa (Financeiro → Movimentações): saques, pagamentos
+    // e entradas lançados à mão pelo admin. Dado financeiro interno: só a
+    // conta administradora lê e grava. Nada é apagado — cancelar é um update
+    // (cancelado = true), para o histórico ficar completo.
+    match /movimentacoes/{movId} {
+      allow read, create, update: if ehAdmin();
+      allow delete: if false;
+    }
+
     // Levas de produção (aba Produção do Super Admin): o que foi escolhido
     // para ir à impressão de uma vez, incluindo camisetas avulsas que não
     // estão em nenhum pedido. É controle interno da produção, então nem a
