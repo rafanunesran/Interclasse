@@ -187,6 +187,7 @@ const TiffStream = (function () {
     const op = opcoes || {};
     const pako = op.pako;
     const passo = Math.max(1, Math.floor(op.passo || 1));
+    const lut = op.lut || null; // perfil ICC para TIFF RGB/cinza (js/cor-icc.js)
     const info = lerCabecalho(bytes);
     const { tags } = info;
     const W = info.largura, H = info.altura, spp = info.spp;
@@ -290,6 +291,11 @@ const TiffStream = (function () {
           const k = xo * 4;
           if (foto === 5) {
             saidaCmyk[k] = buf[p]; saidaCmyk[k + 1] = buf[p + 1]; saidaCmyk[k + 2] = buf[p + 2]; saidaCmyk[k + 3] = buf[p + 3];
+          } else if (foto === 2 && lut) {
+            CorIcc.rgbParaCmyk(lut, buf[p], buf[p + 1], buf[p + 2], saidaCmyk, k);
+          } else if (foto !== 5 && foto !== 2 && lut) {
+            const v = foto === 0 ? 255 - buf[p] : buf[p];
+            CorIcc.rgbParaCmyk(lut, v, v, v, saidaCmyk, k);
           } else if (foto === 2) {
             const r = buf[p], g = buf[p + 1], b = buf[p + 2];
             const max = r > g ? (r > b ? r : b) : (g > b ? g : b);

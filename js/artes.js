@@ -234,7 +234,9 @@ function escutarLogoEmpresa() {
     (doc) => {
       const antes = JSON.stringify(logoEmpresa);
       logoEmpresa = (doc.exists && doc.data().logoEmpresa) || null;
+      perfilCmyk = (doc.exists && doc.data().perfilCmyk) || null;
       renderizarLogoEmpresa();
+      renderizarPerfilCmyk();
       renderizarEditorLayout();
       if (antes !== JSON.stringify(logoEmpresa) && typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
     },
@@ -296,6 +298,91 @@ function renderizarLogoEmpresa() {
       await db.collection("config").doc("geral").update({ logoEmpresa: firebase.firestore.FieldValue.delete() });
     };
   }
+}
+
+// ============================================================
+// PERFIL DE COR CMYK (Configurações) — PNG → CMYK como o Corel (js/cor-icc.js)
+// ============================================================
+// config/geral.perfilCmyk = { partes, nome, descricao, intencao }. As artes
+// em PNG (e TIFF RGB) são convertidas com ele na folha EPS; o TIFF CMYK não.
+
+let perfilCmyk = null;
+const NOME_INTENCAO = { perceptual: "Perceptual", relativa: "Colorimétrica relativa" };
+
+function renderizarPerfilCmyk() {
+  const el = document.getElementById("perfilCmykBloco");
+  if (!el) return;
+  const p = perfilCmyk;
+  el.innerHTML = `
+    <div class="perfil-cmyk">
+      ${p ? `<p>${icone("palette")} <strong>${escapeHtmlAdmin(p.descricao || p.nome || "Perfil CMYK")}</strong>
+        <span class="pix-ajuda">(${escapeHtmlAdmin(p.nome || "")})</span></p>
+        <label class="campo-inline">Intenção de renderização
+          <select data-perfil="intencao">${Object.entries(NOME_INTENCAO).map(([v, t]) =>
+            `<option value="${v}"${(p.intencao || "perceptual") === v ? " selected" : ""}>${t}${v === "perceptual" ? " (padrão do Corel)" : " + compensação de preto"}</option>`).join("")}</select></label>`
+        : '<p class="pix-ajuda">Nenhum perfil: as artes em PNG usam a fórmula simples.</p>'}
+      <p>
+        <button type="button" class="secundario" data-perfil="enviar">${p ? "Trocar perfil" : "Enviar perfil (.icc / .icm)"}</button>
+        ${p ? '<button type="button" class="perigo" data-perfil="remover">Remover</button>' : ""}
+      </p>
+      <p class="pix-ajuda">Onde achar: no Corel, <em>Ferramentas → Gerenciamento de cores → Configurações padrão</em> mostra o perfil CMYK em uso (ex.: "Coated FOGRA39", "U.S. Web Coated (SWOP) v2", "Japan Color 2001 Coated"). O arquivo fica em <code>C:\Windows\System32\spool\drivers\color</code>.</p>
+    </div>`;
+  el.querySelector('[data-perfil="enviar"]').onclick = enviarPerfilCmyk;
+  const rem = el.querySelector('[data-perfil="remover"]');
+  if (rem) rem.onclick = async () => {
+    if (!confirm("Remover o perfil CMYK? As artes em PNG voltam a usar a fórmula simples.")) return;
+    await db.collection("config").doc("geral").update({ perfilCmyk: firebase.firestore.FieldValue.delete() });
+  };
+  const sel = el.querySelector('[data-perfil="intencao"]');
+  if (sel) sel.onchange = () => db.collection("config").doc("geral").set({ perfilCmyk: { ...perfilCmyk, intencao: sel.value } }, { merge: true });
+}
+
+async function enviarPerfilCmyk() {
+  if (!exigirDriveProducao()) return;
+  const file = await escolherArquivos(".icc,.icm,application/vnd.iccprofile");
+  if (!file) return;
+  try {
+    avisoProducao("Conferindo o perfil…");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const lib = await CorIcc.carregar();
+    const info = CorIcc.descreverPerfil(lib, bytes);
+    if (info.espaco !== "CMYK") throw new Error(`Este perfil é ${info.espaco || "de outro tipo"}, não CMYK. Envie o perfil CMYK que o Corel usa.`);
+    CorIcc.criarLut(lib, bytes, {}); // confere se a conversão funciona
+    avisoProducao("Enviando o perfil…");
+    const env = await enviarArquivoDrive(driveScriptUrl, file, "perfil-cmyk");
+    guardarArquivoDriveNoCache(env.partes, bytes);
+    await db.collection("config").doc("geral").set({
+      perfilCmyk: { partes: env.partes, nome: file.name, descricao: info.descricao, intencao: (perfilCmyk && perfilCmyk.intencao) || "perceptual" }
+    }, { merge: true });
+  } catch (e) {
+    console.warn(e);
+    alert(e.message || "Não foi possível enviar o perfil.");
+  } finally {
+    avisoProducao("");
+  }
+}
+
+// Tabela RGB → CMYK do perfil (e do perfil embutido no PNG), ou null sem
+// perfil / se o conversor não carregar (aí vale a fórmula simples, com aviso).
+async function lutDoPerfil(bytesImagem, aviso) {
+  if (!perfilCmyk || !perfilCmyk.partes) return null;
+  try {
+    const lib = await CorIcc.carregar();
+    const perfil = await baixarArquivoDrive(driveScriptUrl, perfilCmyk.partes);
+    const pako = await carregarLib("pako");
+    const origem = bytesImagem && PngStream.perfilEmbutido(bytesImagem, pako);
+    return CorIcc.criarLut(lib, perfil, { intencao: perfilCmyk.intencao, origem: origem || undefined });
+  } catch (e) {
+    console.warn(e);
+    if (aviso) aviso(`Perfil CMYK indisponível (${e.message || e}) — usando a fórmula simples.`);
+    return null;
+  }
+}
+
+function resumoConversaoCor() {
+  return perfilCmyk
+    ? `Artes em PNG: convertidas com o perfil ${perfilCmyk.descricao || perfilCmyk.nome} (${NOME_INTENCAO[perfilCmyk.intencao] || "Perceptual"}). TIFF CMYK: sem conversão.`
+    : "Artes em PNG: fórmula simples (cor aproximada) — envie o perfil CMYK em Configurações ou use TIFF CMYK. TIFF CMYK: sem conversão.";
 }
 
 // ============================================================
@@ -3357,9 +3444,15 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
     aviso(`Baixando a arte ${nome}…`, fracao(0));
     const bytes = await baixarArquivoDrive(driveScriptUrl, img.partes);
     const passo = Math.max(1, Math.round((img.dpi || 600) / (dpiSaida || 600)));
-    rec.imagens[chave] = await leitorDeBitmap(bytes).converterParaCmyk(bytes, {
-      pako, passo, pausa: esperarTela,
-      aoProgresso: (f) => aviso(`Convertendo a arte ${nome} para CMYK… ${Math.round(f * 100)}%`, fracao(f * 0.98))
+    const leitor = leitorDeBitmap(bytes);
+    // PNG / TIFF RGB: com o perfil CMYK (Configurações), se houver.
+    const cmykNativo = leitor !== PngStream && leitor.lerCabecalho(bytes).cmyk;
+    const lut = cmykNativo ? null : await lutDoPerfil(leitor === PngStream ? bytes : null, (t) => {
+      if (!rec.avisoPerfil) { rec.avisoPerfil = t; aviso(t); }
+    });
+    rec.imagens[chave] = await leitor.converterParaCmyk(bytes, {
+      pako, passo, pausa: esperarTela, lut,
+      aoProgresso: (f) => aviso(`Convertendo a arte ${nome} ${cmykNativo ? "(TIFF CMYK, sem conversão)" : lut ? "com o perfil " + (perfilCmyk.descricao || perfilCmyk.nome) : "para CMYK"}… ${Math.round(f * 100)}%`, fracao(f * 0.98))
     });
     feitas++;
     // O PNG original não fica guardado na memória (pode ter centenas de MB).
@@ -3418,6 +3511,7 @@ function perguntarOpcoesEps(resumo) {
         <button type="button" class="modal-pix-fechar" aria-label="Fechar">×</button>
         <h3>Folha EPS (CMYK)</h3>
         <p class="pix-ajuda">${escapeHtmlAdmin(resumo)}</p>
+        <p class="pix-ajuda eps-cor">${icone("palette")} ${escapeHtmlAdmin(resumoConversaoCor())}</p>
         <form>
           <label>Largura da folha / rolo (cm)<input type="number" name="larguraCm" min="10" step="0.5" value="${escAttr(f.larguraCm || 150)}" required /></label>
           <label>Distância entre peças (mm)<input type="number" name="espacoMm" min="0" step="0.5" value="${escAttr(f.espacoMm == null ? 10 : f.espacoMm)}" required /></label>

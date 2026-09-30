@@ -67,6 +67,13 @@ const PngStream = (function () {
       if (bytes[phys.ini + 8] === 1 && ppu > 0) info.dpi = Math.round(ppu * 0.0254);
     }
     info.temAlfa = info.tipoCor === 4 || info.tipoCor === 6 || bs.some((b) => b.tipo === "tRNS");
+    const iccp = bs.find((b) => b.tipo === "iCCP");
+    if (iccp) {
+      // Nome (até o 0), método de compressão (1 byte) e o perfil em zlib.
+      let z = iccp.ini;
+      while (z < iccp.fim && bytes[z] !== 0) z++;
+      info.perfilZ = bytes.subarray(z + 2, iccp.fim);
+    }
     return info;
   }
 
@@ -85,6 +92,9 @@ const PngStream = (function () {
     const op = opcoes || {};
     const pako = op.pako;
     const passo = Math.max(1, Math.floor(op.passo || 1));
+    // `lut`: tabela RGB → CMYK do perfil ICC (js/cor-icc.js); sem ela, a
+    // fórmula simples.
+    const lut = op.lut || null;
     const info = lerCabecalho(bytes);
     const bs = blocos(bytes);
     const W = info.largura, H = info.altura;
@@ -183,16 +193,18 @@ const PngStream = (function () {
               else if (trnsRgb && trnsRgb[0] === r && trnsRgb[1] === g && trnsRgb[2] === b) al = 0;
             }
           }
-          const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
           const k = oc + xo * 4;
-          if (max === 0) {
+          const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
+          if (lut) {
+            CorIcc.rgbParaCmyk(lut, r, g, b, saidaCmyk, k);
+          } else if (max === 0) {
             saidaCmyk[k] = saidaCmyk[k + 1] = saidaCmyk[k + 2] = 0;
           } else {
             saidaCmyk[k] = (((max - r) * 255) / max + 0.5) | 0;
             saidaCmyk[k + 1] = (((max - g) * 255) / max + 0.5) | 0;
             saidaCmyk[k + 2] = (((max - b) * 255) / max + 0.5) | 0;
           }
-          saidaCmyk[k + 3] = 255 - max;
+          if (!lut) saidaCmyk[k + 3] = 255 - max;
           if (al < 128) {
             temTransparencia = true;
             saidaMasc[om + (xo >> 3)] |= 0x80 >> (xo & 7);
@@ -248,7 +260,17 @@ const PngStream = (function () {
     };
   }
 
-  return { lerCabecalho, converterParaCmyk };
+  // Perfil de cor embutido no PNG (bloco iCCP), descomprimido; ou null.
+  function perfilEmbutido(bytes, pako) {
+    try {
+      const info = lerCabecalho(bytes);
+      return info.perfilZ ? pako.inflate(info.perfilZ) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  return { lerCabecalho, converterParaCmyk, perfilEmbutido };
 })();
 
 if (typeof module !== "undefined") module.exports = PngStream;

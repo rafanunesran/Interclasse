@@ -515,11 +515,23 @@ retangular (a geração avisa).
     compressão **LZW** e 600 dpi. São aceitos 8 ou 16 bits por canal, canal alfa, faixas ou
     ladrilhos e compressão LZW, ZIP/Deflate, PackBits ou nenhuma. JPEG dentro do TIFF e BigTIFF
     não são aceitos.
-  - **PNG** (8 bits, RGB/RGBA, sem entrelaçamento): o **PNG não guarda CMYK** — o Corel e o
-    Photoshop sempre exportam PNG em RGB. O site converte esse RGB para CMYK por uma fórmula simples,
-    sem perfil de cor, e **a cor pode sair diferente** da arte original. Use PNG só quando a
-    cor não for crítica.
+  - **PNG** (8 bits, RGB/RGBA, sem entrelaçamento): o **PNG não guarda CMYK**, porque o Corel e o
+    Photoshop sempre exportam PNG em RGB. Na folha, o PNG é convertido para CMYK:
+    - **com o perfil CMYK** enviado em **Configurações → Perfil de cor CMYK (ICC)**, usando o
+      LittleCMS. A cor fica **próxima à do Corel**, desde que o perfil e a intenção sejam os mesmos
+      que o Corel usa. Se o PNG tiver perfil embutido, a conversão parte dele; senão, do sRGB;
+    - **sem perfil**, por uma fórmula simples, e aí a cor sai diferente da arte original.
   - O espaço do arquivo mostra o que foi enviado: "TIFF CMYK (cor exata)" ou "PNG (RGB → CMYK)".
+  - **Ordem de preferência:** TIFF CMYK (exato), depois PNG com perfil ICC (próximo), depois PNG
+    sem perfil (aproximado). O diálogo das folhas EPS diz qual conversão vai ser usada.
+
+**Perfil de cor CMYK (Configurações).** Envie o `.icc`/`.icm` que o seu Corel usa. No Corel, o
+nome aparece em *Ferramentas → Gerenciamento de cores → Configurações padrão* (ex.: Coated
+FOGRA39, U.S. Web Coated (SWOP) v2, Japan Color 2001 Coated). O arquivo fica em
+`C:\Windows\System32\spool\drivers\color`. O site confere se o perfil é CMYK antes de gravar.
+A **intenção de renderização** pode ser *Perceptual* (padrão do Corel) ou *Colorimétrica relativa*
+com compensação de preto. O conversor (lcms-wasm, ~360 KB) é carregado só na hora de gerar a
+folha.
 - **Mangas**: uma arte só serve para **as duas** (menos arquivo no Drive). Se a manga direita
   for diferente, marque **"Manga direita com arte diferente"** e envie a dela.
 - **Detalhe da manga** (TIFF CMYK ou PNG, com transparência): um elemento posicionado na manga, como o brasão (bandeira,
