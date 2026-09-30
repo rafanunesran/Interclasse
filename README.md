@@ -696,8 +696,21 @@ borda de baixo do molde** (seguindo o contorno — barra curva, manga que afina 
 para cima), também a 1 mm da borda e com 4 mm. Dá para desligar no diálogo.
 
 Sai **um EPS por time** (camisetas avulsas vão para o time do mesmo modelo; os goleiros saem num
-arquivo à parte), num `.zip` quando há mais de um. O encaixe é por "melhor espaço livre"
-(MaxRects), com as maiores peças primeiro.
+arquivo à parte). **Cada time é baixado separado, assim que fica pronto**, para o download ser mais
+leve. Um time com várias folhas (altura máxima) sai num `.zip` só dele. Se o navegador perguntar,
+permita vários downloads. O encaixe é por "melhor espaço livre" (MaxRects), com as maiores peças
+primeiro.
+
+Durante a geração, uma **janela de progresso** mostra:
+
+- a **barra geral** (%) e o time da vez ("Time 2 de 5");
+- a **etapa atual**, com a própria barra (baixando a arte, convertendo para CMYK, montando e
+  escrevendo o arquivo);
+- a **lista dos times**: na fila, gerando, pronto (nome e tamanho do arquivo, com **Baixar de
+  novo**) ou de fora (e o motivo);
+- os **avisos** num bloco no fim.
+
+**Cancelar** para depois do time atual; os arquivos já baixados ficam.
 
 ### Como o arquivo é feito
 

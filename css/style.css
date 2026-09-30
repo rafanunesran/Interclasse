@@ -2937,3 +2937,29 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .ci-modal { max-width: 760px; }
 .ci-modal .fin-destaques { margin: 10px 0; }
 .ci-custo p { margin: 8px 0; }
+
+/* Janela de progresso das folhas EPS (aba Produção) */
+.modal-progresso-eps .modal-pix-conteudo { max-width: 560px; text-align: left; }
+.modal-progresso-eps h3 { text-align: center; }
+.progresso-eps-resumo { margin: 0 0 8px; font-weight: 600; }
+.progresso-eps-etapa { margin: 12px 0 6px; font-size: 0.85rem; color: #475569; min-height: 1.2em; overflow-wrap: anywhere; }
+.progresso-barra { position: relative; height: 10px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+.progresso-barra.geral { height: 20px; }
+.progresso-barra span { display: block; height: 100%; width: 0; background: #2563eb; transition: width 0.25s ease; }
+.progresso-barra.etapa span { background: #60a5fa; }
+.progresso-barra b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #0f172a; }
+.progresso-eps-lista { list-style: none; margin: 14px 0 8px; padding: 0; max-height: 40vh; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+.progresso-eps-lista li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 10px; border-top: 1px solid #f1f5f9; font-size: 0.85rem; }
+.progresso-eps-lista li:first-child { border-top: 0; }
+.progresso-eps-lista li.st-gerando { background: #eff6ff; }
+.progresso-eps-lista li.st-pronto .progresso-eps-icone { color: #16a34a; font-weight: 700; }
+.progresso-eps-lista li.st-fora, .progresso-eps-lista li.st-erro { background: #fef2f2; }
+.progresso-eps-lista li.st-fila, .progresso-eps-lista li.st-cancelado { color: #94a3b8; }
+.progresso-eps-time { flex: 1 1 160px; font-weight: 600; }
+.progresso-eps-time small { font-weight: 400; color: #64748b; }
+.progresso-eps-st { color: #475569; overflow-wrap: anywhere; }
+.progresso-eps-st button { margin-left: 6px; padding: 2px 8px; font-size: 0.8rem; }
+.progresso-eps-avisos { margin-top: 8px; font-size: 0.82rem; }
+.progresso-eps-avisos summary { cursor: pointer; font-weight: 600; color: #b45309; }
+.progresso-eps-avisos ul { margin: 6px 0 0; padding-left: 18px; max-height: 25vh; overflow-y: auto; }
+.progresso-eps-botoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

@@ -3318,15 +3318,21 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
       }
     }
   }
+  // `aviso(texto, fração)`: a fração (0–1) é do carregamento deste time —
+  // os arquivos pequenos até 10%, a conversão das artes (a parte demorada) o resto.
+  const aConverter = imagens.filter((x, i) => !rec.imagens[x.chave] && imagens.findIndex((y) => y.chave === x.chave) === i);
+  let feitas = 0;
+  const fracao = (f) => 0.1 + 0.9 * ((feitas + f) / Math.max(1, aConverter.length));
   for (const { chave, img, nome } of imagens) {
     if (rec.imagens[chave]) continue;
-    aviso(`Baixando a arte ${nome}…`);
+    aviso(`Baixando a arte ${nome}…`, fracao(0));
     const bytes = await baixarArquivoDrive(driveScriptUrl, img.partes);
     const passo = Math.max(1, Math.round((img.dpi || 600) / (dpiSaida || 600)));
     rec.imagens[chave] = await PngStream.converterParaCmyk(bytes, {
       pako, passo, pausa: esperarTela,
-      aoProgresso: (f) => aviso(`Convertendo a arte ${nome} para CMYK… ${Math.round(f * 100)}%`)
+      aoProgresso: (f) => aviso(`Convertendo a arte ${nome} para CMYK… ${Math.round(f * 100)}%`, fracao(f * 0.98))
     });
+    feitas++;
     // O PNG original não fica guardado na memória (pode ter centenas de MB).
     delete cacheArquivosDrive[chaveArquivoDrive(img.partes)];
   }
@@ -3428,7 +3434,7 @@ function perguntarOpcoesEps(resumo) {
 
 // Ponto de entrada da aba Produção. linhas = [{ item, atual }] (itens da
 // leva). Sai um EPS por time (e um à parte para os goleiros, que vestem
-// outra cor); mais de um arquivo vai num .zip.
+// outra cor), cada um baixado assim que fica pronto.
 async function gerarFolhasEps(linhas, nomeBase) {
   if (!driveScriptUrl) {
     alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm os arquivos).");
@@ -3457,22 +3463,36 @@ async function gerarFolhasEps(linhas, nomeBase) {
   layoutConfig.folha = { ...layoutConfig.folha, ...op };
   salvarLayout(true);
 
-  const arquivos = [];
-  try {
-    for (const g of grupos.values()) {
+  // Um arquivo por time, baixado assim que fica pronto (não junta tudo num
+  // .zip no fim — mais leve para baixar e para a memória do navegador).
+  const lista = [...grupos.values()].map((g) => ({
+    g, rotulo: estadoTimes[g.timeId].time.nome + (g.goleiro ? " (goleiros)" : ""), n: g.camisetas.length
+  }));
+  const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })));
+  avisos.forEach((a) => prog.aviso(a));
+  let gerados = 0;
+  for (let idx = 0; idx < lista.length; idx++) {
+    if (prog.cancelado) {
+      for (let k = idx; k < lista.length; k++) prog.time(k, "cancelado");
+      break;
+    }
+    const { g, rotulo: rotuloTime } = lista[idx];
+    prog.time(idx, "gerando");
+    const etapa = (t, f) => prog.etapa(idx, `${rotuloTime}: ${t}`, f);
+    try {
       // Goleiros: os arquivos e ajustes do goleiro (o que ele não tiver vem
       // da camiseta comum).
       const timeComum = estadoTimes[g.timeId].time;
       const time = timeNaVariante(timeComum, g.goleiro);
-      const rotuloTime = time.nome + (g.goleiro ? " (goleiros)" : "");
       const falta = pendenciasProducao(time);
       if (falta.includes("arte das peças")) {
-        avisos.push(`${rotuloTime}: o time não tem arte enviada — ficou de fora.`);
+        prog.aviso(`${rotuloTime}: o time não tem arte enviada — ficou de fora.`);
+        prog.time(idx, "fora", "sem arte das peças");
         continue;
       }
-      falta.forEach((x) => avisos.push(`${rotuloTime}: falta ${x}.`));
+      falta.forEach((x) => prog.aviso(`${rotuloTime}: falta ${x}.`));
       if (g.goleiro && !temVarianteGoleiro(timeComum)) {
-        avisos.push(`${rotuloTime}: os goleiros saíram num arquivo à parte, com a mesma arte do time — envie as artes do goleiro em Arquivos de produção → 🧤 Goleiro.`);
+        prog.aviso(`${rotuloTime}: os goleiros saíram num arquivo à parte, com a mesma arte do time — envie as artes do goleiro em Arquivos de produção → 🧤 Goleiro.`);
       }
       // Camisetas com arte própria saem no mesmo arquivo, cada uma com a
       // sua versão; as outras, com a do time.
@@ -3483,56 +3503,175 @@ async function gerarFolhasEps(linhas, nomeBase) {
         partes.get(k).push(c);
       });
       const nInd = [...partes.keys()].filter(Boolean).length;
-      if (nInd) avisos.push(`${rotuloTime}: ${nInd} camiseta(s) com arte própria.`);
+      if (nInd) prog.aviso(`${rotuloTime}: ${nInd} camiseta(s) com arte própria.`);
       let rec = null;
       const blocos = [];
+      let iParte = 0;
+      // Fases do time: carregar/converter 0–80%, montar 80–85%, escrever 85–100%.
       for (const [alunoId, camisetas] of partes) {
         const timeParte = alunoId ? timeDaCamiseta(timeComum, alunoId, g.goleiro) : time;
         const pecasIds = pecasDoTime(timeParte);
         const tamanhos = [...new Set(camisetas.map((c) => c.tamanho))];
+        const base = iParte / partes.size;
         rec = await carregarRecursosDoTime(timeParte, tamanhos, pecasIds, op.dpi,
-          (t) => avisoProducao(`${rotuloTime}: ${t}`), rec);
-        avisoProducao(`${rotuloTime}: montando a folha…`);
+          (t, f) => etapa(t, 0.8 * (base + (f == null ? 0 : f) / partes.size)), rec);
+        iParte++;
+        etapa("montando a folha…", 0.8 * (iParte / partes.size));
         await esperarTela();
         const r = EPS.montarBlocos(moldesConfig, layoutDoTime(timeParte), timeParte, camisetas, rec,
           { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
         blocos.push(...r.blocos);
-        r.avisos.forEach((a) => avisos.push(`${rotuloTime}${alunoId ? ` (${rotuloCamiseta(alunoDoTime(g.timeId, alunoId))})` : ""}: ${a}`));
+        r.avisos.forEach((a) => prog.aviso(`${rotuloTime}${alunoId ? ` (${rotuloCamiseta(alunoDoTime(g.timeId, alunoId))})` : ""}: ${a}`));
       }
+      etapa("encaixando as peças na folha…", 0.82);
+      await esperarTela();
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
         larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: op.alturaMaxCm * 10
       });
-      avE.forEach((a) => avisos.push(`${rotuloTime}: ${a}`));
-      folhas.forEach((f, i) => {
+      avE.forEach((a) => prog.aviso(`${rotuloTime}: ${a}`));
+      if (!folhas.length) {
+        prog.time(idx, "fora", "nenhuma peça para imprimir");
+        continue;
+      }
+      const arquivos = [];
+      for (let i = 0; i < folhas.length; i++) {
+        const f = folhas[i];
         const sufixo = (g.goleiro ? "-goleiros" : "") + (folhas.length > 1 ? `-folha${i + 1}` : "");
         const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${sufixo}.eps`;
+        etapa(`escrevendo o arquivo${folhas.length > 1 ? ` (folha ${i + 1} de ${folhas.length})` : ""}…`, 0.85 + 0.15 * (i / folhas.length));
+        await esperarTela();
         const mb = EPS.estimarTamanho(f, rec) / 1e6;
-        if (mb > 500) avisos.push(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi.`);
+        if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi.`);
         arquivos.push({ nome, blob: new Blob(EPS.escreverEps(f, rec, `${rotuloTime}${sufixo}`), { type: "application/postscript" }) });
-      });
+      }
+      // Várias folhas do mesmo time: um .zip só dele.
+      let saida = arquivos[0];
+      if (arquivos.length > 1) {
+        etapa("compactando as folhas…", 0.99);
+        const JSZip = await carregarLib("JSZip");
+        const zip = new JSZip();
+        arquivos.forEach((a) => zip.file(a.nome, a.blob));
+        // STORE: o EPS já vem comprimido por dentro; recomprimir só gasta tempo.
+        saida = {
+          nome: `${slugify(nomeBase + "-" + time.nome) || "folhas"}${g.goleiro ? "-goleiros" : ""}-eps.zip`,
+          blob: await zip.generateAsync({ type: "blob", compression: "STORE" })
+        };
+      }
+      baixarBlob(saida.nome, saida.blob);
+      gerados++;
+      prog.time(idx, "pronto", saida);
+    } catch (e) {
+      console.error(e);
+      prog.aviso(`${rotuloTime}: erro — ${e.message || e}`);
+      prog.time(idx, "erro", e.message || String(e));
     }
-    if (!arquivos.length) {
-      avisoProducao("");
-      alert("Nenhuma folha gerada.\n\n• " + avisos.join("\n• "));
-      return;
-    }
-    if (arquivos.length === 1) {
-      baixarBlob(arquivos[0].nome, arquivos[0].blob);
-    } else {
-      avisoProducao("Compactando…");
-      const JSZip = await carregarLib("JSZip");
-      const zip = new JSZip();
-      arquivos.forEach((a) => zip.file(a.nome, a.blob));
-      // STORE: o EPS já vem comprimido por dentro; recomprimir só gasta tempo.
-      baixarBlob((slugify(nomeBase) || "folhas") + "-eps.zip", await zip.generateAsync({ type: "blob", compression: "STORE" }));
-    }
-    avisoProducao("");
-    if (avisos.length) alert(`${arquivos.length} arquivo(s) gerado(s), com avisos:\n\n• ` + avisos.join("\n• "));
-  } catch (e) {
-    console.error(e);
-    avisoProducao("");
-    alert("Não foi possível gerar a folha EPS: " + (e.message || e));
   }
+  prog.fim(gerados);
+}
+
+// Janela de progresso da geração: barra geral, etapa atual e a lista dos
+// times (na fila, gerando, pronto com "Baixar de novo", de fora). `itens` =
+// [{ rotulo, n }] (n = camisetas, o peso de cada time na barra geral).
+function abrirProgressoEps(itens) {
+  const total = itens.reduce((s, x) => s + Math.max(1, x.n), 0) || 1;
+  const antes = itens.map((_, i) => itens.slice(0, i).reduce((s, x) => s + Math.max(1, x.n), 0));
+  const estado = itens.map(() => ({ st: "fila", extra: null, f: 0 }));
+  const avisos = [];
+  const fundo = document.createElement("div");
+  fundo.className = "modal-pix modal-progresso-eps";
+  fundo.setAttribute("role", "dialog");
+  fundo.setAttribute("aria-label", "Gerando as folhas EPS");
+  fundo.innerHTML = `
+    <div class="modal-pix-conteudo">
+      <h3>Gerando as folhas EPS</h3>
+      <p class="progresso-eps-resumo" aria-live="polite"></p>
+      <div class="progresso-barra geral" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span><b></b></div>
+      <p class="progresso-eps-etapa"></p>
+      <div class="progresso-barra etapa"><span></span></div>
+      <ul class="progresso-eps-lista"></ul>
+      ${itens.length > 1 ? '<p class="pix-ajuda">Cada time é baixado num arquivo separado assim que fica pronto. Se o navegador perguntar, permita vários downloads.</p>' : ""}
+      <details class="progresso-eps-avisos oculto"><summary></summary><ul></ul></details>
+      <div class="progresso-eps-botoes">
+        <button type="button" class="secundario" data-prog="cancelar">Cancelar</button>
+        <button type="button" class="primario oculto" data-prog="fechar">Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(fundo);
+  const q = (sel) => fundo.querySelector(sel);
+  const ICONE = { fila: "⏳", gerando: "⚙️", pronto: "✓", fora: "⚠️", erro: "⚠️", cancelado: "—" };
+  const TEXTO = { fila: "na fila", gerando: "gerando…", pronto: "pronto", fora: "ficou de fora", erro: "erro", cancelado: "cancelado" };
+  const desenharLista = () => {
+    q(".progresso-eps-lista").innerHTML = itens.map((x, i) => {
+      const e = estado[i];
+      const arq = e.st === "pronto" && e.extra;
+      return `<li class="st-${e.st}"><span class="progresso-eps-icone">${ICONE[e.st]}</span>` +
+        `<span class="progresso-eps-time">${escapeHtmlAdmin(x.rotulo)} <small>${x.n} camiseta(s)</small></span>` +
+        `<span class="progresso-eps-st">${arq
+          ? `${escapeHtmlAdmin(arq.nome)} · ${(arq.blob.size / 1e6).toFixed(1)} MB <button type="button" class="secundario" data-baixar="${i}">Baixar de novo</button>`
+          : escapeHtmlAdmin(TEXTO[e.st] + (e.extra && typeof e.extra === "string" ? ` (${e.extra})` : ""))}</span></li>`;
+    }).join("");
+    fundo.querySelectorAll("[data-baixar]").forEach((b) => {
+      b.onclick = () => { const a = estado[Number(b.dataset.baixar)].extra; baixarBlob(a.nome, a.blob); };
+    });
+  };
+  const barra = (sel, f) => {
+    const pct = Math.round(Math.max(0, Math.min(1, f)) * 100);
+    q(sel + " span").style.width = pct + "%";
+    const b = q(sel + " b");
+    if (b) b.textContent = pct + "%";
+    q(sel).setAttribute("aria-valuenow", pct);
+  };
+  const geral = () => {
+    const feito = itens.reduce((s, x, i) => s + Math.max(1, x.n) * (["pronto", "fora", "erro", "cancelado"].includes(estado[i].st) ? 1 : estado[i].f), 0);
+    barra(".progresso-barra.geral", feito / total);
+    const atual = estado.findIndex((e) => e.st === "gerando");
+    q(".progresso-eps-resumo").textContent = atual >= 0
+      ? `Time ${atual + 1} de ${itens.length}: ${itens[atual].rotulo}`
+      : `${itens.length} time(s)`;
+  };
+  const ctl = {
+    cancelado: false,
+    etapa(i, texto, f) {
+      if (f != null) estado[i].f = Math.max(estado[i].f, Math.min(1, f));
+      q(".progresso-eps-etapa").textContent = texto;
+      barra(".progresso-barra.etapa", estado[i].f);
+      geral();
+    },
+    time(i, st, extra) {
+      estado[i].st = st;
+      estado[i].extra = extra == null ? null : extra;
+      if (st === "gerando") estado[i].f = 0;
+      desenharLista();
+      geral();
+    },
+    aviso(t) {
+      avisos.push(t);
+      const d = q(".progresso-eps-avisos");
+      d.classList.remove("oculto");
+      d.querySelector("summary").textContent = `${avisos.length} aviso(s)`;
+      d.querySelector("ul").insertAdjacentHTML("beforeend", `<li>${escapeHtmlAdmin(t)}</li>`);
+    },
+    fim(gerados) {
+      barra(".progresso-barra.geral", 1);
+      barra(".progresso-barra.etapa", 1);
+      q("h3").textContent = ctl.cancelado ? "Geração cancelada" : "Folhas EPS prontas";
+      q(".progresso-eps-resumo").textContent = `${gerados} arquivo(s) baixado(s) de ${itens.length} time(s).`;
+      q(".progresso-eps-etapa").textContent = avisos.length ? "Confira os avisos abaixo." : "";
+      if (avisos.length) q(".progresso-eps-avisos").open = true;
+      q('[data-prog="cancelar"]').classList.add("oculto");
+      q('[data-prog="fechar"]').classList.remove("oculto");
+      q('[data-prog="fechar"]').focus();
+    }
+  };
+  q('[data-prog="cancelar"]').onclick = (ev) => {
+    ctl.cancelado = true;
+    ev.target.disabled = true;
+    ev.target.textContent = "Cancelando depois deste time…";
+  };
+  q('[data-prog="fechar"]').onclick = () => fundo.remove();
+  desenharLista();
+  geral();
+  return ctl;
 }
 
 // "⬇ EPS de teste" do editor: a peça aberta, no tamanho mostrado, com o
