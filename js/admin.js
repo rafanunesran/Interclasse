@@ -2124,7 +2124,7 @@ function calcularFinanceiro() {
     // por unidade; e o custo das unidades do lote que não são de nenhum pedido
     // (avulsas), que só entra na visão sem cliente escolhido.
     custoOutros: 0, custoOutrosRecebido: 0, custoAvulsas: 0, qtdAvulsasLotes: 0,
-    qtdCustoReal: 0,
+    qtdCustoReal: 0, qtdCustoProjetado: 0,
     // Taxas do Mercado Pago já descontadas do que entrou: só existem nos
     // pagamentos online, que o webhook grava camiseta a camiseta.
     taxas: 0, qtdComTaxa: 0, recebidoOnline: 0,
@@ -2150,9 +2150,14 @@ function calcularFinanceiro() {
       // O preço especial da camiseta (lista do time) ganha do preço do tamanho.
       const venda = interno ? 0 : Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0);
       const real = lotes && lotes.porItem.get(`${timeId}__${a.id}`);
-      const cImp = real && real.impressao !== null ? real.impressao : custoImpressaoDoTamanho(a.tamanho);
-      const cCos = real && real.costureira !== null ? real.costureira : custoCostureiraDoTamanho(a.tamanho);
-      const cOut = real ? real.outros : 0;
+      // Fora de lote com custo (ou sem aquela categoria no lote): vale a
+      // projeção do último lote lançado — ver custoProjetado().
+      const projetar = (k) => typeof custoProjetado === "function"
+        ? custoProjetado(lotes, k, a.tamanho)
+        : (k === "impressao" ? custoImpressaoDoTamanho(a.tamanho) : k === "costureira" ? custoCostureiraDoTamanho(a.tamanho) : 0);
+      const cImp = real && real.impressao !== null ? real.impressao : projetar("impressao");
+      const cCos = real && real.costureira !== null ? real.costureira : projetar("costureira");
+      const cOut = real ? real.outros : projetar("outros");
       const custo = cImp + cCos + cOut; // custo entra sempre (a camiseta é produzida)
       fin.custos += custo;
       fin.custoImpressao += cImp;
@@ -2167,6 +2172,7 @@ function calcularFinanceiro() {
         fin.qtdCustoReal++;
         t.qtdCustoReal++;
       }
+      else if (lotes && lotes.projecao && Object.keys(lotes.projecao).length) fin.qtdCustoProjetado++;
 
       const g = grupoDoTamanho(a.tamanho);
       const gnome = g ? g.grupo : "Sem grupo";
@@ -2603,7 +2609,7 @@ function finViewGeral(alvo, f) {
       <div class="fin-card fin-card-click" data-fin-modal="total" role="button" tabindex="0" title="Ver detalhe do custo">
         <span class="fin-rotulo">Custos previstos</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
-        <span class="fin-sub fin-link">${f.qtdCustoReal > 0 ? `${f.qtdCustoReal} un. com custo real do lote` : "Impressão + Costureira"} · ver detalhe ›</span>
+        <span class="fin-sub fin-link">${f.qtdCustoReal > 0 || f.qtdCustoProjetado > 0 ? `${f.qtdCustoReal} un. custo real · ${f.qtdCustoProjetado} projetada(s)` : "Impressão + Costureira"} · ver detalhe ›</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Taxas do Mercado Pago</span>
@@ -2665,7 +2671,7 @@ function finViewGeral(alvo, f) {
     abrirModalCusto("Custo previsto — total", {
       impressao: f.custoImpressao, costureira: f.custoCostureira, outros: f.custoOutros,
       avulsas: f.custoAvulsas, qtdAvulsas: f.qtdAvulsasLotes,
-      total: f.custos + f.custoAvulsas, qtd: f.qtd, qtdReal: f.qtdCustoReal
+      total: f.custos + f.custoAvulsas, qtd: f.qtd, qtdReal: f.qtdCustoReal, qtdProjetado: f.qtdCustoProjetado
     }));
 
   ligarDetalhe(alvo.querySelector('[data-fin-modal="lucro-realizado"]'), () =>
@@ -3188,8 +3194,11 @@ function abrirModalDetalhe(titulo, linhas, nota) {
 function abrirModalCusto(titulo, d) {
   const nota = `${d.qtd} camiseta(s) considerada(s) (inclui as internas).` +
     (d.qtdReal > 0
-      ? ` ${d.qtdReal} delas com o custo real por unidade do lote (Financeiro → Custos por lote); as demais pela tabela da aba Tamanhos.`
-      : " Custos pela tabela da aba Tamanhos (nenhuma está num lote com custos lançados).");
+      ? ` ${d.qtdReal} delas com o custo real por unidade do lote (Financeiro → Custos por lote).`
+      : " Nenhuma está num lote com custos lançados.") +
+    (d.qtdProjetado > 0
+      ? ` ${d.qtdProjetado} ainda fora dos lotes usam o custo projetado pelo último lote lançado.`
+      : "");
   abrirModalDetalhe(titulo, [
     ["Impressão", d.impressao, "linha"],
     ["Costureira", d.costureira, "linha"],

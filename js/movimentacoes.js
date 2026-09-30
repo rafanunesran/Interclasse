@@ -154,7 +154,7 @@ function custosDosLotes() {
     if (m.tipo !== "pagamento" || m.cancelado === true || !m.levaId) return;
     (porLeva[m.levaId] = porLeva[m.levaId] || []).push(m);
   });
-  if (Object.keys(porLeva).length === 0) return { porItem, lotes, custoAvulsas, qtdAvulsas };
+  if (Object.keys(porLeva).length === 0) return { porItem, lotes, custoAvulsas, qtdAvulsas, projecao: {} };
 
   Object.entries(porLeva).forEach(([levaId, movs]) => {
     const e = typeof estadoLevas !== "undefined" ? estadoLevas[levaId] : null;
@@ -179,9 +179,12 @@ function custosDosLotes() {
 
     // Estimativa da tabela (aba Tamanhos) para as mesmas unidades — a comparação.
     let estimado = 0;
+    const est = { impressao: 0, costureira: 0 };
     let semPedido = 0;
     itens.forEach((i) => {
       const atual = typeof itemAtual === "function" ? itemAtual(i) : { tamanho: i.tamanho, avulso: i.origem === "avulso" };
+      est.impressao += custoImpressaoDoTamanho(atual.tamanho);
+      est.costureira += custoCostureiraDoTamanho(atual.tamanho);
       estimado += custoImpressaoDoTamanho(atual.tamanho) + custoCostureiraDoTamanho(atual.tamanho);
       // Avulsa (ou camiseta que sumiu do pedido): não tem aluno para carregar o custo.
       if (atual.avulso || atual.removido) {
@@ -204,13 +207,44 @@ function custosDosLotes() {
       existe: !!e,
       criadaEmMs: e ? e.leva.criadaEmMs || 0 : 0,
       unidades, semPedido, lancamentos: movs.length,
-      ...c, tem, total, un, porUnidade, estimado,
+      ...c, tem, est, total, un, porUnidade, estimado,
       estimadoUnidade: unidades > 0 ? estimado / unidades : 0
     });
   });
 
   lotes.sort((a, b) => (b.criadaEmMs || 0) - (a.criadaEmMs || 0));
-  return { porItem, lotes, custoAvulsas, qtdAvulsas };
+
+  // PROJEÇÃO para o que ainda não foi para a produção: o lote mais recente com
+  // custo de cada categoria vira a nova referência.
+  //   Impressão/Costureira: fator = real ÷ tabela daquele lote, aplicado à
+  //   tabela de cada tamanho (mantém a diferença entre P, GG, Plus Size...).
+  //   Sem custo na tabela, vale o custo por unidade do lote, igual para todos.
+  //   Outros (malha, frete...): o custo por unidade do lote.
+  const projecao = {};
+  ["impressao", "costureira"].forEach((k) => {
+    const l = lotes.find((x) => x.existe && x.unidades > 0 && x.tem[k]);
+    if (!l) return;
+    projecao[k] = {
+      lote: l.nome,
+      fator: l.est[k] > 0 ? l[k] / l.est[k] : null,
+      porUnidade: l.un[k]
+    };
+  });
+  const lOut = lotes.find((x) => x.existe && x.unidades > 0 && x.outros > 0);
+  if (lOut) projecao.outros = { lote: lOut.nome, porUnidade: lOut.un.outros };
+
+  return { porItem, lotes, custoAvulsas, qtdAvulsas, projecao };
+}
+
+// Custo de uma categoria para uma camiseta que ainda não está em lote com
+// custo: a projeção do último lote, ou a tabela da aba Tamanhos se não houver.
+function custoProjetado(lotes, k, tamanho) {
+  const tabela = k === "impressao" ? custoImpressaoDoTamanho(tamanho)
+    : k === "costureira" ? custoCostureiraDoTamanho(tamanho) : 0;
+  const p = lotes && lotes.projecao && lotes.projecao[k];
+  if (!p) return tabela;
+  if (k === "outros") return p.porUnidade;
+  return p.fator !== null ? tabela * p.fator : p.porUnidade;
 }
 
 // Recebido líquido dos pedidos (camisetas pagas, sem a taxa do MP).
@@ -564,7 +598,7 @@ function finViewLotes(alvo) {
     return;
   }
   const levas = typeof levasOrdenadas === "function" ? levasOrdenadas() : [];
-  const { lotes } = custosDosLotes();
+  const { lotes, projecao } = custosDosLotes();
   const porId = {};
   lotes.forEach((l) => (porId[l.levaId] = l));
 
@@ -628,6 +662,7 @@ function finViewLotes(alvo) {
       </div>
     </div>
     <p class="pix-ajuda">Cada lote é uma <strong>leva</strong> da aba Produção. Lance o que foi gasto nela (ex.: <em>Lote 1 — impressão R$ 800</em>) e o site divide pelo número de unidades do lote: esse passa a ser o custo por unidade daquelas camisetas no Financeiro (Visão geral, DRE e lucro). <strong>Impressão</strong> e <strong>Costureira</strong> substituem a estimativa da aba Tamanhos; malha, frete e outras categorias somam como “outros custos”. Se entrar ou sair camiseta do lote, o custo por unidade é recalculado na hora.</p>
+    ${projecaoHtml(projecao)}
     ${linhas.length === 0
       ? '<p class="pix-ajuda">Nenhuma leva criada ainda. Crie os lotes na aba <strong>Produção</strong>.</p>'
       : `<div class="fin-tabela-wrap"><table class="fin-tabela">
@@ -639,6 +674,28 @@ function finViewLotes(alvo) {
   alvo.querySelectorAll("[data-lote-custo]").forEach((b) => {
     b.onclick = () => movNovoCustoDoLote(b.dataset.loteCusto);
   });
+}
+
+// Quadro "o que ainda não foi produzido": qual custo está valendo agora.
+function projecaoHtml(projecao) {
+  const itens = [];
+  const desc = (k, nome) => {
+    const p = projecao[k];
+    if (!p) return;
+    const regra = k === "outros" || p.fator === null
+      ? `${formatarReais(p.porUnidade)} por unidade`
+      : `tabela da aba Tamanhos × ${p.fator.toFixed(2)} (${p.fator >= 1 ? "+" : "−"}${Math.abs(Math.round((p.fator - 1) * 100))}%)`;
+    itens.push(`<li><strong>${nome}:</strong> ${regra} — pelo lote <em>${escapeHtmlAdmin(p.lote)}</em></li>`);
+  };
+  desc("impressao", "Impressão");
+  desc("costureira", "Costureira");
+  desc("outros", "Outros (malha, frete…)");
+  if (!itens.length) {
+    return '<p class="pix-ajuda">Camisetas que ainda não estão em um lote com custo usam a tabela da aba Tamanhos. Assim que um lote tiver custo lançado, ele passa a ser a referência delas.</p>';
+  }
+  return `<div class="card"><h3 class="titulo-bloco">Custo projetado para o que ainda não foi produzido</h3>
+    <p class="pix-ajuda">O lote mais recente com custo de cada categoria atualiza o custo das camisetas que ainda não estão em nenhum lote com custo (previsto, DRE e lucro já usam estes valores). Impressão e costureira mantêm a proporção entre os tamanhos.</p>
+    <ul>${itens.join("")}</ul></div>`;
 }
 
 function exportarCustosLotes() {
