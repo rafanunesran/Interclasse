@@ -1272,6 +1272,7 @@ const EPS = (function () {
     marcadorDaPeca,
     contornoDePdf,
     comandosDoContorno,
+    poligonosDoContorno,
     contornoComSangria,
     estimarTamanho,
     ascii85,

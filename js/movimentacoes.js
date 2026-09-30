@@ -181,24 +181,35 @@ function custosDosLotes() {
     let estimado = 0;
     const est = { impressao: 0, costureira: 0 };
     let semPedido = 0;
-    itens.forEach((i) => {
-      const atual = typeof itemAtual === "function" ? itemAtual(i) : { tamanho: i.tamanho, avulso: i.origem === "avulso" };
+    // Impressão é por metro linear: rateada pela ÁREA das peças de cada
+    // camiseta (js/custo-impressao.js). Faltando o molde de alguma, divide
+    // igual para todas.
+    const atuais = itens.map((i) => typeof itemAtual === "function" ? itemAtual(i) : { tamanho: i.tamanho, avulso: i.origem === "avulso" });
+    const cacheArea = new Map();
+    let pesos = typeof areaDaCamisetaMm2 === "function"
+      ? itens.map((i, idx) => areaDaCamisetaMm2(i, atuais[idx], cacheArea)) : [];
+    const rateioArea = pesos.length > 0 && pesos.every((p) => p > 0);
+    if (!rateioArea) pesos = itens.map(() => 1);
+    const somaPesos = pesos.reduce((a, b) => a + b, 0) || 1;
+    itens.forEach((i, idx) => {
+      const atual = atuais[idx];
+      const impItem = c.impressao * pesos[idx] / somaPesos;
       est.impressao += custoImpressaoDoTamanho(atual.tamanho);
       est.costureira += custoCostureiraDoTamanho(atual.tamanho);
       estimado += custoImpressaoDoTamanho(atual.tamanho) + custoCostureiraDoTamanho(atual.tamanho);
       // Avulsa (ou camiseta que sumiu do pedido): não tem aluno para carregar o custo.
       if (atual.avulso || atual.removido) {
         semPedido++;
+        custoAvulsas += impItem + un.costureira + un.outros;
         return;
       }
       const chave = `${i.timeId}__${i.alunoId}`;
       const r = porItem.get(chave) || { impressao: null, costureira: null, outros: 0 };
-      if (tem.impressao) r.impressao = (r.impressao || 0) + un.impressao;
+      if (tem.impressao) r.impressao = (r.impressao || 0) + impItem;
       if (tem.costureira) r.costureira = (r.costureira || 0) + un.costureira;
       r.outros += un.outros;
       porItem.set(chave, r);
     });
-    custoAvulsas += semPedido * porUnidade;
     qtdAvulsas += semPedido;
 
     lotes.push({
@@ -207,7 +218,8 @@ function custosDosLotes() {
       existe: !!e,
       criadaEmMs: e ? e.leva.criadaEmMs || 0 : 0,
       unidades, semPedido, lancamentos: movs.length,
-      ...c, tem, est, total, un, porUnidade, estimado,
+      ...c, tem, est, total, un, porUnidade, estimado, rateioArea,
+      metros: movs.reduce((s, m) => s + (Number(m.metrosLineares) || 0), 0),
       estimadoUnidade: unidades > 0 ? estimado / unidades : 0
     });
   });
@@ -629,16 +641,18 @@ function finViewLotes(alvo) {
     return `<tr>
       <td><strong>${escapeHtmlAdmin(l.nome)}</strong>${!l.existe ? ' <span class="badge pendente">excluída</span>' : ""}
         ${cats ? `<br><span class="fin-dica">${cats}</span>` : ""}
+        ${l.metros > 0 ? `<br><span class="fin-dica">${l.metros.toLocaleString("pt-BR")} m lineares de impressão</span>` : ""}
+        ${l.impressao > 0 ? `<br><span class="fin-dica">Impressão rateada ${l.rateioArea ? "pela área das peças" : "igual por unidade (falta molde de algum tamanho)"}</span>` : ""}
         ${l.aPagar > 0 ? `<br><span class="badge mov-apagar">A pagar ${formatarReais(l.aPagar)}</span>` : ""}
         ${l.total > 0 && l.unidades === 0 ? '<br><span class="fin-dica fin-vermelho">Lote sem unidades: não dá para ratear.</span>' : ""}</td>
       <td>${l.unidades}${l.semPedido ? ` <span class="fin-dica">(${l.semPedido} avulsa(s))</span>` : ""}</td>
       <td>${formatarReais(l.total)}</td>
       <td>${l.total > 0 && l.unidades > 0
-        ? `<strong>${formatarReais(l.porUnidade)}</strong><br><span class="fin-dica">imp. ${formatarReais(l.un.impressao)} · cost. ${formatarReais(l.un.costureira)}${l.un.outros ? ` · outros ${formatarReais(l.un.outros)}` : ""}</span>`
+        ? `<strong>${formatarReais(l.porUnidade)}</strong> <span class="fin-dica">(média)</span><br><span class="fin-dica">imp. ${formatarReais(l.un.impressao)} · cost. ${formatarReais(l.un.costureira)}${l.un.outros ? ` · outros ${formatarReais(l.un.outros)}` : ""}</span>`
         : "—"}</td>
       <td>${formatarReais(l.estimadoUnidade)}</td>
       <td class="${dif === null ? "" : dif > 0 ? "fin-vermelho" : "fin-verde"}">${dif === null ? "—" : (dif > 0 ? "+" : "−") + formatarReais(Math.abs(dif))}</td>
-      <td>${l.existe ? `<button type="button" class="secundario mov-btn-cancelar" data-lote-custo="${escAttr(l.levaId)}">+ Lançar custo</button>` : ""}</td>
+      <td>${l.existe ? `${typeof abrirCalculadoraMetro === "function" ? `<button type="button" class="primario mov-btn-cancelar" data-lote-metro="${escAttr(l.levaId)}" title="Encaixa as peças do lote no rolo e calcula a impressão por metro linear">📏 Impressão por metro</button>` : ""}<button type="button" class="secundario mov-btn-cancelar" data-lote-custo="${escAttr(l.levaId)}">+ Lançar custo</button>` : ""}</td>
     </tr>`;
   }).join("");
 
@@ -671,6 +685,9 @@ function finViewLotes(alvo) {
         </table></div>`}
   `;
 
+  alvo.querySelectorAll("[data-lote-metro]").forEach((b) => {
+    b.onclick = () => abrirCalculadoraMetro(b.dataset.loteMetro);
+  });
   alvo.querySelectorAll("[data-lote-custo]").forEach((b) => {
     b.onclick = () => movNovoCustoDoLote(b.dataset.loteCusto);
   });

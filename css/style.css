@@ -2932,3 +2932,8 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .preco-aluno input { width: 86px; margin: 0; padding: 4px 6px; font-size: 0.85rem; }
 .preco-aluno.ativo { color: #5b21b6; }
 .preco-aluno.ativo input { border-color: #7c3aed; background: #f5f3ff; font-weight: 700; }
+
+/* Financeiro → Custos por lote: calculadora de impressão por metro linear */
+.ci-modal { max-width: 760px; }
+.ci-modal .fin-destaques { margin: 10px 0; }
+.ci-custo p { margin: 8px 0; }
