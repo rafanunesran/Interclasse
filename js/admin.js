@@ -194,6 +194,8 @@ function escutarClientes() {
       renderizarSeletoresDeCliente();
       renderizarClientesAdmin();
       renderizarTimesAdmin();
+      // A arte do cliente (aba Artes) pode ter mudado.
+      if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
     },
     (erro) => console.error("Erro ao carregar clientes:", erro)
   );
@@ -448,6 +450,20 @@ function renderizarClientesAdmin() {
       if (abaInicial) abaInicial.click();
     };
     botoes.appendChild(btnVer);
+
+    // Arte só deste cliente (aba Artes): tirar um logo, mudar um texto,
+    // acrescentar uma imagem… sem aparecer para os outros clientes.
+    if (typeof abrirArteDoCliente === "function") {
+      const arte = cliente.arte || {};
+      const nArte = Object.values(arte.layoutAjustes || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0) +
+        Object.values(arte.elementosExtras || {}).reduce((s, l) => s + (l || []).length, 0);
+      const btnArte = document.createElement("button");
+      btnArte.className = "secundario";
+      btnArte.textContent = "Arte do cliente" + (nArte ? ` (${nArte})` : "");
+      btnArte.title = "Ajustes e elementos da arte só para os times deste cliente";
+      btnArte.onclick = () => abrirArteDoCliente(cliente.id);
+      botoes.appendChild(btnArte);
+    }
 
     const btnEditar = document.createElement("button");
     btnEditar.className = "secundario";

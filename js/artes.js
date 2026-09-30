@@ -67,12 +67,13 @@ function sangriaDaPrevia() {
 // Brasão (do time) e logo (da empresa) são caixas de imagem: mantêm a
 // proporção e não têm estilo de texto.
 function ehCaixaImagem(el) {
-  return el.tipo === "brasao" || el.tipo === "logo" || el.tipo === "detalhe";
+  return el.tipo === "brasao" || el.tipo === "logo" || el.tipo === "detalhe" || el.tipo === "imagem";
 }
 
 // Miniatura (url) de uma caixa de imagem para um time e uma peça.
 function imagemDaCaixa(el, prod, pecaId) {
   if (el.tipo === "logo") return logoEmpresa && logoEmpresa.previaUrl;
+  if (el.tipo === "imagem") return el.arquivo && el.arquivo.previaUrl;
   if (el.tipo === "detalhe") {
     const d = EPS.detalheDaPeca(prod, pecaId);
     return d && d.img.previaUrl;
@@ -176,6 +177,8 @@ async function aplicarHistorico(de, para, lado) {
       layoutConfig = JSON.parse(valor);
       ultimoLayoutSalvo = valor;
       salvarLayout(true);
+    } else if (e.tipo === "cliente") {
+      await gravarArteCliente(e.clienteId, JSON.parse(valor));
     } else if (estadoTimes[e.timeId]) {
       await gravarProducaoTime(e.timeId, JSON.parse(valor));
     }
@@ -399,16 +402,78 @@ function criarSeletorVariante(timeId) {
   return wrap;
 }
 
-// Algum elemento (do layout geral ou só deste time) passa no teste?
-function usaNoTime(prod, teste) {
-  return PECAS_EDITOR.some((pc) => EPS.elementosDaPecaNoTime(layoutConfig, prod, pc.id).some(teste));
+// ============================================================
+// ARTE DO CLIENTE (geral → cliente → time → goleiro)
+// ============================================================
+// Cada cliente pode ter a sua versão da arte, que vale SÓ para os times dele
+// (os outros clientes nunca recebem nada dela): clientes/{id}.arte, com os
+// mesmos campos do time — `layoutAjustes` (posição, estilo, ocultar os
+// elementos do layout geral) e `elementosExtras` (elementos só do cliente).
+// Antes de chegar ao time, o layout geral passa pela arte do cliente
+// (layoutDoCliente); o time ajusta e acrescenta por cima, como sempre.
+
+function arteDoCliente(clienteId) {
+  const c = clienteId && typeof estadoClientes !== "undefined" && estadoClientes[clienteId];
+  return (c && c.arte) || null;
+}
+
+function clienteDaArte(time) {
+  return typeof clienteIdDoTime === "function" ? clienteIdDoTime(time) : "";
+}
+
+// O elemento com o ajuste do cliente já embutido. A posição do cliente
+// entra no lugar da geral; "oculto" fica marcado no elemento (o time pode
+// mostrar de novo).
+function aplicarAjusteNivel(el, aj) {
+  const e = { ...el };
+  if (aj.estilo) Object.assign(e, aj.estilo);
+  if (aj.base) {
+    e.caixa = aj.base;
+    e.ajustes = { ...(aj.tamanhos || {}) };
+  } else if (aj.tamanhos) {
+    e.ajustes = { ...(e.ajustes || {}), ...aj.tamanhos };
+  }
+  if ("oculto" in aj) e.oculto = !!aj.oculto;
+  return e;
+}
+
+// O layout geral como fica para os times de um cliente.
+function layoutDoCliente(clienteId) {
+  const arte = arteDoCliente(clienteId);
+  if (!arte || (!arte.layoutAjustes && !arte.elementosExtras)) return layoutConfig;
+  const pecas = {};
+  new Set([...Object.keys(layoutConfig.pecas || {}), ...Object.keys(arte.elementosExtras || {})]).forEach((pecaId) => {
+    const cfg = layoutConfig.pecas[pecaId] || {};
+    const nGerais = (cfg.elementos || []).length;
+    const els = EPS.elementosDaPecaNoTime(layoutConfig, arte, pecaId).map((el, i) => {
+      // `clienteArte`: veio da arte do cliente (o editor do time marca).
+      if (i >= nGerais) return { ...el, clienteArte: true };
+      const aj = ajusteDaProducao(arte, pecaId, el.id);
+      return aj ? aplicarAjusteNivel(el, aj) : el;
+    });
+    pecas[pecaId] = { ...cfg, elementos: els };
+  });
+  return { ...layoutConfig, pecas };
+}
+
+// O layout que chega a um time (o geral depois da arte do cliente dele).
+function layoutDoTime(time) {
+  return layoutDoCliente(clienteDaArte(time));
+}
+
+// Algum elemento (do layout geral, do cliente ou só deste time) passa no teste?
+function usaNoTime(time, teste) {
+  const lay = layoutDoTime(time);
+  const prod = producaoDoTime(time);
+  return PECAS_EDITOR.some((pc) => EPS.elementosDaPecaNoTime(lay, prod, pc.id)
+    .some((e) => !!EPS.elementoDoTime(e, ajusteDaProducao(prod, pc.id, e.id)) && teste(e)));
 }
 
 // O checklist dos arquivos de produção: cada item diz se o layout usa aquilo
 // (necessário) e se o time já enviou (tem).
 function requisitosProducao(time) {
   const p = producaoDoTime(time);
-  const usa = (teste) => usaNoTime(p, teste);
+  const usa = (teste) => usaNoTime(time, teste);
   const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id]).length;
   return [
     { id: "artes", rotulo: "Artes das peças", necessario: true, tem: nArtes > 0, detalhe: `${nArtes} enviada(s)` },
@@ -425,11 +490,11 @@ function pendenciasProducao(time) {
   const falta = [];
   const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id]);
   if (!temArte) falta.push("arte das peças");
-  const usaTexto = usaNoTime(p, (e) => !ehCaixaImagem(e));
-  const usaBrasao = usaNoTime(p, (e) => e.tipo === "brasao");
+  const usaTexto = usaNoTime(time, (e) => !ehCaixaImagem(e));
+  const usaBrasao = usaNoTime(time, (e) => e.tipo === "brasao");
   if (usaTexto && !p.fonte) falta.push("fonte");
   if (usaBrasao && !p.brasao) falta.push("brasão");
-  const usaDetalhe = usaNoTime(p, (e) => e.tipo === "detalhe");
+  const usaDetalhe = usaNoTime(time, (e) => e.tipo === "detalhe");
   if (usaDetalhe && !p.detalheManga) falta.push("detalhe da manga");
   return falta;
 }
@@ -713,6 +778,32 @@ async function miniaturaDaArte(bytes, info) {
 }
 
 // `arquivo`: já escolhido (arrastar e soltar); sem ele, abre o seletor.
+// Envia um PNG de produção (600 dpi) ao Drive, com a miniatura para a tela.
+// Devolve os dados a gravar, ou null se cancelado. `marcar(texto)` mostra o
+// andamento.
+async function enviarPngProducao(file, pref, marcar) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const info = PngStream.lerCabecalho(bytes); // valida (8 bits, sem entrelaçamento)
+  if (info.dpi && info.dpi !== 600 &&
+      !confirm(`Este PNG está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return null;
+  marcar("enviando 0%…");
+  const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
+    (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
+  marcar("gerando miniatura…");
+  let previaUrl = "";
+  try {
+    const mini = await miniaturaDaArte(bytes, info);
+    previaUrl = (await enviarArquivoDrive(driveScriptUrl,
+      new File([mini], file.name.replace(/\.png$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
+  } catch (e) {
+    console.warn("Miniatura não gerada:", e);
+  }
+  return {
+    partes: env.partes, nomeArquivo: file.name,
+    larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600, previaUrl
+  };
+}
+
 async function enviarArquivoProducao(timeId, slot, goleiro, arquivo) {
   if (!exigirDriveProducao()) return;
   const accept = slot === "brasao" ? ".eps,.ps,application/postscript"
@@ -743,26 +834,8 @@ async function enviarArquivoProducao(timeId, slot, goleiro, arquivo) {
       guardarArquivoDriveNoCache(env.partes, bytes);
       dados = { partes: env.partes, nome: file.name.replace(/\.(ttf|otf)$/i, "") };
     } else {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const info = PngStream.lerCabecalho(bytes); // valida (8 bits, sem entrelaçamento)
-      if (info.dpi && info.dpi !== 600 &&
-          !confirm(`Este PNG está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return;
-      marcar("enviando 0%…");
-      const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
-        (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
-      marcar("gerando miniatura…");
-      let previaUrl = "";
-      try {
-        const mini = await miniaturaDaArte(bytes, info);
-        previaUrl = (await enviarArquivoDrive(driveScriptUrl,
-          new File([mini], file.name.replace(/\.png$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
-      } catch (e) {
-        console.warn("Miniatura não gerada:", e);
-      }
-      dados = {
-        partes: env.partes, nomeArquivo: file.name,
-        larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600, previaUrl
-      };
+      dados = await enviarPngProducao(file, pref, marcar);
+      if (!dados) return;
     }
     const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
     const alvo = goleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
@@ -862,7 +935,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   }
 
   const fonte = fonteProntaDoTime(time);
-  const elementos = EPS.elementosDaPecaNoTime(layoutConfig, prod, pecaId);
+  const elementos = EPS.elementosDaPecaNoTime(layoutDoTime(time), prod, pecaId);
   (soArte === true ? [] : elementos).forEach((elGeral) => {
     const ajTime = ajusteDaProducao(prod, pecaId, elGeral.id);
     const el = EPS.elementoDoTime(elGeral, ajTime);
@@ -1472,9 +1545,114 @@ function timesParaLayout() {
     .sort((a, b) => a[1].time.nome.localeCompare(b[1].time.nome, "pt-BR"));
 }
 
+// O editor mexe num nível: "" = layout geral; "c:<id>" = a arte de um
+// cliente (só os times dele); o id de um time = aquele time (e, com o
+// seletor em Goleiro, a camiseta do goleiro dele).
+const PREFIXO_MODO_CLIENTE = "c:";
+
+function modoCliente() {
+  return layoutModo.startsWith(PREFIXO_MODO_CLIENTE) ? layoutModo.slice(PREFIXO_MODO_CLIENTE.length) : "";
+}
+
+function modoTime() {
+  return layoutModo && !layoutModo.startsWith(PREFIXO_MODO_CLIENTE) ? layoutModo : "";
+}
+
+function nomeClienteArte(clienteId) {
+  const c = typeof estadoClientes !== "undefined" && estadoClientes[clienteId];
+  return c ? c.nome || c.id : clienteId;
+}
+
+// "neste time", "no goleiro", "neste cliente" (textos do painel).
+function ondeNoEditor() {
+  if (modoCliente()) return "neste cliente";
+  return layoutGoleiro ? "no goleiro" : "neste time";
+}
+
+// "Arte do cliente": abre a aba Artes editando aquele cliente.
+function abrirArteDoCliente(clienteId) {
+  layoutModo = layoutModoArtes = PREFIXO_MODO_CLIENTE + clienteId;
+  layoutElSel = "";
+  const aba = document.querySelector('.aba[data-aba="artes"]');
+  if (aba) aba.click();
+  else renderizarEditorLayout();
+}
+
+// Time cujos arquivos (arte, brasão, fonte) aparecem no palco: no modo time,
+// o próprio time (na variante aberta); senão, o escolhido em "Prévia com a
+// arte de" (no modo cliente, um time daquele cliente).
 function timeDaPrevia() {
-  const id = layoutModo || layoutTimePrevia;
-  return id && estadoTimes[id] ? timeNaVariante(estadoTimes[id].time, layoutModo && layoutGoleiro) : null;
+  const t = modoTime();
+  const id = t || layoutTimePrevia;
+  return id && estadoTimes[id] ? timeNaVariante(estadoTimes[id].time, !!t && layoutGoleiro) : null;
+}
+
+// Elementos "de cima" da peça no editor (fora os extras do nível aberto):
+// no time, o layout geral já com a arte do cliente dele; no cliente e no
+// geral, o layout geral.
+function elementosBaseNoEditor(pecaId) {
+  const p = pecaId || layoutPeca;
+  const t = modoTime();
+  if (t && estadoTimes[t]) {
+    const lay = layoutDoTime(estadoTimes[t].time);
+    return (lay.pecas[p] && lay.pecas[p].elementos) || [];
+  }
+  return elementosDaPeca(p);
+}
+
+// Oculto no nível aberto? O ajuste dele decide; sem ele, vale o de cima
+// (o cliente pode ter escondido um elemento do layout geral).
+function ocultoNoEditor(el, aj) {
+  return aj && "oculto" in aj ? !!aj.oculto : !!el.oculto;
+}
+
+// Abre o nível do editor para mudar e gravar: { prod (cópia editável),
+// alvo (onde ficam layoutAjustes/elementosExtras), gravar() }.
+function abrirNivelEditor() {
+  const erro = (e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); };
+  const cid = modoCliente();
+  if (cid) {
+    if (!estadoClientes[cid]) return null;
+    const antes = JSON.stringify(arteDoCliente(cid) || {});
+    const prod = limparParaFirestore(arteDoCliente(cid) || {});
+    return {
+      prod, alvo: prod,
+      gravar: () => {
+        registrarHistorico({ tipo: "cliente", clienteId: cid, antes, depois: JSON.stringify(prod) });
+        return gravarArteCliente(cid, prod).then(() => estadoSalvarLayout("✓ Salvo no cliente")).catch(erro);
+      }
+    };
+  }
+  const timeId = modoTime();
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  if (!time) return null;
+  const antes = JSON.stringify(producaoDoTime(time));
+  const prod = limparParaFirestore(producaoDoTime(time));
+  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+  return {
+    prod, alvo,
+    gravar: () => {
+      if (layoutGoleiro) limparGoleiroVazio(prod);
+      registrarHistorico({ tipo: "time", timeId, antes, depois: JSON.stringify(prod) });
+      return gravarProducaoTime(timeId, prod)
+        .then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time")).catch(erro);
+    }
+  };
+}
+
+// Grava a arte de um cliente (sem o que ficou vazio). A prévia do cliente de
+// cada time dele é refeita.
+async function gravarArteCliente(clienteId, arte) {
+  const a = limparParaFirestore(arte || {});
+  Object.keys(a.layoutAjustes || {}).forEach((p) => { if (!Object.keys(a.layoutAjustes[p] || {}).length) delete a.layoutAjustes[p]; });
+  Object.keys(a.elementosExtras || {}).forEach((p) => { if (!(a.elementosExtras[p] || []).length) delete a.elementosExtras[p]; });
+  if (a.layoutAjustes && !Object.keys(a.layoutAjustes).length) delete a.layoutAjustes;
+  if (a.elementosExtras && !Object.keys(a.elementosExtras).length) delete a.elementosExtras;
+  if (estadoClientes[clienteId]) estadoClientes[clienteId].arte = a; // já mostra
+  await db.collection(COL_CLIENTES).doc(clienteId).update({ arte: a });
+  Object.entries(estadoTimes).forEach(([id, e]) => {
+    if (clienteIdDoTime(e.time) === clienteId) agendarPreviaCliente(id);
+  });
 }
 
 function tamanhosComMolde(pecaId) {
@@ -1500,17 +1678,34 @@ function renderizarEditorLayout() {
   if (foco && foco.tagName === "INPUT" && foco.type !== "checkbox") return;
 
   const times = timesParaLayout();
-  if (layoutModo && !estadoTimes[layoutModo]) layoutModo = "";
-  if (!layoutModo && (!layoutTimePrevia || !estadoTimes[layoutTimePrevia])) {
-    const comArte = times.find(([, e]) => e.time.producao && e.time.producao.pecas);
-    layoutTimePrevia = comArte ? comArte[0] : "";
+  if (modoTime() && !estadoTimes[modoTime()]) layoutModo = "";
+  if (modoCliente() && !(typeof estadoClientes !== "undefined" && estadoClientes[modoCliente()])) layoutModo = "";
+  // Times da prévia: no modo cliente, só os daquele cliente.
+  const cid = modoCliente();
+  const timesPrevia = cid ? times.filter(([, e]) => clienteIdDoTime(e.time) === cid) : times;
+  if (!modoTime() && !timesPrevia.some(([id]) => id === layoutTimePrevia)) {
+    const comArte = timesPrevia.find(([, e]) => e.time.producao && e.time.producao.pecas);
+    layoutTimePrevia = comArte ? comArte[0] : (timesPrevia[0] ? timesPrevia[0][0] : "");
   }
   const tam = tamanhoDoEditor();
-  const opcTimes = (sel) => times.map(([id, e]) =>
+  const opcTimes = (sel, lista) => (lista || times).map(([id, e]) =>
     `<option value="${escAttr(id)}"${id === sel ? " selected" : ""}>${escapeHtmlAdmin(e.time.nome)}</option>`).join("");
+  const clientes = typeof clientesOrdenados === "function" ? clientesOrdenados() : [];
+  const opcClientes = clientes.map((c) => {
+    const v = PREFIXO_MODO_CLIENTE + c.id;
+    return `<option value="${escAttr(v)}"${v === layoutModo ? " selected" : ""}>Cliente: ${escapeHtmlAdmin(c.nome || c.id)}</option>`;
+  }).join("");
 
-  const qtdNaPeca = (id) => ((layoutConfig.pecas[id] && layoutConfig.pecas[id].elementos) || []).length + extrasNoEditor(id).length;
-  const nomeTime = layoutModo && estadoTimes[layoutModo] ? escapeHtmlAdmin(estadoTimes[layoutModo].time.nome) : "";
+  const qtdNaPeca = (id) => elementosBaseNoEditor(id).length + extrasNoEditor(id).length;
+  const nomeTime = modoTime() && estadoTimes[modoTime()] ? escapeHtmlAdmin(estadoTimes[modoTime()].time.nome)
+    : cid ? "Cliente: " + escapeHtmlAdmin(nomeClienteArte(cid)) : "";
+  // No time de um cliente com arte própria, o de cima é a arte do cliente.
+  const cliDoTime = modoTime() ? clienteIdDoTime(estadoTimes[modoTime()].time) : "";
+  const cimaDoTime = cliDoTime && arteDoCliente(cliDoTime)
+    ? `a arte do cliente <strong>${escapeHtmlAdmin(nomeClienteArte(cliDoTime))}</strong> e o layout geral`
+    : "o layout geral (aba Artes)";
+  const linkCliente = cliDoTime && editorTravado
+    ? ` <button type="button" class="link-botao" data-l="abrirCliente">Editar a arte do cliente</button>` : "";
   const ferramenta = (tipo, ic, titulo) =>
     `<button type="button" class="ferramenta" data-add="${tipo}" title="${escAttr(titulo)}" aria-label="${escAttr(titulo)}">${icone(ic)}</button>`;
   elEditorLayout.innerHTML = `
@@ -1518,9 +1713,11 @@ function renderizarEditorLayout() {
       <header class="estudio-topo">
         <span class="estudio-titulo">${icone("palette")} ${layoutModo ? nomeTime : "Layout geral"}</span>
         ${editorTravado ? "" : `<label class="campo-inline">Editando
-          <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
-        ${layoutModo ? "" : `<label class="campo-inline">Prévia com a arte de
-          <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
+          <select data-l="modo"><option value="">Layout geral (todos os times)</option>
+            ${opcClientes ? `<optgroup label="Clientes (só os times do cliente)">${opcClientes}</optgroup>` : ""}
+            <optgroup label="Times">${opcTimes(modoTime())}</optgroup></select></label>`}
+        ${modoTime() ? "" : `<label class="campo-inline">Prévia com a arte de
+          <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia, timesPrevia)}</select></label>`}
         <label class="campo-inline">Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
         <label class="campo-inline">Nº <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" class="input-curto" /></label>
         <span class="estudio-espaco"></span>
@@ -1533,7 +1730,9 @@ function renderizarEditorLayout() {
       </header>
       ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutGoleiro
         ? `${icone("hand")} Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
-        : `${icone("pencil")} Editando <strong>${nomeTime}</strong>: o que mudar ou adicionar aqui vale só para este time. O resto segue o layout geral (aba Artes).`}</p>`}
+        : cid
+        ? `${icone("pencil")} Editando a arte do cliente <strong>${escapeHtmlAdmin(nomeClienteArte(cid))}</strong>: o que mudar ou adicionar aqui vale só para os times deste cliente — os outros clientes não veem nada disto. Cada time ainda pode ter o ajuste próprio por cima.`
+        : `${icone("pencil")} Editando <strong>${nomeTime}</strong>: o que mudar ou adicionar aqui vale só para este time. O resto segue ${cimaDoTime}.${linkCliente}`}</p>`}
       <div class="estudio-corpo">
         <div class="estudio-canvas">
           ${`<div class="estudio-ferramentas" role="toolbar" aria-label="${layoutModo ? "Adicionar só neste time" : "Adicionar à peça"}">
@@ -1548,7 +1747,8 @@ function renderizarEditorLayout() {
             ${ferramenta("numero", "hash", "Adicionar número")}
             ${ferramenta("brasao", "shield", "Adicionar brasão do time")}
             ${ferramenta("logo", "tag", "Adicionar logo da empresa")}
-            ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}`}
+            ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}
+            ${ferramenta("imagem", "image", "Adicionar imagem própria (PNG 600 dpi ou EPS): patrocinador, selo, desenho…")}`}
           </div>`}
           <p class="estudio-peca-rotulo">${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}${tam ? ` · ${escapeHtmlAdmin(tam)}${tam === moldesConfig.tamanhoBase ? " (base)" : ""}` : ""}</p>
           <div class="arte-palco-wrap estudio-palco-fundo"><div class="palco-reguas"><svg class="regua regua-h" aria-hidden="true"></svg><svg class="regua regua-v" aria-hidden="true"></svg><div id="layoutPalco" class="arte-palco"></div></div></div>
@@ -1621,9 +1821,11 @@ function renderizarEditorLayout() {
   if (q('[data-l="modo"]')) q('[data-l="modo"]').onchange = (ev) => {
     layoutModo = ev.target.value;
     layoutModoArtes = layoutModo;
-    if (layoutModo) layoutTimePrevia = layoutModo;
+    if (modoTime()) layoutTimePrevia = layoutModo;
+    layoutElSel = "";
     renderizarEditorLayout();
   };
+  if (q('[data-l="abrirCliente"]')) q('[data-l="abrirCliente"]').onclick = () => abrirArteDoCliente(cliDoTime);
   if (q('[data-l="previa"]')) q('[data-l="previa"]').onchange = (ev) => { layoutTimePrevia = ev.target.value; renderizarEditorLayout(); };
   elEditorLayout.querySelectorAll("[data-peca]").forEach((b) => {
     b.onclick = () => { layoutPeca = b.dataset.peca; layoutElSel = ""; renderizarEditorLayout(); };
@@ -1674,6 +1876,8 @@ function ajusteDoTime(timeId, pecaId, elId, goleiro) {
 
 // O que vale no editor (time e variante abertos).
 function ajusteNoEditor(pecaId, elId) {
+  const cid = modoCliente();
+  if (cid) return ajusteDaProducao(arteDoCliente(cid), pecaId, elId);
   return ajusteDoTime(layoutModo, pecaId, elId, layoutGoleiro);
 }
 
@@ -1750,6 +1954,7 @@ function iconeElementoLayout(el) {
   if (el.tipo === "brasao") return icone("shield");
   if (el.tipo === "logo") return icone("tag");
   if (el.tipo === "detalhe") return icone("waves");
+  if (el.tipo === "imagem") return icone("image");
   if (el.tipo === "numero") return icone("hash");
   if (el.campo === "tamanho") return icone("shirt");
   if (el.campo === "time") return icone("users");
@@ -1761,6 +1966,7 @@ function rotuloElementoLayout(el) {
   if (el.tipo === "brasao") return "Brasão";
   if (el.tipo === "logo") return "Logo da empresa";
   if (el.tipo === "detalhe") return "Detalhe da manga";
+  if (el.tipo === "imagem") return "Imagem: " + ((el.arquivo && el.arquivo.nomeArquivo) || "(sem arquivo)");
   if (el.tipo === "numero") return "Número";
   if (el.campo === "tamanho") return "Tamanho";
   if (el.campo === "time") return "Nome do time";
@@ -1820,7 +2026,7 @@ function renderizarPalcoLayout() {
     const ajTime = ehExtra(elGeral.id) ? undefined : ajusteNoEditor(layoutPeca, elGeral.id);
     // Oculto neste time: aparece apagado (dá para selecionar e mostrar de novo).
     const el = EPS.elementoDoTime(elGeral, ajTime) || elGeral;
-    const oculto = !!(ajTime && ajTime.oculto);
+    const oculto = ocultoNoEditor(elGeral, ajTime);
     const c = caixaNoEditor(el, m);
     const div = document.createElement("div");
     const temAjusteTime = !!ajTime;
@@ -1836,7 +2042,7 @@ function renderizarPalcoLayout() {
       const url = imagemDaCaixa(el, prod, layoutPeca);
       div.innerHTML = url
         ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${EPS.imagemLivre(el) ? "fill" : "contain"}" />`
-        : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
+        : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : el.tipo === "imagem" ? "Imagem" : "Brasão"}</span>`;
     } else if (fonte) {
       // Sem o giro: quem gira é a caixa inteira (a div), com a seleção junto.
       const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraComTam(amostraLayout, m.tam, time)), { w: c.w, h: c.h }, el, { semGiro: true });
@@ -1912,6 +2118,8 @@ let elementoCopiado = null; // Ctrl+C (só no layout geral)
 // Os extras que valem no editor (time e variante abertos), só leitura.
 function extrasNoEditor(pecaId) {
   if (!layoutModo) return [];
+  const cid = modoCliente();
+  if (cid) return ((arteDoCliente(cid) || {}).elementosExtras || {})[pecaId || layoutPeca] || [];
   const t = timeDaPrevia();
   return ((producaoDoTime(t).elementosExtras) || {})[pecaId || layoutPeca] || [];
 }
@@ -1922,16 +2130,14 @@ function ehExtra(elId) {
 
 // Todos os elementos da peça aberta no editor: os gerais e, no pedido, os do time.
 function elementosNoEditor() {
-  return elementosDaPeca(layoutPeca).concat(extrasNoEditor());
+  return elementosBaseNoEditor(layoutPeca).concat(extrasNoEditor());
 }
 
 // Muda a lista de extras da peça aberta e grava no time (com desfazer).
 function mudarExtrasTime(mudar) {
-  const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
-  if (!time) return Promise.resolve();
-  const antes = JSON.stringify(producaoDoTime(time));
-  const prod = limparParaFirestore(producaoDoTime(time));
-  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+  const nivel = abrirNivelEditor();
+  if (!nivel) return Promise.resolve();
+  const { prod, alvo } = nivel;
   alvo.elementosExtras = alvo.elementosExtras || {};
   if (!alvo.elementosExtras[layoutPeca]) {
     // Goleiro mexendo pela primeira vez: parte da lista da camiseta comum.
@@ -1941,11 +2147,7 @@ function mudarExtrasTime(mudar) {
   mudar(alvo.elementosExtras[layoutPeca]);
   if (!alvo.elementosExtras[layoutPeca].length && !layoutGoleiro) delete alvo.elementosExtras[layoutPeca];
   if (!Object.keys(alvo.elementosExtras).length) delete alvo.elementosExtras;
-  if (layoutGoleiro) limparGoleiroVazio(prod);
-  registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
-  return gravarProducaoTime(layoutModo, prod)
-    .then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
-    .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
+  return nivel.gravar();
 }
 
 // Muda um extra (pelo id) e grava.
@@ -2352,17 +2554,16 @@ function gravarCaixaLayout(el, m, caixa) {
     return;
   }
   if (layoutModo) {
-    const time = estadoTimes[layoutModo].time;
-    const antes = JSON.stringify(producaoDoTime(time));
-    const prod = limparParaFirestore(producaoDoTime(time));
-    const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+    const nivel = abrirNivelEditor();
+    if (!nivel) return;
+    const { prod, alvo } = nivel;
     alvo.layoutAjustes = alvo.layoutAjustes || {};
     const porPeca = alvo.layoutAjustes[layoutPeca] = alvo.layoutAjustes[layoutPeca] || {};
     const aj = porPeca[el.id] = porPeca[el.id] || {};
     // Primeira mudança de posição do goleiro: parte da posição da comum (a
     // posição vale inteira de um ou do outro — ver mesclarAjusteGoleiro).
     if (layoutGoleiro && !aj.base && !aj.tamanhos) {
-      const daComum = ajusteDaProducao(producaoDoTime(time), layoutPeca, el.id) || {};
+      const daComum = ajusteDaProducao(prod, layoutPeca, el.id) || {};
       if (daComum.base) aj.base = limparParaFirestore(daComum.base);
       if (daComum.tamanhos) aj.tamanhos = limparParaFirestore(daComum.tamanhos);
     }
@@ -2371,9 +2572,7 @@ function gravarCaixaLayout(el, m, caixa) {
       aj.tamanhos = aj.tamanhos || {};
       aj.tamanhos[m.tam] = c;
     }
-    registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
-    gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
-      .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
+    nivel.gravar();
     return;
   }
   if (m.ehBase) el.caixa = c;
@@ -2384,7 +2583,69 @@ function gravarCaixaLayout(el, m, caixa) {
   salvarLayout();
 }
 
+// Imagem própria de um elemento: PNG (600 dpi) ou EPS, enviado ao Drive.
+async function escolherImagemDeElemento() {
+  if (!exigirDriveProducao()) return null;
+  const file = await escolherArquivos(".png,image/png,.eps,.ps,application/postscript");
+  if (!file) return null;
+  const pref = "elemento-" + (slugify(file.name.replace(/\.[^.]+$/, "")) || "imagem");
+  try {
+    if (/\.(eps|ps)$/i.test(file.name) || file.type === "application/postscript") {
+      const d = await enviarEpsComPrevia(file, pref, 600);
+      if (d.semPrevia) alert("A imagem foi enviada, mas a prévia não pôde ser desenhada. Ela aparece como uma caixa no editor.");
+      return { formato: "eps", partes: d.partes, epsId: d.epsId, bbox: d.bbox, previaUrl: d.previaUrl, nomeArquivo: d.nomeArquivo };
+    }
+    const d = await enviarPngProducao(file, pref, (t) => estadoSalvarLayout(t ? "Imagem: " + t : ""));
+    return d ? { formato: "png", ...d } : null;
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Não foi possível enviar a imagem.");
+    return null;
+  } finally {
+    avisoProducao("");
+  }
+}
+
+// Proporção (altura / largura) do arquivo de uma imagem própria.
+function proporcaoDoArquivo(a) {
+  if (a && a.formato === "eps" && a.bbox) {
+    const d = EPS.tamanhoMmDoBbox(a.bbox);
+    return d.w ? d.h / d.w : 1;
+  }
+  return a && a.larguraPx ? a.alturaPx / a.larguraPx : 1;
+}
+
+// "+ Imagem": envia o arquivo e põe a caixa no meio da peça, na proporção
+// dele — no nível aberto (geral, cliente, time ou goleiro).
+async function adicionarImagemLayout() {
+  const m = medidasLayout();
+  if (!m) {
+    alert("Envie o molde de corte desta peça na aba Tamanhos primeiro.");
+    return;
+  }
+  const arquivo = await escolherImagemDeElemento();
+  if (!arquivo) return;
+  const b = m.base;
+  const w = b.w * 0.3;
+  const caixa = { x: (b.w - w) / 2, y: b.h * 0.3, w, h: w * proporcaoDoArquivo(arquivo) };
+  ["x", "y", "w", "h"].forEach((k) => (caixa[k] = arred1(caixa[k])));
+  const el = { id: novoIdLayout("e"), tipo: "imagem", caixa, arquivo };
+  layoutElSel = el.id;
+  if (layoutModo) {
+    await mudarExtrasTime((lista) => lista.push(el));
+    renderizarEditorLayout();
+    return;
+  }
+  elementosDaPeca(layoutPeca).push(el);
+  salvarLayout(true);
+  renderizarEditorLayout();
+}
+
 function adicionarElementoLayout(tipo) {
+  if (tipo === "imagem") {
+    adicionarImagemLayout();
+    return;
+  }
   const m = medidasLayout();
   if (!m) {
     alert("Envie o molde de corte desta peça na aba Tamanhos primeiro.");
@@ -2501,17 +2762,20 @@ function renderizarPainelLayout() {
         const doTime = layoutModo && ehExtra(e.id);
         const ajE = doTime ? undefined : ajusteNoEditor(layoutPeca, e.id);
         const eT = EPS.elementoDoTime(e, ajE) || { ...e, ...((ajE && ajE.estilo) || {}) };
-        return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ajE && ajE.oculto ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
+        const ocE = !doTime && ocultoNoEditor(e, ajE);
+        return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ocE ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
           `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
           `${seloAjusteTime(ajE)}` +
-          (doTime ? ' <span class="badge selo-do-time" title="Elemento só deste time">só do time</span>' : "") +
+          (doTime ? (modoCliente() ? ' <span class="badge selo-do-time" title="Elemento só deste cliente">só do cliente</span>'
+            : ' <span class="badge selo-do-time" title="Elemento só deste time">só do time</span>') : "") +
+          (modoTime() && e.clienteArte ? ' <span class="badge selo-do-time" title="Elemento da arte do cliente">do cliente</span>' : "") +
           `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}` +
           `<span class="camada-acoes">` +
-          (layoutModo && !doTime ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ajE && ajE.oculto ? "Mostrar neste time" : "Ocultar neste time"}">${icone(ajE && ajE.oculto ? "eye-off" : "eye")}</button>` : "") +
+          (layoutModo && !doTime ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ocE ? "Mostrar" : "Ocultar"} ${ondeNoEditor()}">${icone(ocE ? "eye-off" : "eye")}</button>` : "") +
           `<button type="button" class="camada-botao${eT.travado ? " ligado" : ""}" data-camada-trava="${escAttr(e.id)}" title="${eT.travado ? "Destravar" : "Travar (não deixa mover sem querer)"}">${icone(eT.travado ? "lock" : "lock-open")}</button>` +
           `</span></li>`;
       }).join("") ||
-        `<li class="lista-elementos-vazia">Nada nesta peça — use as ferramentas à esquerda do desenho para adicionar${layoutModo ? " (o que adicionar aqui vale só para este time)" : ""}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+        `<li class="lista-elementos-vazia">Nada nesta peça — use as ferramentas à esquerda do desenho para adicionar${layoutModo ? ` (o que adicionar aqui vale só ${ondeNoEditor()})` : ""}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
       ${els.length && !layoutElSel ? '<p class="pix-ajuda">Clique num elemento (aqui ou no desenho) para editar.</p>' : ""}
     </section>
     <div id="layoutPainelEl"></div>`;
@@ -2526,7 +2790,9 @@ function renderizarPainelLayout() {
     b.onclick = (ev) => {
       ev.stopPropagation();
       const aj = ajusteNoEditor(layoutPeca, b.dataset.camadaOlho);
-      gravarAjusteTime(b.dataset.camadaOlho, (a) => { a.oculto = !(aj && aj.oculto); })
+      const e = els.find((x) => x.id === b.dataset.camadaOlho);
+      const oculto = e ? ocultoNoEditor(e, aj) : !!(aj && aj.oculto);
+      gravarAjusteTime(b.dataset.camadaOlho, (a) => { a.oculto = !oculto; })
         .then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
     };
   });
@@ -2551,8 +2817,15 @@ function renderizarPainelLayout() {
   const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
   const ehTexto = !ehCaixaImagem(el);
 
+  // "Voltar" desfaz o ajuste do nível aberto: volta ao que vem de cima.
+  const cimaEhCliente = modoTime() && !!arteDoCliente(clienteIdDoTime(estadoTimes[modoTime()].time));
+  const rotuloVoltar = layoutGoleiro ? "Voltar à camiseta comum" : cimaEhCliente ? "Voltar à arte do cliente" : "Voltar ao layout geral";
   const estado = extra
-    ? `Elemento só ${layoutGoleiro ? "da camiseta do goleiro" : "deste time"} — não aparece nos outros times.`
+    ? modoCliente() ? "Elemento só deste cliente — não aparece para os outros clientes."
+      : `Elemento só ${layoutGoleiro ? "da camiseta do goleiro" : "deste time"} — não aparece nos outros times.`
+    : modoCliente()
+    ? aj ? `Ajustado neste cliente${temPosicao ? " (posição)" : ""}${temEstilo ? " (estilo)" : ""}${aj.oculto ? " (oculto)" : ""} — só para os times dele.`
+      : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para os times deste cliente."
     : layoutGoleiro
     ? ajProprio ? `O goleiro tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
       : "Igual à camiseta comum deste time — mudar qualquer coisa aqui cria um ajuste só para o goleiro."
@@ -2571,9 +2844,9 @@ function renderizarPainelLayout() {
         <button type="button" class="painel-fechar" data-acao="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">${icone("x")}</button>
       </div>
       <p class="pix-ajuda">${estado}</p>
-      ${layoutModo && !extra ? `<label class="interruptor"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> <span>${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</span></label>` : ""}
+      ${layoutModo && !extra ? `<label class="interruptor"><input type="checkbox" data-oculto ${ocultoNoEditor(el, aj) ? "checked" : ""} /> <span>Ocultar ${ondeNoEditor()}</span></label>` : ""}
       ${layoutModo && ajProprio ? `<div class="arte-botoes-el">
-        <button type="button" class="secundario" data-acao="voltarGeral">${icone("undo-2")} ${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>
+        <button type="button" class="secundario" data-acao="voltarGeral">${icone("undo-2")} ${rotuloVoltar}</button>
         ${posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">' + icone("undo-2") + ' Só a posição</button>' : ""}
       </div>` : ""}
     </section>
@@ -2590,6 +2863,8 @@ function renderizarPainelLayout() {
         <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
       ${!ehTexto ? `<label class="interruptor"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> <span>Manter proporção</span></label>
         <p class="pix-ajuda">Desmarque para esticar na largura e na altura, cada uma no seu.</p>` : ""}
+      ${elT.tipo === "imagem" ? `<p class="pix-ajuda">Arquivo: <strong>${escapeHtmlAdmin((elT.arquivo && elT.arquivo.nomeArquivo) || "—")}</strong>${elT.arquivo && elT.arquivo.formato ? ` (${escapeHtmlAdmin(elT.arquivo.formato.toUpperCase())})` : ""}</p>
+        <div class="arte-botoes-el"><button type="button" class="secundario" data-trocar-imagem>${icone("image")} Trocar imagem${layoutModo && !extra ? " " + ondeNoEditor() : ""}</button></div>` : ""}
       <div class="arte-botoes-el">
         <button type="button" class="secundario" data-acao="centralizar">${icone("move-horizontal")} Centralizar na largura</button>
         ${edicaoCompleta && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">' + icone("undo-2") + ' Voltar ao proporcional</button>' : ""}
@@ -2721,6 +2996,13 @@ function renderizarPainelLayout() {
       redesenhar();
     };
   }
+  const btTrocar = box.querySelector("[data-trocar-imagem]");
+  if (btTrocar) {
+    btTrocar.onclick = async () => {
+      const arquivo = await escolherImagemDeElemento();
+      if (arquivo) gravarEstiloElemento(el.id, "arquivo", arquivo);
+    };
+  }
   const chkProp = box.querySelector("[data-proporcao]");
   if (chkProp) chkProp.onchange = () => gravarEstilo("livre", !chkProp.checked);
   box.querySelectorAll("[data-cx]").forEach((inp) => {
@@ -2799,26 +3081,23 @@ function renderizarPainelLayout() {
 // Muda o ajuste próprio do time aberto no editor para um elemento da peça
 // mostrada (posição, estilo, oculto) e grava. Ajuste vazio é apagado.
 function gravarAjusteTime(elId, mudar) {
-  const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
-  if (!time) return Promise.resolve();
-  const antes = JSON.stringify(producaoDoTime(time));
-  const prod = limparParaFirestore(producaoDoTime(time));
-  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+  const nivel = abrirNivelEditor();
+  if (!nivel) return Promise.resolve();
+  const { prod, alvo } = nivel;
   alvo.layoutAjustes = alvo.layoutAjustes || {};
   const porPeca = alvo.layoutAjustes[layoutPeca] = alvo.layoutAjustes[layoutPeca] || {};
   const aj = porPeca[elId] = porPeca[elId] || {};
   mudar(aj);
   if (aj.estilo && !Object.keys(aj.estilo).length) delete aj.estilo;
-  // No goleiro, "mostrar" (oculto: false) só precisa ficar gravado quando
-  // a comum esconde o elemento.
-  const comumOculto = !!(ajusteDaProducao(prod, layoutPeca, elId) || {}).oculto;
-  if (!aj.oculto && !(layoutGoleiro && comumOculto && aj.oculto === false)) delete aj.oculto;
+  // "Mostrar" (oculto: false) só precisa ficar gravado quando o de cima
+  // esconde o elemento: a arte do cliente ou, no goleiro, a camiseta comum.
+  const base = elementosBaseNoEditor(layoutPeca).find((e) => e.id === elId);
+  const deCimaOculto = !!(base && base.oculto) ||
+    (layoutGoleiro && !!(ajusteDaProducao(prod, layoutPeca, elId) || {}).oculto);
+  if (!aj.oculto && !(deCimaOculto && aj.oculto === false)) delete aj.oculto;
   if (!Object.keys(aj).length) delete porPeca[elId];
   if (!Object.keys(porPeca).length) delete alvo.layoutAjustes[layoutPeca];
-  if (layoutGoleiro) limparGoleiroVazio(prod);
-  registrarHistorico({ tipo: "time", timeId: layoutModo, antes, depois: JSON.stringify(prod) });
-  return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
-    .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
+  return nivel.gravar();
 }
 
 // ============================================================
@@ -2839,7 +3118,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
     const bytes = await baixarArquivoDrive(driveScriptUrl, ref);
     return { bytes: EPS.extrairPostScript(bytes), bbox: bbox || EPS.lerBoundingBox(bytes) };
   };
-  const usaLogo = usaNoTime(prod, (e) => e.tipo === "logo");
+  const usaLogo = usaNoTime(time, (e) => e.tipo === "logo");
   if (usaLogo && logoEmpresa) {
     aviso("Carregando o logo da empresa…");
     rec.eps.logo = await lerEps(logoEmpresa.partes || logoEmpresa.epsId, logoEmpresa.bbox);
@@ -2858,14 +3137,32 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
   }
   // Imagens (PNG → CMYK): a arte de cada peça e o detalhe da manga. A mesma
   // arte nas duas mangas é convertida uma vez só (mesma chave).
+  // Imagens próprias (elemento "imagem"): PNG vai para a lista, EPS já entra.
+  const lay = layoutDoTime(time);
   const imagens = [];
-  pecasIds.forEach((pecaId) => {
+  for (const pecaId of pecasIds) {
     const ad = EPS.arteDaPeca(prod, pecaId);
     if (ad) imagens.push({ chave: ad.chave, img: ad.arte, nome: nomePecaProducao(pecaId) });
-    const usaDetalhe = EPS.elementosDaPecaNoTime(layoutConfig, prod, pecaId).some((e) => e.tipo === "detalhe");
+    const elementos = EPS.elementosDaPecaNoTime(lay, prod, pecaId)
+      .filter((e) => EPS.elementoDoTime(e, ajusteDaProducao(prod, pecaId, e.id)));
+    const usaDetalhe = elementos.some((e) => e.tipo === "detalhe");
     const d = usaDetalhe && EPS.detalheDaPeca(prod, pecaId);
     if (d) imagens.push({ chave: d.chave, img: d.img, nome: "detalhe da manga" });
-  });
+    for (const e of elementos) {
+      // O arquivo pode ter sido trocado no time (estilo): vale o do ajuste.
+      const el = EPS.elementoDoTime(e, ajusteDaProducao(prod, pecaId, e.id));
+      const a = el.tipo === "imagem" && el.arquivo;
+      if (!a) continue;
+      const chave = EPS.chaveDoElemento(el);
+      if (a.formato === "eps") {
+        if (rec.eps[chave]) continue;
+        aviso(`Carregando a imagem ${a.nomeArquivo || ""}…`);
+        rec.eps[chave] = await lerEps(a.partes || a.epsId, a.bbox);
+      } else {
+        imagens.push({ chave, img: a, nome: a.nomeArquivo || "imagem" });
+      }
+    }
+  }
   for (const { chave, img, nome } of imagens) {
     if (rec.imagens[chave]) continue;
     aviso(`Baixando a arte ${nome}…`);
@@ -2885,7 +3182,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
 function pecasDoTime(time) {
   const prod = producaoDoTime(time);
   return PECAS_PRODUCAO.map((p) => p.id).filter((id) =>
-    EPS.arteDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutConfig, prod, id).length)
+    EPS.arteDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutDoTime(time), prod, id).length)
     .concat(pecasVirtuaisDoTime(time));
 }
 
@@ -2895,7 +3192,7 @@ function pecasVirtuaisDoTime(time) {
   const prod = producaoDoTime(time);
   const ids = [];
   if (Object.values(moldesConfig.reforcoOmbro || {}).some((v) => Number(v) > 0)) ids.push("reforcoOmbro");
-  if (EPS.elementosDaPecaNoTime(layoutConfig, prod, "etiquetaTam").length) ids.push("etiquetaTam");
+  if (EPS.elementosDaPecaNoTime(layoutDoTime(time), prod, "etiquetaTam").length) ids.push("etiquetaTam");
   return ids;
 }
 
@@ -3027,7 +3324,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
         (t) => avisoProducao(`${rotuloTime}: ${t}`));
       avisoProducao(`${rotuloTime}: montando a folha…`);
       await esperarTela();
-      const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutConfig, time, g.camisetas, rec,
+      const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutDoTime(time), time, g.camisetas, rec,
         { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
       avB.forEach((a) => avisos.push(`${rotuloTime}: ${a}`));
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
@@ -3076,7 +3373,11 @@ async function baixarEpsDeTesteLayout() {
   if (!exigirDriveProducao()) return;
   try {
     const rec = await carregarRecursosDoTime(time, [m.tam], [layoutPeca], 150, avisoProducao);
-    const { blocos, avisos } = EPS.montarBlocos(moldesConfig, layoutConfig, time,
+    // No modo cliente, o teste mostra a arte do cliente sem os ajustes do time.
+    const cid = modoCliente();
+    const timeTeste = cid ? { ...time, producao: { ...producaoDoTime(time), layoutAjustes: {}, elementosExtras: {} } } : time;
+    const layTeste = cid ? layoutDoCliente(cid) : modoTime() ? layoutDoTime(time) : layoutConfig;
+    const { blocos, avisos } = EPS.montarBlocos(moldesConfig, layTeste, timeTeste,
       [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: true, sangriaMm: (layoutConfig.folha || {}).sangriaMm, pecas: [layoutPeca], nomePeca: nomePecaProducao, nomeTime: time.nome });
     const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 26, espacoMm: 10, rotacao: "0" });
     avisoProducao("");

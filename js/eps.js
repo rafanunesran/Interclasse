@@ -292,7 +292,9 @@ const EPS = (function () {
   // arte" do pedido) por cima do layout geral. null = oculto neste time.
   function elementoDoTime(el, ajusteTime) {
     const aj = ajusteTime || {};
-    if (aj.oculto) return null;
+    // `el.oculto`: escondido num nível de cima (a arte do cliente); o time
+    // pode mostrar de novo com oculto: false no ajuste dele.
+    if ("oculto" in aj ? aj.oculto : el.oculto) return null;
     return aj.estilo ? { ...el, ...aj.estilo } : el;
   }
 
@@ -618,6 +620,11 @@ const EPS = (function () {
     return pecas[pecaId] ? { arte: pecas[pecaId], chave: "arte:" + pecaId } : null;
   }
 
+  // Chave (em rec.eps / rec.imagens) do arquivo de um elemento de imagem.
+  function chaveDoElemento(el) {
+    return "elem:" + el.id;
+  }
+
   function detalheDaPeca(prod, pecaId) {
     if (!prod) return null;
     if (pecaId === "mangaDir" && prod.detalheDirDiferente && prod.detalheMangaDir) {
@@ -917,6 +924,24 @@ const EPS = (function () {
             if (!img) { avisar("O time não tem o detalhe da manga (PNG) — a caixa do detalhe ficou vazia."); return; }
             // `livre`: a imagem estica na caixa (largura e altura independentes).
             ops.push({ tipo: "imagem", chave: d.chave, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
+            return;
+          }
+          // Imagem própria (acrescentada no layout): PNG (convertido para
+          // CMYK) ou EPS.
+          if (el.tipo === "imagem") {
+            const chave = chaveDoElemento(el);
+            const a = el.arquivo || {};
+            const nome = a.nomeArquivo || "imagem";
+            if (a.formato === "eps") {
+              const e = rec.eps && rec.eps[chave];
+              if (!e) { avisar(`A imagem "${nome}" não carregou — ficou de fora.`); return; }
+              const t = tamanhoMmDoBbox(e.bbox);
+              ops.push({ tipo: "eps", chave, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
+            } else {
+              const img = rec.imagens && rec.imagens[chave];
+              if (!img) { avisar(`A imagem "${nome}" não carregou — ficou de fora.`); return; }
+              ops.push({ tipo: "imagem", chave, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
+            }
             return;
           }
           if (el.tipo === "brasao" || el.tipo === "logo") {
@@ -1260,6 +1285,7 @@ const EPS = (function () {
     encaixarProporcional,
     empacotar,
     elementoDoTime,
+    chaveDoElemento,
     imagemLivre,
     montarBlocos,
     moldeVirtual,

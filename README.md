@@ -510,9 +510,32 @@ comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No text
 **contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do
 molde (dá para ajustar um tamanho específico).
 
-O layout **geral** vale para todos os times. Em **Editando**, escolha um time para um **ajuste
-próprio** dele (só a posição; **Voltar ao layout geral** desfaz). **⬇ EPS de teste** baixa a peça
-aberta com o apelido e o número de teste, usando os arquivos do time.
+O layout **geral** vale para todos os times. Em **Editando**, escolha um **cliente** (ver
+abaixo) ou um **time** para um **ajuste próprio** dele (**Voltar ao layout geral** desfaz).
+**⬇ EPS de teste** baixa a peça aberta com o apelido e o número de teste, usando os arquivos do
+time.
+
+**Imagem própria** (ferramenta de imagem, no layout geral, num cliente ou num time): envie um
+**PNG 600 dpi** ou um **EPS** — um patrocinador, um selo, um desenho — e posicione como o brasão
+(proporção mantida, ou esticada). **Trocar imagem** no painel troca o arquivo; num cliente ou num
+time, a troca vale só ali. O PNG sai convertido para CMYK na folha e o EPS entra intacto.
+
+### Arte do cliente (aba **Artes** → Editando: **Cliente: …**)
+
+Uma versão da arte que vale **só para os times daquele cliente** — os outros clientes nunca
+recebem nada dela. Também se abre pelo botão **Arte do cliente** na aba **Clientes**. Serve para,
+por exemplo, **tirar o logo** de um cliente, mudar a **cor ou o tamanho do nome**, ou
+**acrescentar** uma imagem ou um texto só para ele.
+
+Funciona como o ajuste de um time: nos elementos do layout geral, muda posição, estilo e
+**ocultar**; e dá para adicionar elementos (selo *só do cliente*). A ordem fica:
+
+**layout geral → arte do cliente → ajuste do time → goleiro**
+
+Cada time do cliente ainda pode ajustar por cima (inclusive **mostrar de novo** algo que o cliente
+ocultou). No editor do time, o que veio do cliente tem o selo *do cliente*, e o aviso do topo tem o
+atalho **Editar a arte do cliente**. Fica em `clientes/{id}.arte` (`layoutAjustes` e
+`elementosExtras`, os mesmos campos do time).
 
 ### Logo da empresa (aba **Configurações**)
 
@@ -557,7 +580,7 @@ reforço e a etiqueta do tamanho escolhido.
 ### Editar arte (time aberto → aba **Editar arte**)
 
 O mesmo editor da aba Artes, travado no time aberto. O que mudar ali vale **só para este time**;
-o resto continua seguindo o layout geral:
+o resto continua seguindo a arte do cliente dele (se houver) e o layout geral:
 
 - **posição e tamanho** de cada caixa (arrastar ou pelos campos);
 - nos textos (nome e número): **tamanho da letra** (altura das maiúsculas, em mm), **cor** e
