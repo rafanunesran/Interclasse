@@ -1246,7 +1246,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261020a";
+const VERSAO_MOCKUP3D = "20261021a";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
