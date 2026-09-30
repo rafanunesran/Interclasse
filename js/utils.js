@@ -702,25 +702,6 @@ function baixarCSVProducao(nomeArquivo, alunos) {
   return baixarCSVProducaoItens(nomeArquivo, (alunos || []).filter(alunoSeraProduzido));
 }
 
-// Lote de produção em que a camiseta está, com a etapa dele (ou "" se não
-// estiver em nenhum). Ver STATUS_LOTE.
-function badgeLoteHtml(aluno) {
-  const lote = aluno && aluno.loteProducao;
-  if (!lote || !lote.id) return "";
-  const nome = escaparHtml(lote.nome || "Lote");
-  return `<span class="badge ${classeBadgeLote(lote.status)}" title="Lote de produção: ${nome}">` +
-    `${nome} · ${escaparHtml(labelStatusLote(lote.status))}</span>`;
-}
-
-// Marca o lote da camiseta e, nas etapas de produção, quem ficou de fora dela
-// por não ter pago.
-function badgeProducaoHtml(time, aluno) {
-  const lote = badgeLoteHtml(aluno);
-  if (lote) return lote;
-  if (!pedidoEmProducao(time) || alunoSeraProduzido(aluno)) return "";
-  return '<span class="badge pendente" title="Não foi paga: fica em aberto e não entra nos lotes de produção">Em aberto</span>';
-}
-
 // Camiseta interna: paga como "interno" (produção própria, sem receita).
 function ehInterno(aluno) {
   return !!(aluno && aluno.pago && aluno.pagamentoForma === "interno");
@@ -1053,6 +1034,108 @@ function renderizarBarraLote(container, statusId) {
     etapa.textContent = s.label;
     container.appendChild(etapa);
   });
+}
+
+// ============================================================
+// LISTA AGRUPADA (página do time e Super Admin)
+// ============================================================
+// Em cima as camisetas em aberto (não pagas); embaixo as que estão em
+// produção, separadas por lote, cada lote com a sua barra de etapas.
+
+// Desenha a lista agrupada em `tbody`. Opções: colunas (da tabela),
+// ajudaAberto (texto sob "em aberto") e criarLinha(aluno) -> <tr>.
+function preencherListaAgrupada(tbody, alunos, { colunas, ajudaAberto, criarLinha }) {
+  gruposDaLista(alunos, ajudaAberto).forEach((grupo) => {
+    if (grupo.secao) tbody.appendChild(criarLinhaSecao(grupo.secao, grupo.ajuda, colunas));
+    if (grupo.titulo) tbody.appendChild(criarLinhaGrupo(grupo, colunas));
+    grupo.alunos.forEach((aluno) => tbody.appendChild(criarLinha(aluno)));
+  });
+}
+
+// Separa a lista em: camisetas em aberto (não pagas), camisetas em produção
+// (uma entrada por lote) e as pagas que ainda esperam entrar num lote. A
+// camiseta que está num lote vai para ele mesmo sem pagamento (produção
+// adiantada pela organização, como a dos professores).
+function gruposDaLista(alunos, ajudaAberto) {
+  const emAberto = [];
+  const aguardando = [];
+  const porLote = new Map();
+  alunos.forEach((a) => {
+    const lote = a.loteProducao;
+    if (lote && lote.id) {
+      if (!porLote.has(lote.id)) porLote.set(lote.id, { lote, alunos: [] });
+      porLote.get(lote.id).alunos.push(a);
+    } else if (a.pago) {
+      aguardando.push(a);
+    } else {
+      emAberto.push(a);
+    }
+  });
+
+  const grupos = [];
+  if (emAberto.length > 0) {
+    grupos.push({
+      secao: `Camisetas em aberto (não pagas) — ${emAberto.length}`,
+      ajuda: ajudaAberto || "",
+      alunos: emAberto
+    });
+  }
+
+  const lotes = [...porLote.values()].sort((a, b) =>
+    String(a.lote.nome || "").localeCompare(String(b.lote.nome || ""), "pt-BR", { numeric: true })
+  );
+  if (lotes.length > 0 || aguardando.length > 0) {
+    const nProducao = lotes.reduce((s, l) => s + l.alunos.length, 0) + aguardando.length;
+    lotes.forEach((l, i) => {
+      grupos.push({
+        secao: i === 0 ? `Camisetas em produção por lote — ${nProducao}` : "",
+        titulo: `${l.lote.nome || "Lote"} — ${l.alunos.length} camiseta(s)`,
+        status: l.lote.status,
+        alunos: l.alunos
+      });
+    });
+    if (aguardando.length > 0) {
+      grupos.push({
+        secao: lotes.length === 0 ? `Camisetas em produção por lote — ${nProducao}` : "",
+        titulo: `Pagas, aguardando lote — ${aguardando.length} camiseta(s)`,
+        alunos: aguardando
+      });
+    }
+  }
+  return grupos;
+}
+
+// Linha de título de um bloco da lista ("em aberto" / "em produção").
+function criarLinhaSecao(texto, ajuda, colunas) {
+  const tr = document.createElement("tr");
+  tr.className = "linha-secao-lista";
+  const td = document.createElement("td");
+  td.colSpan = colunas;
+  td.dataset.label = "";
+  td.innerHTML = `<strong>${escaparHtml(texto)}</strong>` +
+    (ajuda ? `<br><small class="pix-ajuda">${escaparHtml(ajuda)}</small>` : "");
+  tr.appendChild(td);
+  return tr;
+}
+
+// Linha de título de um lote: nome e a barra de etapas da produção.
+function criarLinhaGrupo(grupo, colunas) {
+  const tr = document.createElement("tr");
+  tr.className = "linha-lote-lista";
+  const td = document.createElement("td");
+  td.colSpan = colunas;
+  td.dataset.label = "";
+  const titulo = document.createElement("div");
+  titulo.className = "lote-lista-titulo";
+  titulo.innerHTML = iconeOu("factory", "") + " " + escaparHtml(grupo.titulo);
+  td.appendChild(titulo);
+  if (grupo.status !== undefined) {
+    const barra = document.createElement("div");
+    renderizarBarraLote(barra, grupo.status);
+    td.appendChild(barra);
+  }
+  tr.appendChild(td);
+  return tr;
 }
 
 // ============================================================

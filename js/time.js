@@ -843,104 +843,16 @@ function renderizarTabela() {
   // embaixo as que já estão em produção, separadas por lote, cada lote com a
   // sua barra de etapas.
   elTabelaCorpo.innerHTML = "";
-  gruposDaLista(visiveis).forEach((grupo) => {
-    if (grupo.secao) elTabelaCorpo.appendChild(criarLinhaSecao(grupo.secao, grupo.ajuda));
-    if (grupo.titulo) elTabelaCorpo.appendChild(criarLinhaGrupo(grupo));
-    grupo.alunos.forEach((aluno) => {
-      elTabelaCorpo.appendChild(criarLinhaAluno(aluno, podeEditar, duplicados));
-    });
+  preencherListaAgrupada(elTabelaCorpo, visiveis, {
+    colunas: 9,
+    ajudaAberto: pedidoAceitaPagamento(timeAtual)
+      ? "Ainda não entraram na produção. Pague para garantir a camiseta no lote."
+      : "Ainda não entraram na produção.",
+    criarLinha: (aluno) => criarLinhaAluno(aluno, podeEditar, duplicados)
   });
 
   renderizarCarrinho();
   renderizarResumo();
-}
-
-// Separa a lista em: camisetas em aberto (não pagas), camisetas em produção
-// (uma entrada por lote) e as pagas que ainda esperam entrar num lote. A
-// camiseta que está num lote vai para ele mesmo sem pagamento (produção
-// adiantada pela organização, como a dos professores).
-function gruposDaLista(alunos) {
-  const emAberto = [];
-  const aguardando = [];
-  const porLote = new Map();
-  alunos.forEach((a) => {
-    const lote = a.loteProducao;
-    if (lote && lote.id) {
-      if (!porLote.has(lote.id)) porLote.set(lote.id, { lote, alunos: [] });
-      porLote.get(lote.id).alunos.push(a);
-    } else if (a.pago) {
-      aguardando.push(a);
-    } else {
-      emAberto.push(a);
-    }
-  });
-
-  const grupos = [];
-  if (emAberto.length > 0) {
-    grupos.push({
-      secao: `Camisetas em aberto (não pagas) — ${emAberto.length}`,
-      ajuda: pedidoAceitaPagamento(timeAtual)
-        ? "Ainda não entraram na produção. Pague para garantir a camiseta no lote."
-        : "Ainda não entraram na produção.",
-      alunos: emAberto
-    });
-  }
-
-  const lotes = [...porLote.values()].sort((a, b) =>
-    String(a.lote.nome || "").localeCompare(String(b.lote.nome || ""), "pt-BR", { numeric: true })
-  );
-  if (lotes.length > 0 || aguardando.length > 0) {
-    const nProducao = lotes.reduce((s, l) => s + l.alunos.length, 0) + aguardando.length;
-    lotes.forEach((l, i) => {
-      grupos.push({
-        secao: i === 0 ? `Camisetas em produção por lote — ${nProducao}` : "",
-        titulo: `${l.lote.nome || "Lote"} — ${l.alunos.length} camiseta(s)`,
-        status: l.lote.status,
-        alunos: l.alunos
-      });
-    });
-    if (aguardando.length > 0) {
-      grupos.push({
-        secao: lotes.length === 0 ? `Camisetas em produção por lote — ${nProducao}` : "",
-        titulo: `Pagas, aguardando lote — ${aguardando.length} camiseta(s)`,
-        alunos: aguardando
-      });
-    }
-  }
-  return grupos;
-}
-
-// Linha de título de um bloco da lista ("em aberto" / "em produção").
-function criarLinhaSecao(texto, ajuda) {
-  const tr = document.createElement("tr");
-  tr.className = "linha-secao-lista";
-  const td = document.createElement("td");
-  td.colSpan = 9;
-  td.dataset.label = "";
-  td.innerHTML = `<strong>${escapeHtml(texto)}</strong>` +
-    (ajuda ? `<br><small class="pix-ajuda">${escapeHtml(ajuda)}</small>` : "");
-  tr.appendChild(td);
-  return tr;
-}
-
-// Linha de título de um lote: nome e a barra de etapas da produção.
-function criarLinhaGrupo(grupo) {
-  const tr = document.createElement("tr");
-  tr.className = "linha-lote-lista";
-  const td = document.createElement("td");
-  td.colSpan = 9;
-  td.dataset.label = "";
-  const titulo = document.createElement("div");
-  titulo.className = "lote-lista-titulo";
-  titulo.innerHTML = icone("factory") + " " + escapeHtml(grupo.titulo);
-  td.appendChild(titulo);
-  if (grupo.status !== undefined) {
-    const barra = document.createElement("div");
-    renderizarBarraLote(barra, grupo.status);
-    td.appendChild(barra);
-  }
-  tr.appendChild(td);
-  return tr;
 }
 
 // Uma camiseta da lista.

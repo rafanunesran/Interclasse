@@ -1257,7 +1257,7 @@ function renderizarListaDoTime(timeId) {
   if (pedidoEmProducao(time)) {
     const p = document.createElement("p");
     p.className = "linha-producao";
-    p.innerHTML = `<strong>${nPagos} em produção</strong> &middot; ${alunos.length - nPagos} fora da produção (não paga(s))`;
+    p.innerHTML = `<strong>${nPagos} em produção</strong> &middot; ${alunos.length - nPagos} em aberto (não paga(s))`;
     card.appendChild(p);
   }
 
@@ -1303,7 +1303,12 @@ function renderizarListaDoTime(timeId) {
   `;
   const tbody = tabela.querySelector("tbody");
   const alunosDaTabela = soResultados ? achado.alunos : alunos;
-  alunosDaTabela.forEach((aluno) => tbody.appendChild(criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados)));
+  // Mesmo agrupamento da página do time: em aberto em cima, lotes embaixo.
+  preencherListaAgrupada(tbody, alunosDaTabela, {
+    colunas: 8,
+    ajudaAberto: "Ainda não entraram em nenhum lote de produção.",
+    criarLinha: (aluno) => criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados)
+  });
 
   const rolagem = document.createElement("div");
   rolagem.className = "tabela-rolagem";
@@ -1318,10 +1323,6 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
   if (aluno.ajusteSolicitado) tr.classList.add("linha-ajuste");
   // Realce de quem a busca achou (útil na lista completa do time).
   if (idsAchados.has(aluno.id)) tr.classList.add("linha-busca");
-  // Nas etapas de produção, quem não pagou fica visivelmente de fora.
-  if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno) && !aluno.loteProducao) {
-    tr.classList.add("linha-fora-producao");
-  }
 
   const marca = aluno.ajusteSolicitado
     ? '<span class="marca-ajuste" title="Ajuste solicitado">!</span> '
@@ -1352,7 +1353,7 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
 
   // Coluna de pagamento: badge + seletor para registrar o pagamento.
   const tdPag = tr.querySelector(".cel-pagamento");
-  tdPag.innerHTML = badgePagamentoHtml(aluno) + badgeProducaoHtml(time, aluno);
+  tdPag.innerHTML = badgePagamentoHtml(aluno);
   const selPag = document.createElement("select");
   selPag.className = "select-pagamento";
   selPag.setAttribute("aria-label", "Registrar pagamento de " + aluno.nome);

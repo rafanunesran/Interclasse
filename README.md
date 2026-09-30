@@ -399,9 +399,8 @@ A lista da página do time vem em dois blocos:
   aparecem em *Pagas, aguardando lote*. Uma camiseta adiantada num lote sem ter sido paga
   (a de um professor, por exemplo) aparece no lote dela.
 
-Com o **pagamento do 1º lote encerrado** (e nas etapas seguintes), quem não pagou e não
-está em nenhum lote aparece marcado e esmaecido no Super Admin (*Em aberto*), e a página do
-time explica a situação num aviso.
+A lista do time no **Super Admin** usa o mesmo agrupamento. Com o **pagamento do 1º lote
+encerrado** (e nas etapas seguintes), a página do time também explica a situação num aviso.
 
 A separação é sempre calculada na hora, a partir do pagamento: se um pendente pagar depois
 (o Super Admin confirma o pagamento na lista), ele entra na produção e passa a sair no CSV
