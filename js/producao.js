@@ -332,6 +332,17 @@ function renderizarListaLevas() {
       botoes.appendChild(btnEps);
     }
 
+    // PDF para a costureira: simulações, arte plana e lista de cada time.
+    if (typeof gerarPdfCostureira === "function") {
+      const btnPdf = document.createElement("button");
+      btnPdf.className = "secundario";
+      btnPdf.textContent = "PDF da costureira";
+      btnPdf.title = "Um PDF da leva com a cena, a frente, as costas e a arte plana de cada time, a quantidade por tamanho, as observações de montagem e a lista das camisetas";
+      btnPdf.disabled = itens.length === 0;
+      btnPdf.onclick = () => gerarPdfCostureira(grupos.flatMap((g) => g.linhas), leva.nome || "leva");
+      botoes.appendChild(btnPdf);
+    }
+
     const btnConf = document.createElement("button");
     btnConf.className = "secundario";
     btnConf.textContent = "CSV de conferência";

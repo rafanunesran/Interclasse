@@ -24,7 +24,8 @@
 const LIBS_PRODUCAO = {
   opentype: "https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js",
   pako: "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js",
-  JSZip: "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+  JSZip: "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
+  jspdf: "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
 };
 const libsProducao = {};
 
@@ -1213,9 +1214,16 @@ function timeTemArteDeProducao(time) {
 
 // Arte plana (sem simulação): as peças recortadas no molde, arrumadas como
 // na prévia "Arte" (gola, mangas, frente e costas), em fundo branco.
-async function arteDoClienteEmCanvas(time, timeId, tam) {
-  const linhas = [["gola"], ["mangaEsq", "mangaDir"], ["frente", "costas"]]
-    .map((ids) => ids.map((id) => pecaEmSvg(time, timeId, id, tam, AMOSTRA_CLIENTE, false, false)).filter((p) => p && p.svg))
+// `op`: { amostra, extras: true = também reforço de ombro e etiqueta, comMolde }.
+async function arteDoClienteEmCanvas(time, timeId, tam, op) {
+  const o = op || {};
+  const ids = [["gola"], ["mangaEsq", "mangaDir"], ["frente", "costas"]];
+  if (o.extras) ids.push(pecasVirtuaisDoTime(time));
+  const linhas = ids
+    .map((l) => l.map((id) => {
+      const p = pecaEmSvg(time, timeId, id, tam, o.amostra || AMOSTRA_CLIENTE, !!o.comMolde, false);
+      return p && { ...p, contornar: !!EPS.PECAS_VIRTUAIS[id] };
+    }).filter((p) => p && p.svg))
     .filter((l) => l.length);
   if (!linhas.length) return null;
   const GAP = 20; // mm
@@ -1236,6 +1244,12 @@ async function arteDoClienteEmCanvas(time, timeId, tam) {
     for (const p of l) {
       const pc = await pecaEmCanvas(p, Math.max(p.w, p.h) * k);
       ctx.drawImage(pc, x * k, (y + (alt - p.h) / 2) * k, p.w * k, p.h * k);
+      // Reforço e etiqueta (retângulos, às vezes brancos): um contorno fino.
+      if (p.contornar) {
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = Math.max(1, k * 0.6);
+        ctx.strokeRect(x * k, (y + (alt - p.h) / 2) * k, p.w * k, p.h * k);
+      }
       x += p.w + GAP;
     }
     y += alt + GAP;
@@ -3435,11 +3449,10 @@ function perguntarOpcoesEps(resumo) {
 // Ponto de entrada da aba Produção. linhas = [{ item, atual }] (itens da
 // leva). Sai um EPS por time (e um à parte para os goleiros, que vestem
 // outra cor), cada um baixado assim que fica pronto.
-async function gerarFolhasEps(linhas, nomeBase) {
-  if (!driveScriptUrl) {
-    alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm os arquivos).");
-    return;
-  }
+// Linhas da leva agrupadas por time (e os goleiros de cada time à parte):
+// Map chave → { timeId, goleiro, camisetas }. Avulsas vão para o time do
+// mesmo modelo; sem time, viram aviso.
+function agruparLinhasPorTime(linhas) {
   const grupos = new Map();
   const avisos = [];
   linhas.forEach(({ item, atual }) => {
@@ -3453,6 +3466,15 @@ async function gerarFolhasEps(linhas, nomeBase) {
     // `_alunoId`: para a camiseta com arte própria (producao.individuais).
     grupos.get(chave).camisetas.push({ ...atual, _alunoId: item.origem !== "avulso" ? item.alunoId || "" : "" });
   });
+  return { grupos, avisos };
+}
+
+async function gerarFolhasEps(linhas, nomeBase) {
+  if (!driveScriptUrl) {
+    alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm os arquivos).");
+    return;
+  }
+  const { grupos, avisos } = agruparLinhasPorTime(linhas);
   if (!grupos.size) {
     alert("Nada para gerar.\n\n" + avisos.join("\n"));
     return;
@@ -3569,10 +3591,296 @@ async function gerarFolhasEps(linhas, nomeBase) {
   prog.fim(gerados);
 }
 
+// ---------------- PDF da costureira (aba Produção) ----------------
+// Um PDF da leva, para a montagem: uma página de resumo e, por time (os
+// goleiros à parte), as simulações (cena, frente e costas), a arte plana
+// das peças, a quantidade por tamanho, as observações de montagem e a lista
+// das camisetas. As imagens vão em JPEG (arquivo leve).
+
+const AMOSTRA_COSTURA = { nomeCamiseta: "NOME", nome: "NOME", numero: "00" };
+
+// Canvas → JPEG (data URL) com fundo branco e no máximo `max` px no lado maior.
+function canvasParaJpegPdf(canvas, max) {
+  const k = Math.min(1, max / Math.max(canvas.width, canvas.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(canvas.width * k));
+  c.height = Math.max(1, Math.round(canvas.height * k));
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(canvas, 0, 0, c.width, c.height);
+  return { url: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height };
+}
+
+function ordemTamanho(t) {
+  const i = TODOS_TAMANHOS.indexOf(t);
+  return i < 0 ? 999 : i;
+}
+
+// Quantidade por tamanho: [[tam, n], …] na ordem da tabela de tamanhos.
+function contarPorTamanho(camisetas) {
+  const n = {};
+  camisetas.forEach((c) => (n[c.tamanho || "?"] = (n[c.tamanho || "?"] || 0) + 1));
+  return Object.entries(n).sort((a, b) => ordemTamanho(a[0]) - ordemTamanho(b[0]));
+}
+
+// Tamanho das imagens: o base, se o time tem camisetas nele; senão o mais pedido.
+function tamanhoDeReferencia(camisetas) {
+  const cont = contarPorTamanho(camisetas);
+  if (cont.some(([t]) => t === moldesConfig.tamanhoBase)) return moldesConfig.tamanhoBase;
+  return (cont.slice().sort((a, b) => b[1] - a[1])[0] || [""])[0];
+}
+
+// O que a costureira precisa saber deste time (só o que vale).
+function observacoesDeMontagem(timeComum, time, g) {
+  const obs = [];
+  const prod = producaoDoTime(timeComum);
+  if (g.goleiro) obs.push("Camisetas de GOLEIRO: arte/cor própria — não misturar com as do time.");
+  if (prod.mangaDirDiferente) obs.push("Mangas diferentes: a manga direita tem arte própria — confira o lado de cada manga (marcador da peça).");
+  if (prod.detalheDirDiferente) obs.push("O detalhe da manga direita é diferente do da esquerda.");
+  const virt = pecasVirtuaisDoTime(time);
+  if (virt.includes("reforcoOmbro")) {
+    const tams = contarPorTamanho(g.camisetas).map(([t]) => t);
+    const comp = tams.map((t) => {
+      const v = Number((moldesConfig.reforcoOmbro || {})[t]);
+      return v > 0 ? `${t} ${v} mm` : `${t} (sem medida)`;
+    }).join(" · ");
+    obs.push(`Reforço de ombro: 1 tira de ${EPS.REFORCO_LARGURA_MM} mm por camiseta — comprimento: ${comp}.`);
+  }
+  if (virt.includes("etiquetaTam")) {
+    const m = EPS.medidasEtiqueta(layoutDoTime(time));
+    obs.push(`Etiqueta de tamanho: ${m.w} × ${m.h} mm, 1 por camiseta (já vem impressa com o tamanho e o nome).`);
+  }
+  const ind = g.camisetas.filter((c) => c._alunoId && temArteIndividual(timeComum, c._alunoId));
+  if (ind.length) obs.push(`${ind.length} camiseta(s) com arte própria (diferente das outras): ${ind.map((c) => c.nomeCamiseta || c.nome).join(", ")} — marcadas com * na lista.`);
+  obs.push("Cada peça impressa traz o marcador Time-Tamanho-Peça perto da borda de baixo.");
+  return obs;
+}
+
+async function gerarPdfCostureira(linhas, nomeBase) {
+  if (!driveScriptUrl) {
+    alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm as artes).");
+    return;
+  }
+  const { grupos, avisos } = agruparLinhasPorTime(linhas);
+  if (!grupos.size) {
+    alert("Nada para gerar.\n\n" + avisos.join("\n"));
+    return;
+  }
+  const lista = [...grupos.values()]
+    .map((g) => ({ g, rotulo: estadoTimes[g.timeId].time.nome + (g.goleiro ? " (goleiros)" : ""), n: g.camisetas.length }))
+    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+  const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
+    { titulo: "Gerando o PDF da costureira", tituloFim: "PDF da costureira pronto", dica: "" });
+  avisos.forEach((a) => prog.aviso(a));
+  let doc;
+  try {
+    const { jsPDF } = await carregarLib("jspdf");
+    doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  } catch (e) {
+    prog.aviso(e.message || String(e));
+    prog.fim(0, "Não foi possível carregar o gerador de PDF.");
+    return;
+  }
+  const W = 297, H = 210, M = 10;
+  const titulo = (txt, y, tam) => { doc.setFont("helvetica", "bold"); doc.setFontSize(tam || 16); doc.text(txt, M, y); };
+  const texto = (txt, x, y, op) => { doc.setFont("helvetica", (op && op.bold) ? "bold" : "normal"); doc.setFontSize((op && op.tam) || 10); doc.text(txt, x, y, op && op.align ? { align: op.align } : undefined); };
+  const rodape = () => {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(`${nomeBase} · costura · pág. ${doc.getNumberOfPages()}`, W - M, H - 5, { align: "right" });
+    doc.setTextColor(0);
+  };
+  // Imagem dentro da caixa (x, y, w, h), centralizada e proporcional, com legenda.
+  const imagem = (img, x, y, w, h, legenda) => {
+    doc.setDrawColor(210); doc.rect(x, y, w, h);
+    if (img) {
+      const k = Math.min(w / img.w, h / img.h);
+      const iw = img.w * k, ih = img.h * k;
+      doc.addImage(img.url, "JPEG", x + (w - iw) / 2, y + (h - ih) / 2, iw, ih, undefined, "FAST");
+    } else {
+      texto("(sem imagem)", x + w / 2, y + h / 2, { align: "center", tam: 9 });
+    }
+    if (legenda) texto(legenda, x + w / 2, y + h + 4.5, { align: "center", tam: 9, bold: true });
+  };
+
+  // Resumo (página 1)
+  const todas = lista.flatMap((x) => x.g.camisetas);
+  const tamsLeva = contarPorTamanho(todas).map(([t]) => t);
+  titulo(`Costura — ${nomeBase}`, 18, 20);
+  texto(`${todas.length} camiseta(s) · ${lista.length} time(s) · gerado em ${new Date().toLocaleString("pt-BR")}`, M, 26);
+  let y = 38;
+  const colTime = 110, colW = Math.min(16, (W - 2 * M - colTime - 20) / Math.max(1, tamsLeva.length));
+  const cabecalhoResumo = () => {
+    doc.setFillColor(235, 240, 250); doc.rect(M, y - 5, W - 2 * M, 7, "F");
+    texto("Time", M + 2, y, { bold: true });
+    tamsLeva.forEach((t, i) => texto(t, M + colTime + i * colW + colW / 2, y, { bold: true, align: "center" }));
+    texto("Total", W - M - 2, y, { bold: true, align: "right" });
+    y += 7;
+  };
+  cabecalhoResumo();
+  lista.forEach(({ g, rotulo }) => {
+    if (y > H - 15) { rodape(); doc.addPage(); y = 20; cabecalhoResumo(); }
+    const cont = Object.fromEntries(contarPorTamanho(g.camisetas));
+    texto(rotulo, M + 2, y);
+    tamsLeva.forEach((t, i) => texto(cont[t] ? String(cont[t]) : "–", M + colTime + i * colW + colW / 2, y, { align: "center" }));
+    texto(String(g.camisetas.length), W - M - 2, y, { align: "right", bold: true });
+    doc.setDrawColor(230); doc.line(M, y + 2, W - M, y + 2);
+    y += 7;
+  });
+  const contLeva = Object.fromEntries(contarPorTamanho(todas));
+  texto("Total", M + 2, y, { bold: true });
+  tamsLeva.forEach((t, i) => texto(String(contLeva[t] || 0), M + colTime + i * colW + colW / 2, y, { align: "center", bold: true }));
+  texto(String(todas.length), W - M - 2, y, { align: "right", bold: true });
+  rodape();
+
+  let feitos = 0;
+  for (let idx = 0; idx < lista.length; idx++) {
+    if (prog.cancelado) {
+      for (let k = idx; k < lista.length; k++) prog.time(k, "cancelado");
+      break;
+    }
+    const { g, rotulo } = lista[idx];
+    prog.time(idx, "gerando");
+    const etapa = (t, f) => prog.etapa(idx, `${rotulo}: ${t}`, f);
+    try {
+      const timeComum = estadoTimes[g.timeId].time;
+      const time = timeNaVariante(timeComum, g.goleiro);
+      const tam = tamanhoDeReferencia(g.camisetas);
+      // Imagens: cena, frente, costas e a arte plana.
+      const imgs = {};
+      etapa("preparando as peças…", 0.05);
+      let pecas = null;
+      try {
+        pecas = await pecasParaMockup(time, g.timeId, tam, AMOSTRA_COSTURA);
+      } catch (e) {
+        prog.aviso(`${rotulo}: sem as simulações (${e.message || e}).`);
+      }
+      const vistas = [["cena", "a cena"], ["frente", "a frente"], ["costas", "as costas"]];
+      for (let i = 0; pecas && i < vistas.length; i++) {
+        const [vista, nome] = vistas[i];
+        etapa(`simulando ${nome}…`, 0.15 + 0.2 * i);
+        await esperarTela();
+        try {
+          const c = await renderizarMockup(vista, pecas);
+          if (g.goleiro) carimbarGoleiro(c);
+          imgs[vista] = canvasParaJpegPdf(c, vista === "cena" ? 1400 : 900);
+        } catch (e) {
+          prog.aviso(`${rotulo}: não foi possível simular ${nome} (${e.message || e}).`);
+        }
+      }
+      etapa("montando a arte plana…", 0.75);
+      try {
+        const c = await arteDoClienteEmCanvas(time, g.timeId, tam, { amostra: AMOSTRA_COSTURA, extras: true });
+        if (c) imgs.arte = canvasParaJpegPdf(c, 1600);
+      } catch (e) {
+        prog.aviso(`${rotulo}: sem a arte plana (${e.message || e}).`);
+      }
+      etapa("escrevendo as páginas…", 0.9);
+
+      // Página do time
+      doc.addPage();
+      titulo(rotulo, 16, 18);
+      if (g.goleiro) {
+        const larg = doc.getTextWidth(rotulo);
+        doc.setFillColor(20, 83, 45); doc.roundedRect(M + larg + 4, 10, 24, 8, 2, 2, "F");
+        doc.setTextColor(255); texto("GOLEIRO", M + larg + 16, 15.6, { bold: true, tam: 10, align: "center" }); doc.setTextColor(0);
+      }
+      const cliente = typeof nomeClienteDoTime === "function" && clienteIdDoTime(timeComum) ? nomeClienteDoTime(timeComum) : "";
+      texto([`Modelo: ${modeloDoTime(timeComum) || "—"}`, cliente ? `Cliente: ${cliente}` : "", `${g.camisetas.length} camiseta(s)`,
+        `imagens no tamanho ${tam || "—"} com "NOME" e "00" de exemplo`].filter(Boolean).join("  ·  "), M, 23, { tam: 9 });
+      // Simulações: cena maior (referência de montagem), frente e costas.
+      const yImg = 28, hImg = 82;
+      imagem(imgs.cena, M, yImg, 131, hImg, "Cena (referência de montagem)");
+      imagem(imgs.frente, M + 134, yImg, 68.5, hImg, "Frente");
+      imagem(imgs.costas, M + 205.5, yImg, 71.5, hImg, "Costas");
+      // Arte plana à esquerda; quantidade e observações à direita.
+      const yB = yImg + hImg + 10, hB = H - yB - 12;
+      imagem(imgs.arte, M, yB, 150, hB, null);
+      texto("Peças (sem simulação)", M + 75, yB + hB + 4.5, { align: "center", tam: 9, bold: true });
+      let yd = yB + 4;
+      const xd = M + 156, wd = W - M - xd;
+      texto("Quantidade por tamanho", xd, yd, { bold: true, tam: 11 });
+      yd += 6;
+      const cont = contarPorTamanho(g.camisetas);
+      texto(cont.map(([t, n]) => `${t}: ${n}`).join("   ") + `   ·   Total: ${g.camisetas.length}`, xd, yd, { tam: 10 });
+      yd += 9;
+      texto("Observações de montagem", xd, yd, { bold: true, tam: 11 });
+      yd += 5;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      for (const o of observacoesDeMontagem(timeComum, time, g)) {
+        const l = doc.splitTextToSize("• " + o, wd);
+        if (yd + l.length * 4 > H - 12) break;
+        doc.text(l, xd, yd);
+        yd += l.length * 4 + 1.5;
+      }
+      // Lista das camisetas: cabe no espaço que sobrou ao lado da arte?
+      // Senão, vai em páginas próprias.
+      const cams = g.camisetas.slice().sort((a, b) => ordemTamanho(a.tamanho) - ordemTamanho(b.tamanho) ||
+        String(a.nomeCamiseta || a.nome || "").localeCompare(String(b.nomeCamiseta || b.nome || ""), "pt-BR"));
+      const marca = (c) => (c._alunoId && temArteIndividual(timeComum, c._alunoId) ? " *" : "");
+      yd += 4;
+      if (yd + 12 + cams.length * 5 <= H - 12) {
+        texto("Camisetas", xd, yd, { bold: true, tam: 11 });
+        yd += 6;
+        const cc = [["Tam.", 0], ["Nº", 12], ["Apelido", 24], ["Nome", 66]];
+        cc.forEach(([t, x]) => texto(t, xd + x, yd, { bold: true, tam: 8 }));
+        yd += 5;
+        cams.forEach((c) => {
+          const vals = [c.tamanho || "", c.numero == null ? "" : String(c.numero), (c.nomeCamiseta || "") + marca(c), c.nome || ""];
+          cc.forEach(([, x], k) => texto(doc.splitTextToSize(vals[k], k === 3 ? wd - x : 40)[0] || "", xd + x, yd, { tam: 8, bold: k === 0 }));
+          doc.setDrawColor(235); doc.line(xd, yd + 1.5, W - M, yd + 1.5);
+          yd += 5;
+        });
+        rodape();
+        feitos++;
+        prog.time(idx, "pronto");
+        continue;
+      }
+      rodape();
+
+      const cols = [["#", 0], ["Tamanho", 12], ["Número", 34], ["Apelido na camiseta", 56], ["Nome", 140]];
+      let yl = 0;
+      const novaPaginaLista = (cont2) => {
+        doc.addPage();
+        titulo(`${rotulo} — lista das camisetas${cont2 ? " (continuação)" : ""}`, 16, 14);
+        yl = 26;
+        doc.setFillColor(235, 240, 250); doc.rect(M, yl - 5, W - 2 * M, 7, "F");
+        cols.forEach(([t, x]) => texto(t, M + 2 + x, yl, { bold: true, tam: 9 }));
+        yl += 7;
+      };
+      novaPaginaLista(false);
+      cams.forEach((c, i) => {
+        if (yl > H - 14) { rodape(); novaPaginaLista(true); }
+        const vals = [String(i + 1), c.tamanho || "", c.numero == null ? "" : String(c.numero), (c.nomeCamiseta || "") + marca(c), c.nome || ""];
+        cols.forEach(([, x], k) => texto(vals[k], M + 2 + x, yl, { tam: 9, bold: k === 1 }));
+        doc.setDrawColor(235); doc.line(M, yl + 2, W - M, yl + 2);
+        yl += 6;
+      });
+      rodape();
+      feitos++;
+      prog.time(idx, "pronto");
+    } catch (e) {
+      console.error(e);
+      prog.aviso(`${rotulo}: erro — ${e.message || e}`);
+      prog.time(idx, "erro", e.message || String(e));
+    }
+  }
+  if (!feitos) {
+    prog.fim(0, "Nenhum time entrou no PDF.");
+    return;
+  }
+  const blob = doc.output("blob");
+  const nome = `costura-${slugify(nomeBase) || "leva"}.pdf`;
+  baixarBlob(nome, blob);
+  prog.fim(1, `${nome} · ${doc.getNumberOfPages()} página(s) · ${(blob.size / 1e6).toFixed(1)} MB — ${feitos} de ${lista.length} time(s).`);
+}
+
 // Janela de progresso da geração: barra geral, etapa atual e a lista dos
 // times (na fila, gerando, pronto com "Baixar de novo", de fora). `itens` =
 // [{ rotulo, n }] (n = camisetas, o peso de cada time na barra geral).
-function abrirProgressoEps(itens) {
+// `op`: { titulo, tituloFim, dica } — a mesma janela serve ao PDF da costureira.
+function abrirProgressoEps(itens, op) {
+  const o = op || {};
   const total = itens.reduce((s, x) => s + Math.max(1, x.n), 0) || 1;
   const antes = itens.map((_, i) => itens.slice(0, i).reduce((s, x) => s + Math.max(1, x.n), 0));
   const estado = itens.map(() => ({ st: "fila", extra: null, f: 0 }));
@@ -3583,13 +3891,14 @@ function abrirProgressoEps(itens) {
   fundo.setAttribute("aria-label", "Gerando as folhas EPS");
   fundo.innerHTML = `
     <div class="modal-pix-conteudo">
-      <h3>Gerando as folhas EPS</h3>
+      <h3>${escapeHtmlAdmin(o.titulo || "Gerando as folhas EPS")}</h3>
       <p class="progresso-eps-resumo" aria-live="polite"></p>
       <div class="progresso-barra geral" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span><b></b></div>
       <p class="progresso-eps-etapa"></p>
       <div class="progresso-barra etapa"><span></span></div>
       <ul class="progresso-eps-lista"></ul>
-      ${itens.length > 1 ? '<p class="pix-ajuda">Cada time é baixado num arquivo separado assim que fica pronto. Se o navegador perguntar, permita vários downloads.</p>' : ""}
+      ${o.dica != null ? (o.dica ? `<p class="pix-ajuda">${escapeHtmlAdmin(o.dica)}</p>` : "")
+        : itens.length > 1 ? '<p class="pix-ajuda">Cada time é baixado num arquivo separado assim que fica pronto. Se o navegador perguntar, permita vários downloads.</p>' : ""}
       <details class="progresso-eps-avisos oculto"><summary></summary><ul></ul></details>
       <div class="progresso-eps-botoes">
         <button type="button" class="secundario" data-prog="cancelar">Cancelar</button>
@@ -3603,7 +3912,7 @@ function abrirProgressoEps(itens) {
   const desenharLista = () => {
     q(".progresso-eps-lista").innerHTML = itens.map((x, i) => {
       const e = estado[i];
-      const arq = e.st === "pronto" && e.extra;
+      const arq = e.st === "pronto" && e.extra && e.extra.blob ? e.extra : null;
       return `<li class="st-${e.st}"><span class="progresso-eps-icone">${ICONE[e.st]}</span>` +
         `<span class="progresso-eps-time">${escapeHtmlAdmin(x.rotulo)} <small>${x.n} camiseta(s)</small></span>` +
         `<span class="progresso-eps-st">${arq
@@ -3651,11 +3960,11 @@ function abrirProgressoEps(itens) {
       d.querySelector("summary").textContent = `${avisos.length} aviso(s)`;
       d.querySelector("ul").insertAdjacentHTML("beforeend", `<li>${escapeHtmlAdmin(t)}</li>`);
     },
-    fim(gerados) {
+    fim(gerados, resumo) {
       barra(".progresso-barra.geral", 1);
       barra(".progresso-barra.etapa", 1);
-      q("h3").textContent = ctl.cancelado ? "Geração cancelada" : "Folhas EPS prontas";
-      q(".progresso-eps-resumo").textContent = `${gerados} arquivo(s) baixado(s) de ${itens.length} time(s).`;
+      q("h3").textContent = ctl.cancelado ? "Geração cancelada" : o.tituloFim || "Folhas EPS prontas";
+      q(".progresso-eps-resumo").textContent = resumo || `${gerados} arquivo(s) baixado(s) de ${itens.length} time(s).`;
       q(".progresso-eps-etapa").textContent = avisos.length ? "Confira os avisos abaixo." : "";
       if (avisos.length) q(".progresso-eps-avisos").open = true;
       q('[data-prog="cancelar"]').classList.add("oculto");

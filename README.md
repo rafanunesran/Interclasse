@@ -712,6 +712,26 @@ Durante a geração, uma **janela de progresso** mostra:
 
 **Cancelar** para depois do time atual; os arquivos já baixados ficam.
 
+### PDF da costureira (aba **Produção**)
+
+O botão **PDF da costureira** na leva gera **um PDF só**, em A4 deitado, para a montagem das
+camisetas:
+
+- **Página 1 (resumo):** a quantidade de camisetas por tamanho de cada time e o total da leva.
+- **Uma página por time:** os goleiros têm página própria, com o selo **GOLEIRO**. Cada página traz:
+  - as simulações: a **Cena** (maior, como referência de montagem), a **Frente** e as **Costas**;
+  - as **peças sem simulação** (arte plana no molde, com o reforço de ombro e a etiqueta);
+  - a **quantidade por tamanho**;
+  - as **observações de montagem**, só as que valem para o time: manga direita diferente,
+    detalhe diferente, comprimentos do reforço, medidas da etiqueta e camisetas com arte própria
+    (marcadas com `*`);
+  - a **lista das camisetas** (tamanho, número, apelido e nome). Se a lista não couber na página
+    do time, ela continua em páginas próprias.
+
+As imagens usam o tamanho base (ou o mais pedido do time), com "NOME" e "00" de exemplo, e vão em
+JPEG para o arquivo ficar leve. Durante a geração aparece a mesma janela de progresso das folhas
+EPS.
+
 ### Como o arquivo é feito
 
 - EPS enviados (moldes, brasão e logo) entram **intactos**, embutidos no arquivo.
