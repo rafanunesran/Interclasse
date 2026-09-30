@@ -12,7 +12,7 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`time.html?id=NOME-DO-TIME`** — a **página do pedido**: imagem, preço, prazo e status no topo, e as abas **Lista** (com o botão **Pagar** e o carrinho) e **Tamanhos e preços** (tabela de medidas). O representante entra pela **engrenagem ⚙️** no canto superior direito, com a senha do time, e ganha as abas **+ Adicionar camiseta** e **Configurações** (data limite e sair do modo representante).
 - **`admin.html`** — página de **login** do administrador (e-mail/senha do Firebase Authentication). O acesso fica num link discreto no rodapé de cada página ("Área administrativa"). Ao entrar com a conta administradora, o site leva automaticamente para o Super Admin.
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
-- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
+- **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Pagamento 1º lote → Pagamento 1º lote encerrado → Pagamento 2º lote → Pagamento 2º lote encerrado → Finalizado, além de Suspenso e Bloqueado) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
 O login do administrador **fica salvo** no navegador e só cai depois de **24h sem nenhum uso** do Super Admin (clique, tecla ou rolagem em qualquer aba); aí o site pede a senha de novo. Abrir a loja ou a página de um pedido no mesmo navegador não derruba mais o login do admin.
 
@@ -68,7 +68,7 @@ O painel administrativo usa o **login do Firebase Authentication** (e-mail/senha
 3. Em **Criar novo time**, cadastre cada time com um nome (ex: "3º Ano A - Manhã"), uma senha própria para ele e o cliente a que ele pertence.
 4. Compartilhe com cada representante o link do time (`SEU-SITE/time.html?id=ID-DO-TIME`, mostrado após criar) e a senha correspondente. Eles também conseguem chegar lá pela página inicial (`index.html`) — que lista os clientes — ou direto pelo link do cliente (`SEU-SITE/index.html?cliente=ID-DO-CLIENTE`).
 5. Cada representante cadastra os alunos e confere a lista (o site avisa se houver números de camiseta duplicados). O representante pode definir uma **data limite para pagamento**: ao passar dessa data, o pedido **fecha automaticamente**. Se não definir data, o time fica **Aberto** até o Super Admin fechar/avançar o status.
-6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Faltou alguém na lista? O botão **+ Adicionar camiseta** (time aberto → aba Lista) resolve na hora, mesmo com o pedido fechado. Ao mover o pedido para **Impressão**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica pendente). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
+6. No painel admin, acompanhe o status de todos os times (use o seletor **Cliente** no topo para ver um cliente por vez e a caixa **🔎 Buscar** para achar um pedido pelo time, pelo nome do estudante ou pelo apelido da camiseta). Faltou alguém na lista? O botão **+ Adicionar camiseta** (time aberto → aba Lista) resolve na hora, mesmo com o pedido fechado. Ao encerrar o **pagamento do 1º lote**, a lista se separa entre o que foi pago (vai para a produção) e o que não foi (fica em aberto). Clique em **Exportar CSV de produção** para baixar, num arquivo só, as camisetas pagas de todos os times no padrão do programa de impressão.
 
 ## Aba Inicial do Super Admin (times)
 
@@ -213,15 +213,22 @@ o card de cada time (aba **Inicial**) tem o botão **+ Adicionar camiseta**.
 Cada time tem um **status**, mudado pelo Super Admin no card do pedido (aba **Inicial**) ou
 arrastando o card no **Kanban**. A ordem normal é a linha do tempo do pedido:
 
-**Aberto** → **Fechado** → **Pagamento em andamento** → **Pagamento encerrado** →
-**Impressão** → **Costura** → **Logística** → **Entregue ao representante** → **Finalizado**
+**Aberto** → **Pagamento 1º lote** → **Pagamento 1º lote encerrado** → **Pagamento 2º lote** →
+**Pagamento 2º lote encerrado** → **Finalizado**
 
-- O representante **cadastra e edita** nomes em *Aberto*, *Fechado* e *Pagamento em
-  andamento*; a lista trava de vez a partir de *Pagamento encerrado*.
-- O **pagamento** é aceito em *Fechado* e *Pagamento em andamento*.
-- Da **Impressão** em diante o pedido está em produção: o que foi pago entra, o que não foi
-  fica pendente e fora da leva.
-- O time também fecha sozinho (*Aberto* → *Fechado*) quando passa a **data limite**.
+- O representante **cadastra e edita** nomes em *Aberto*, *Pagamento 1º lote* e *Pagamento
+  2º lote*; com o pagamento de um lote encerrado, a lista trava.
+- O **pagamento** é aceito em *Pagamento 1º lote* e *Pagamento 2º lote* — quem não pagou no
+  1º lote tem uma segunda chance no 2º.
+- Com o **pagamento do 1º lote encerrado** o pedido está em produção: o que foi pago segue
+  para os lotes de produção, o que não foi fica em aberto.
+- O andamento da produção (Design → Impressão e corte → Costura → Logística → Entregue →
+  Finalizado) é acompanhado **por lote**, não pelo pedido — ver
+  [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo).
+- O time também fecha sozinho (*Aberto* → *Pagamento 1º lote*) quando passa a **data limite**.
+- Os times gravados com a sequência antiga caem na etapa equivalente: *Fechado* e *Pagamento
+  em andamento* viram *Pagamento 1º lote*; *Pagamento encerrado*, *Impressão*, *Costura*,
+  *Logística* e *Entregue* viram *Pagamento 1º lote encerrado*.
 
 Fora dessa linha existem dois status que **travam o pedido** — sem cadastrar ou editar
 nomes e sem receber pagamento:
@@ -380,13 +387,18 @@ Para conferir o pedido e os pagamentos.
 
 ## Produção: pago x pendente
 
-Quando o Super Admin move o pedido para **Impressão** (e nas etapas seguintes — Costura,
-Logística, Entregue), a lista se separa em duas:
+A lista da página do time vem em dois blocos:
 
-- **Em produção**: quem já pagou (a camiseta *interna* conta como paga).
-- **Fora da produção**: quem não pagou fica **pendente** e não é produzido nesta leva. A
-  linha aparece marcada e esmaecida na lista, tanto na página do time quanto no Super
-  Admin, e a página do time explica a situação num aviso.
+- **Camisetas em aberto (não pagas)**, em cima.
+- **Camisetas em produção por lote**, embaixo: um grupo para cada lote (leva da aba
+  **Produção**), com a barra de etapas do lote (**Design → Impressão e corte → Costura →
+  Logística → Entregue → Finalizado**). As pagas que ainda não entraram em nenhum lote
+  aparecem em *Pagas, aguardando lote*. Uma camiseta adiantada num lote sem ter sido paga
+  (a de um professor, por exemplo) aparece no lote dela.
+
+Com o **pagamento do 1º lote encerrado** (e nas etapas seguintes), quem não pagou e não
+está em nenhum lote aparece marcado e esmaecido no Super Admin (*Em aberto*), e a página do
+time explica a situação num aviso.
 
 A separação é sempre calculada na hora, a partir do pagamento: se um pendente pagar depois
 (o Super Admin confirma o pagamento na lista), ele entra na produção e passa a sair no CSV
@@ -421,8 +433,15 @@ um arquivo para cada arte, porque cada uma é uma abertura diferente no programa
    **CSV deste modelo** no bloco de um modelo só. O **CSV de conferência** traz a leva inteira
    num arquivo, com time, cliente, modelo e pagamento.
 
-A leva tem uma situação própria — **Em montagem**, **Enviada para impressão** e **Concluída** —,
-que é só do controle interno da produção e **não** mexe no status do pedido de nenhum time.
+Cada leva é um **lote** e tem a sua etapa — **Design**, **Impressão e corte**, **Costura**,
+**Logística**, **Entregue** e **Finalizado** —, escolhida no card da leva. Ela **não** mexe
+no status do pedido de nenhum time, mas aparece para o cliente: na página do time, as
+camisetas em produção ficam agrupadas por lote, cada um com a sua barra de etapas. Como as
+levas são só do admin, o painel grava em cada camiseta de pedido uma cópia do lote dela
+(`loteProducao`: id, nome e etapa) e a mantém em dia sozinho sempre que você envia ou tira
+camisetas, renomeia, muda a etapa ou exclui a leva (se a camiseta estiver em mais de uma
+leva, vale a mais recente). As levas antigas passam para as etapas novas: *Em montagem* →
+Design, *Enviada para impressão* → Impressão e corte, *Concluída* → Finalizado.
 
 ### O modelo (o que divide os arquivos)
 

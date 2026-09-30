@@ -692,16 +692,18 @@ function escutarTimes() {
     );
 }
 
-// Fecha automaticamente os times cuja data limite já passou (aberto -> fechado).
-// Única mudança de status automática; as demais são manuais (seletor de status).
+// Fecha automaticamente os times cuja data limite já passou (aberto ->
+// pagamento do 1º lote). Única mudança de status automática; as demais são
+// manuais (seletor de status).
 function aplicarFechamentoAutomatico() {
   Object.keys(estadoTimes).forEach((timeId) => {
     const time = estadoTimes[timeId].time;
-    if (statusAutoPorData(time) === "fechado") {
-      estadoTimes[timeId].time.statusPedido = "fechado";
+    const novo = statusAutoPorData(time);
+    if (novo) {
+      estadoTimes[timeId].time.statusPedido = novo;
       estadoTimes[timeId].time.fechado = true;
       db.collection(COL_TIMES).doc(timeId).update({
-        statusPedido: "fechado",
+        statusPedido: novo,
         fechado: true,
         fechadoEm: firebase.firestore.FieldValue.serverTimestamp()
       }).catch((e) => console.warn("Falha no fechamento automático:", e));
@@ -720,6 +722,8 @@ function escutarAlunosDaTime(timeId) {
         .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
       renderizarTimesAdmin();
+      // Confere o lote de produção gravado em cada camiseta (js/producao.js).
+      if (typeof agendarSincronizacaoLotes === "function") agendarSincronizacaoLotes();
     });
 }
 
@@ -1145,7 +1149,7 @@ function renderizarListaDoTime(timeId) {
   cab.appendChild(acoes);
   card.appendChild(cab);
 
-  // Da Impressão em diante, o que conta é o que entra na produção.
+  // Com o pagamento do 1º lote encerrado, o que conta é o que entra na produção.
   if (pedidoEmProducao(time)) {
     const p = document.createElement("p");
     p.className = "linha-producao";
@@ -1211,7 +1215,7 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
   // Realce de quem a busca achou (útil na lista completa do time).
   if (idsAchados.has(aluno.id)) tr.classList.add("linha-busca");
   // Nas etapas de produção, quem não pagou fica visivelmente de fora.
-  if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno)) {
+  if (pedidoEmProducao(time) && !alunoSeraProduzido(aluno) && !aluno.loteProducao) {
     tr.classList.add("linha-fora-producao");
   }
 
@@ -3528,7 +3532,7 @@ function abrirNovaCamiseta(timeId) {
     if (pedidoEmProducao(time)) {
       aviso = `${icone("triangle-alert")} Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
         "a camiseta nova entra como pendente e não está nos CSVs já exportados. " +
-        "Confirme o pagamento e exporte de novo (ou leve na próxima leva).";
+        "Confirme o pagamento e leve no próximo lote.";
     } else if (statusId !== "aberto") {
       aviso = `Este pedido está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong> — ` +
         "o representante não consegue mais cadastrar por conta própria, mas você sim.";

@@ -33,6 +33,7 @@ let prodBusca = "";             // busca por nome / nome na camiseta / número
 let prodEsconderNaLeva = false; // esconder o que já está em alguma leva
 let prodDestino = "";           // leva escolhida na barra de ações
 let prodLevasIniciado = false;
+let prodLevasCarregadas = false; // já chegou a primeira leitura das levas
 
 // Estado só de tela, preservado entre os re-renders (o Firestore avisa a cada
 // mudança, e sem isto o time recolheria e o formulário se apagaria sozinho).
@@ -46,11 +47,8 @@ function escAttr(texto) {
   return escapeHtmlAdmin(texto).replace(/"/g, "&quot;");
 }
 
-const STATUS_LEVA = [
-  { id: "aberta", label: "Em montagem" },
-  { id: "enviada", label: "Enviada para impressão" },
-  { id: "concluida", label: "Concluída" }
-];
+// As etapas da leva (lote) ficam em STATUS_LOTE, em js/utils.js: a página do
+// time também mostra o andamento de cada lote.
 
 const elListaLevas = document.getElementById("listaLevas");
 const elSelecaoProducao = document.getElementById("selecaoProducao");
@@ -78,6 +76,7 @@ function escutarLevas() {
           estadoLevas[doc.id] = {
             leva: { id: doc.id, ...doc.data() },
             itens: antes.itens || [],
+            itensCarregados: antes.itensCarregados === true,
             expandida: antes.expandida === true,
             escutando: antes.escutando === true
           };
@@ -96,7 +95,9 @@ function escutarLevas() {
           delete prodAvulsoEstado[id];
         });
         if (prodDestino && !estadoLevas[prodDestino]) prodDestino = "";
+        prodLevasCarregadas = true;
         renderizarProducao();
+        agendarSincronizacaoLotes();
       },
       (erro) => console.error("Erro ao carregar as levas de produção:", erro)
     );
@@ -110,12 +111,90 @@ function escutarItensDaLeva(levaId) {
       (snap) => {
         if (!estadoLevas[levaId]) return;
         estadoLevas[levaId].itens = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        estadoLevas[levaId].itensCarregados = true;
         renderizarProducao();
+        agendarSincronizacaoLotes();
         // Entrou/saiu camiseta de um lote com custos: muda o custo por unidade.
         if (typeof levaTemCustos === "function" && levaTemCustos(levaId)) renderizarFinanceiro();
       },
       (erro) => console.error("Erro ao carregar os itens da leva:", erro)
     );
+}
+
+// ---------------- Lote de cada camiseta (visto pelo cliente) ----------------
+// As levas são só do admin (firestore.rules), então a página do time não as
+// lê. Para o cliente acompanhar a produção, cada camiseta de pedido que está
+// numa leva guarda uma cópia dela em `loteProducao` ({ id, nome, status }).
+// Em vez de gravar essa cópia em cada ação (enviar, tirar, renomear, mudar a
+// etapa, excluir a leva), ela é reconciliada aqui sempre que as levas, os
+// itens ou as camisetas mudam — assim também se ajustam as levas antigas.
+
+let prodSincTimer = null;
+const prodSincPendentes = new Map(); // "timeId/alunoId" -> valor em gravação
+
+function agendarSincronizacaoLotes() {
+  clearTimeout(prodSincTimer);
+  prodSincTimer = setTimeout(sincronizarLotesNosAlunos, 800);
+}
+
+function sincronizarLotesNosAlunos() {
+  // Só com tudo carregado: senão uma leva ainda sem itens apagaria o lote das
+  // camisetas dela.
+  if (!prodLevasCarregadas) return;
+  const levas = Object.values(estadoLevas);
+  if (levas.some((e) => !e.itensCarregados)) return;
+
+  // Lote esperado de cada camiseta. Se ela estiver em mais de uma leva, vale
+  // a mais recente.
+  const esperado = new Map();
+  levas
+    .slice()
+    .sort((a, b) => (a.leva.criadaEmMs || 0) - (b.leva.criadaEmMs || 0))
+    .forEach(({ leva, itens }) => {
+      const valor = {
+        id: leva.id,
+        nome: leva.nome || "",
+        status: normalizarStatusLote(leva.status)
+      };
+      itens.forEach((i) => {
+        if (i.origem === "avulso" || !i.timeId || !i.alunoId) return;
+        esperado.set(chaveDoItem(i.timeId, i.alunoId), valor);
+      });
+    });
+
+  const gravar = [];
+  Object.keys(estadoTimes).forEach((timeId) => {
+    (estadoTimes[timeId].alunos || []).forEach((aluno) => {
+      const chave = chaveDoItem(timeId, aluno.id);
+      const exp = esperado.get(chave) || null;
+      const atual = aluno.loteProducao || null;
+      const igual = exp && atual
+        ? atual.id === exp.id && atual.nome === exp.nome && atual.status === exp.status
+        : !exp && !atual;
+      const assinatura = JSON.stringify(exp);
+      if (igual) {
+        prodSincPendentes.delete(chave);
+        return;
+      }
+      if (prodSincPendentes.get(chave) === assinatura) return; // já a caminho
+      prodSincPendentes.set(chave, assinatura);
+      gravar.push({ timeId, alunoId: aluno.id, chave, exp });
+    });
+  });
+  if (gravar.length === 0) return;
+
+  for (let i = 0; i < gravar.length; i += 400) {
+    const lote = db.batch();
+    gravar.slice(i, i + 400).forEach(({ timeId, alunoId, exp }) => {
+      lote.update(db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId), {
+        loteProducao: exp || firebase.firestore.FieldValue.delete()
+      });
+    });
+    lote.commit().catch((erro) => {
+      console.error("Não foi possível atualizar o lote das camisetas:", erro);
+      gravar.slice(i, i + 400).forEach((g) => prodSincPendentes.delete(g.chave));
+    });
+  }
 }
 
 // ---------------- Auxiliares ----------------
@@ -127,14 +206,11 @@ function levasOrdenadas() {
 }
 
 function labelStatusLeva(id) {
-  const s = STATUS_LEVA.find((x) => x.id === id);
-  return s ? s.label : "Em montagem";
+  return labelStatusLote(id);
 }
 
 function classeBadgeLeva(id) {
-  if (id === "concluida") return "pago";
-  if (id === "enviada") return "aguardando";
-  return "aberto";
+  return classeBadgeLote(id);
 }
 
 // Id do documento de um item que veio de um pedido. Como é derivado do time e
@@ -258,7 +334,7 @@ function renderizarListaLevas() {
     card.className = "card leva";
 
     const grupos = agruparPorModelo(itens);
-    const statusId = leva.status || "aberta";
+    const statusId = normalizarStatusLote(leva.status);
     const resumoModelos = grupos.length
       ? grupos.map((g) => `${escapeHtmlAdmin(g.modelo)} (${g.linhas.length})`).join(" &middot; ")
       : "nenhuma camiseta ainda";
@@ -283,10 +359,10 @@ function renderizarListaLevas() {
     const linhaStatus = document.createElement("div");
     linhaStatus.className = "linha-status-admin";
     const lbl = document.createElement("label");
-    lbl.textContent = "Situação da leva:";
+    lbl.textContent = "Etapa do lote:";
     const sel = document.createElement("select");
     sel.className = "select-status";
-    STATUS_LEVA.forEach((s) => {
+    STATUS_LOTE.forEach((s) => {
       const o = document.createElement("option");
       o.value = s.id;
       o.textContent = s.label;
@@ -778,7 +854,7 @@ async function criarLeva(nome, observacao) {
   await db.collection(COL_PRODUCAO).doc(id).set({
     nome,
     observacao: observacao || "",
-    status: "aberta",
+    status: STATUS_LOTE[0].id,
     clienteId: clienteFiltro && clienteFiltro !== SEM_CLIENTE ? clienteFiltro : "",
     criadaEmMs: Date.now(),
     criadaEm: firebase.firestore.FieldValue.serverTimestamp()

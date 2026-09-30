@@ -517,16 +517,20 @@ function atualizarVisibilidade() {
       ? "Ver a lista e pagar"
       : "Ver a lista";
   }
-  // Da Impressão em diante: o que não foi pago fica pendente e não é produzido.
+  // Pagamento do 1º lote encerrado em diante: o que foi pago segue para os
+  // lotes de produção (acompanhados na lista) e o que não foi fica em aberto.
   if (elMensagemProducao) {
     const { produzir, pendentes } = separarProducao(alunosAtuais);
     const mostrar = pedidoEmProducao(timeAtual) && alunosAtuais.length > 0;
     elMensagemProducao.classList.toggle("oculto", !mostrar);
     if (mostrar) {
+      const pendenteTxt = pedidoAceitaPagamento(timeAtual)
+        ? "ainda pode(m) ser paga(s) para entrar no 2º lote"
+        : "não foi(ram) paga(s) e não entra(m) na produção";
       elMensagemProducao.innerHTML = icone("printer") + " " + (pendentes.length === 0
-        ? `Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas e entraram na produção.`
-        : `Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
-          `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`);
+        ? `Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas. Acompanhe cada lote na lista.`
+        : `Produção em andamento: ${produzir.length} camiseta(s) paga(s) seguem para a produção (acompanhe cada lote na lista). ` +
+          `${pendentes.length} em aberto ${pendenteTxt}.`);
     }
   }
 
@@ -835,125 +839,221 @@ function renderizarTabela() {
   }
   if (elBuscaLista) elBuscaLista.closest(".campo-busca").classList.toggle("oculto", alunosAtuais.length < 8);
 
+  // A lista vem em dois blocos: em cima as camisetas em aberto (não pagas) e
+  // embaixo as que já estão em produção, separadas por lote, cada lote com a
+  // sua barra de etapas.
   elTabelaCorpo.innerHTML = "";
-  visiveis.forEach((aluno) => {
-    const tr = document.createElement("tr");
-    if (aluno.numero && duplicados.includes(String(aluno.numero))) {
-      tr.classList.add("duplicado");
-    }
-    // Nas etapas de produção, quem não pagou fica visivelmente de fora.
-    if (pedidoEmProducao(timeAtual) && !alunoSeraProduzido(aluno)) {
-      tr.classList.add("linha-fora-producao");
-    }
-
-    const marca = aluno.ajusteSolicitado
-      ? '<span class="marca-ajuste" title="Ajuste solicitado à organização">!</span> '
-      : "";
-
-    tr.innerHTML = `
-      <td data-label="Nome" class="cel-nome">${marca}${escapeHtml(aluno.nome)}${propostaAjusteHtml(aluno)}${historicoAjusteHtml(aluno)}</td>
-      <td data-label="Tamanho">${escapeHtml(aluno.tamanho)}</td>
-      <td data-label="Número">${escapeHtml(aluno.numero || "-")}</td>
-      <td data-label="Nome na camiseta">${escapeHtml(aluno.nomeCamiseta || "-")}</td>
-      <td data-label="Goleiro" class="cel-goleiro"></td>
-      <td data-label="Prof" class="cel-prof"></td>
-      <td data-label="Pagamento">${badgePagamentoHtml(aluno)}${badgeProducaoHtml(timeAtual, aluno)}</td>
-      <td data-label="Carrinho" class="cel-carrinho"></td>
-      <td data-label="" class="acoes-linha"></td>
-    `;
-
-    // Goleiro: quem entrou com a senha do time marca e desmarca aqui mesmo,
-    // num clique. Para quem só está olhando a lista, fica a marca (ou "-").
-    preencherCelulaGoleiro(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
-    // Prof: camiseta de professor, marca só para organização.
-    preencherCelulaProf(tr.querySelector(".cel-prof"), aluno, podeEditar);
-
-    // Carrinho: marque quantas quiser e pague todas de uma vez lá embaixo.
-    const tdCarrinho = tr.querySelector(".cel-carrinho");
-    if (podeEntrarNoCarrinho(aluno)) {
-      const rotulo = document.createElement("label");
-      rotulo.className = "check-carrinho";
-      const chk = document.createElement("input");
-      chk.type = "checkbox";
-      chk.checked = estaNoCarrinho(aluno.id);
-      chk.setAttribute("aria-label", "Colocar a camiseta de " + aluno.nome + " no carrinho");
-      chk.onchange = () => alternarNoCarrinho(aluno);
-      rotulo.appendChild(chk);
-      rotulo.appendChild(document.createTextNode(estaNoCarrinho(aluno.id) ? " no carrinho" : " somar"));
-      tdCarrinho.appendChild(rotulo);
-      if (estaNoCarrinho(aluno.id)) tr.classList.add("linha-no-carrinho");
-    } else {
-      tdCarrinho.textContent = "-";
-    }
-
-    const tdAcoes = tr.querySelector(".acoes-linha");
-
-    if (!pedidoTravado(timeAtual)) {
-      // Editar/excluir: liberado enquanto a lista aceita cadastro
-      // (aberto, fechado e pagamento em andamento).
-      if (podeEditar) {
-        const btnEditar = document.createElement("button");
-        btnEditar.textContent = "Editar";
-        btnEditar.className = "secundario";
-        btnEditar.onclick = () => editarLinha(tr, aluno);
-
-        const btnExcluir = document.createElement("button");
-        btnExcluir.textContent = "Excluir";
-        btnExcluir.className = "perigo";
-        btnExcluir.onclick = () => excluirAluno(aluno);
-
-        tdAcoes.appendChild(btnEditar);
-        tdAcoes.appendChild(btnExcluir);
-      }
-
-      const ajustePendente = !!aluno.ajusteSolicitado;
-
-      // Pagar: disponível nas etapas de pagamento (fechado / em andamento),
-      // se houver PIX/Mercado Pago e o aluno não estiver pago. Fica BLOQUEADO
-      // enquanto houver um ajuste pendente nesta unidade.
-      const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
-      const podePagar = pedidoAceitaPagamento(timeAtual) && !aluno.pago && (configGeral.pixChave || temMp);
-      if (podePagar && !ajustePendente) {
-        const btnPagar = document.createElement("button");
-        btnPagar.className = "primario";
-        // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
-        const valorLinha = precoDoAluno(configGeral, timeId, aluno.id, aluno.tamanho);
-        btnPagar.textContent = valorLinha && !precoOculto(timeAtual) ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
-        btnPagar.title = "Pagar só esta camiseta (para juntar várias, use o carrinho)";
-        btnPagar.onclick = () => abrirPagamento([itemDoAluno(aluno)]);
-        tdAcoes.appendChild(btnPagar);
-      }
-
-      // Solicitar ajuste: em qualquer fase que não seja "aberto" (onde dá para
-      // editar direto), enquanto o pagamento não foi feito nem declarado —
-      // pagar confirma os dados e encerra a possibilidade de ajuste.
-      if (!pedidoAberto(timeAtual) && !aluno.pago && !aluno.pagamentoDeclarado) {
-        const btnAjuste = document.createElement("button");
-        btnAjuste.className = "secundario";
-        if (ajustePendente) {
-          btnAjuste.textContent = "Ajuste solicitado ✓";
-          btnAjuste.disabled = true;
-        } else {
-          btnAjuste.textContent = "Solicitar ajuste";
-          btnAjuste.onclick = () => solicitarAjuste(aluno);
-        }
-        tdAcoes.appendChild(btnAjuste);
-      }
-
-      // Aviso de pagamento bloqueado por ajuste pendente.
-      if (podePagar && ajustePendente) {
-        const nota = document.createElement("small");
-        nota.className = "motivo-ajuste";
-        nota.textContent = "Pagamento bloqueado até a organização resolver o ajuste.";
-        tdAcoes.appendChild(nota);
-      }
-    }
-
-    elTabelaCorpo.appendChild(tr);
+  gruposDaLista(visiveis).forEach((grupo) => {
+    if (grupo.secao) elTabelaCorpo.appendChild(criarLinhaSecao(grupo.secao, grupo.ajuda));
+    if (grupo.titulo) elTabelaCorpo.appendChild(criarLinhaGrupo(grupo));
+    grupo.alunos.forEach((aluno) => {
+      elTabelaCorpo.appendChild(criarLinhaAluno(aluno, podeEditar, duplicados));
+    });
   });
 
   renderizarCarrinho();
   renderizarResumo();
+}
+
+// Separa a lista em: camisetas em aberto (não pagas), camisetas em produção
+// (uma entrada por lote) e as pagas que ainda esperam entrar num lote. A
+// camiseta que está num lote vai para ele mesmo sem pagamento (produção
+// adiantada pela organização, como a dos professores).
+function gruposDaLista(alunos) {
+  const emAberto = [];
+  const aguardando = [];
+  const porLote = new Map();
+  alunos.forEach((a) => {
+    const lote = a.loteProducao;
+    if (lote && lote.id) {
+      if (!porLote.has(lote.id)) porLote.set(lote.id, { lote, alunos: [] });
+      porLote.get(lote.id).alunos.push(a);
+    } else if (a.pago) {
+      aguardando.push(a);
+    } else {
+      emAberto.push(a);
+    }
+  });
+
+  const grupos = [];
+  if (emAberto.length > 0) {
+    grupos.push({
+      secao: `Camisetas em aberto (não pagas) — ${emAberto.length}`,
+      ajuda: pedidoAceitaPagamento(timeAtual)
+        ? "Ainda não entraram na produção. Pague para garantir a camiseta no lote."
+        : "Ainda não entraram na produção.",
+      alunos: emAberto
+    });
+  }
+
+  const lotes = [...porLote.values()].sort((a, b) =>
+    String(a.lote.nome || "").localeCompare(String(b.lote.nome || ""), "pt-BR", { numeric: true })
+  );
+  if (lotes.length > 0 || aguardando.length > 0) {
+    const nProducao = lotes.reduce((s, l) => s + l.alunos.length, 0) + aguardando.length;
+    lotes.forEach((l, i) => {
+      grupos.push({
+        secao: i === 0 ? `Camisetas em produção por lote — ${nProducao}` : "",
+        titulo: `${l.lote.nome || "Lote"} — ${l.alunos.length} camiseta(s)`,
+        status: l.lote.status,
+        alunos: l.alunos
+      });
+    });
+    if (aguardando.length > 0) {
+      grupos.push({
+        secao: lotes.length === 0 ? `Camisetas em produção por lote — ${nProducao}` : "",
+        titulo: `Pagas, aguardando lote — ${aguardando.length} camiseta(s)`,
+        alunos: aguardando
+      });
+    }
+  }
+  return grupos;
+}
+
+// Linha de título de um bloco da lista ("em aberto" / "em produção").
+function criarLinhaSecao(texto, ajuda) {
+  const tr = document.createElement("tr");
+  tr.className = "linha-secao-lista";
+  const td = document.createElement("td");
+  td.colSpan = 9;
+  td.dataset.label = "";
+  td.innerHTML = `<strong>${escapeHtml(texto)}</strong>` +
+    (ajuda ? `<br><small class="pix-ajuda">${escapeHtml(ajuda)}</small>` : "");
+  tr.appendChild(td);
+  return tr;
+}
+
+// Linha de título de um lote: nome e a barra de etapas da produção.
+function criarLinhaGrupo(grupo) {
+  const tr = document.createElement("tr");
+  tr.className = "linha-lote-lista";
+  const td = document.createElement("td");
+  td.colSpan = 9;
+  td.dataset.label = "";
+  const titulo = document.createElement("div");
+  titulo.className = "lote-lista-titulo";
+  titulo.innerHTML = icone("factory") + " " + escapeHtml(grupo.titulo);
+  td.appendChild(titulo);
+  if (grupo.status !== undefined) {
+    const barra = document.createElement("div");
+    renderizarBarraLote(barra, grupo.status);
+    td.appendChild(barra);
+  }
+  tr.appendChild(td);
+  return tr;
+}
+
+// Uma camiseta da lista.
+function criarLinhaAluno(aluno, podeEditar, duplicados) {
+  const tr = document.createElement("tr");
+  if (aluno.numero && duplicados.includes(String(aluno.numero))) {
+    tr.classList.add("duplicado");
+  }
+
+  const marca = aluno.ajusteSolicitado
+    ? '<span class="marca-ajuste" title="Ajuste solicitado à organização">!</span> '
+    : "";
+
+  tr.innerHTML = `
+    <td data-label="Nome" class="cel-nome">${marca}${escapeHtml(aluno.nome)}${propostaAjusteHtml(aluno)}${historicoAjusteHtml(aluno)}</td>
+    <td data-label="Tamanho">${escapeHtml(aluno.tamanho)}</td>
+    <td data-label="Número">${escapeHtml(aluno.numero || "-")}</td>
+    <td data-label="Nome na camiseta">${escapeHtml(aluno.nomeCamiseta || "-")}</td>
+    <td data-label="Goleiro" class="cel-goleiro"></td>
+    <td data-label="Prof" class="cel-prof"></td>
+    <td data-label="Pagamento">${badgePagamentoHtml(aluno)}</td>
+    <td data-label="Carrinho" class="cel-carrinho"></td>
+    <td data-label="" class="acoes-linha"></td>
+  `;
+
+  // Goleiro: quem entrou com a senha do time marca e desmarca aqui mesmo,
+  // num clique. Para quem só está olhando a lista, fica a marca (ou "-").
+  preencherCelulaGoleiro(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
+  // Prof: camiseta de professor, marca só para organização.
+  preencherCelulaProf(tr.querySelector(".cel-prof"), aluno, podeEditar);
+
+  // Carrinho: marque quantas quiser e pague todas de uma vez lá embaixo.
+  const tdCarrinho = tr.querySelector(".cel-carrinho");
+  if (podeEntrarNoCarrinho(aluno)) {
+    const rotulo = document.createElement("label");
+    rotulo.className = "check-carrinho";
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.checked = estaNoCarrinho(aluno.id);
+    chk.setAttribute("aria-label", "Colocar a camiseta de " + aluno.nome + " no carrinho");
+    chk.onchange = () => alternarNoCarrinho(aluno);
+    rotulo.appendChild(chk);
+    rotulo.appendChild(document.createTextNode(estaNoCarrinho(aluno.id) ? " no carrinho" : " somar"));
+    tdCarrinho.appendChild(rotulo);
+    if (estaNoCarrinho(aluno.id)) tr.classList.add("linha-no-carrinho");
+  } else {
+    tdCarrinho.textContent = "-";
+  }
+
+  const tdAcoes = tr.querySelector(".acoes-linha");
+
+  if (!pedidoTravado(timeAtual)) {
+    // Editar/excluir: liberado enquanto a lista aceita cadastro
+    // (aberto, fechado e pagamento em andamento).
+    if (podeEditar) {
+      const btnEditar = document.createElement("button");
+      btnEditar.textContent = "Editar";
+      btnEditar.className = "secundario";
+      btnEditar.onclick = () => editarLinha(tr, aluno);
+
+      const btnExcluir = document.createElement("button");
+      btnExcluir.textContent = "Excluir";
+      btnExcluir.className = "perigo";
+      btnExcluir.onclick = () => excluirAluno(aluno);
+
+      tdAcoes.appendChild(btnEditar);
+      tdAcoes.appendChild(btnExcluir);
+    }
+
+    const ajustePendente = !!aluno.ajusteSolicitado;
+
+    // Pagar: disponível nas etapas de pagamento (fechado / em andamento),
+    // se houver PIX/Mercado Pago e o aluno não estiver pago. Fica BLOQUEADO
+    // enquanto houver um ajuste pendente nesta unidade.
+    const temMp = !!(configGeral.mpAtivo && configGeral.mpBackendUrl);
+    const podePagar = pedidoAceitaPagamento(timeAtual) && !aluno.pago && (configGeral.pixChave || temMp);
+    if (podePagar && !ajustePendente) {
+      const btnPagar = document.createElement("button");
+      btnPagar.className = "primario";
+      // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
+      const valorLinha = precoDoAluno(configGeral, timeId, aluno.id, aluno.tamanho);
+      btnPagar.textContent = valorLinha && !precoOculto(timeAtual) ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
+      btnPagar.title = "Pagar só esta camiseta (para juntar várias, use o carrinho)";
+      btnPagar.onclick = () => abrirPagamento([itemDoAluno(aluno)]);
+      tdAcoes.appendChild(btnPagar);
+    }
+
+    // Solicitar ajuste: em qualquer fase que não seja "aberto" (onde dá para
+    // editar direto), enquanto o pagamento não foi feito nem declarado —
+    // pagar confirma os dados e encerra a possibilidade de ajuste.
+    if (!pedidoAberto(timeAtual) && !aluno.pago && !aluno.pagamentoDeclarado) {
+      const btnAjuste = document.createElement("button");
+      btnAjuste.className = "secundario";
+      if (ajustePendente) {
+        btnAjuste.textContent = "Ajuste solicitado ✓";
+        btnAjuste.disabled = true;
+      } else {
+        btnAjuste.textContent = "Solicitar ajuste";
+        btnAjuste.onclick = () => solicitarAjuste(aluno);
+      }
+      tdAcoes.appendChild(btnAjuste);
+    }
+
+    // Aviso de pagamento bloqueado por ajuste pendente.
+    if (podePagar && ajustePendente) {
+      const nota = document.createElement("small");
+      nota.className = "motivo-ajuste";
+      nota.textContent = "Pagamento bloqueado até a organização resolver o ajuste.";
+      tdAcoes.appendChild(nota);
+    }
+  }
+
+  return tr;
 }
 
 // Célula "Goleiro" da lista. Com permissão de editar (senha do time, lista
@@ -1030,13 +1130,16 @@ function renderizarResumo() {
 
   elResumo.innerHTML = `<span><strong>Total: ${alunosAtuais.length}</strong></span>`;
   if (pedidoEmProducao(timeAtual)) {
-    const { produzir, pendentes } = separarProducao(alunosAtuais);
+    // Mesma conta dos blocos da lista: o que está num lote conta como em
+    // produção mesmo sem pagamento (produção adiantada).
+    const produzir = alunosAtuais.filter((a) => a.pago || a.loteProducao);
+    const pendentes = alunosAtuais.filter((a) => !a.pago && !a.loteProducao);
     const emProducao = document.createElement("span");
     emProducao.innerHTML = `<strong>Em produção: ${produzir.length}</strong>`;
     elResumo.appendChild(emProducao);
     if (pendentes.length > 0) {
       const fora = document.createElement("span");
-      fora.textContent = `Fora da produção: ${pendentes.length}`;
+      fora.textContent = `Em aberto: ${pendentes.length}`;
       elResumo.appendChild(fora);
     }
   }

@@ -702,10 +702,23 @@ function baixarCSVProducao(nomeArquivo, alunos) {
   return baixarCSVProducaoItens(nomeArquivo, (alunos || []).filter(alunoSeraProduzido));
 }
 
-// Marca, nas etapas de produção, quem ficou de fora dela por não ter pago.
+// Lote de produção em que a camiseta está, com a etapa dele (ou "" se não
+// estiver em nenhum). Ver STATUS_LOTE.
+function badgeLoteHtml(aluno) {
+  const lote = aluno && aluno.loteProducao;
+  if (!lote || !lote.id) return "";
+  const nome = escaparHtml(lote.nome || "Lote");
+  return `<span class="badge ${classeBadgeLote(lote.status)}" title="Lote de produção: ${nome}">` +
+    `${nome} · ${escaparHtml(labelStatusLote(lote.status))}</span>`;
+}
+
+// Marca o lote da camiseta e, nas etapas de produção, quem ficou de fora dela
+// por não ter pago.
 function badgeProducaoHtml(time, aluno) {
+  const lote = badgeLoteHtml(aluno);
+  if (lote) return lote;
   if (!pedidoEmProducao(time) || alunoSeraProduzido(aluno)) return "";
-  return '<span class="badge pendente" title="Não foi pago até a impressão, então não entra nesta produção">Fora da produção</span>';
+  return '<span class="badge pendente" title="Não foi paga: fica em aberto e não entra nos lotes de produção">Em aberto</span>';
 }
 
 // Camiseta interna: paga como "interno" (produção própria, sem receita).
@@ -841,13 +854,10 @@ function historicoAjusteHtml(aluno) {
 // ============================================================
 const STATUS_PEDIDO = [
   { id: "aberto", label: "Aberto" },
-  { id: "fechado", label: "Fechado" },
-  { id: "pagamento_andamento", label: "Pagamento em andamento" },
-  { id: "pagamento_encerrado", label: "Pagamento encerrado" },
-  { id: "impressao", label: "Impressão" },
-  { id: "costura", label: "Costura" },
-  { id: "logistica", label: "Logística" },
-  { id: "entregue", label: "Entregue ao representante" },
+  { id: "pagamento_1", label: "Pagamento 1º lote" },
+  { id: "pagamento_1_encerrado", label: "Pagamento 1º lote encerrado" },
+  { id: "pagamento_2", label: "Pagamento 2º lote" },
+  { id: "pagamento_2_encerrado", label: "Pagamento 2º lote encerrado" },
   // Última etapa: o pedido acabou de vez e vai para o ARQUIVO — sai da lista
   // principal e do Kanban do painel e da tela inicial, mas continua existindo
   // (e contando no Financeiro). Para desarquivar, basta trocar o status.
@@ -861,6 +871,19 @@ const STATUS_PEDIDO = [
   { id: "bloqueado", label: "Bloqueado" }
 ];
 
+// A produção (impressão, costura, logística, entrega) agora é acompanhada por
+// LOTE (as levas da aba Produção — ver STATUS_LOTE), não pelo pedido. Os
+// times gravados com a sequência antiga caem na etapa equivalente da nova.
+const STATUS_PEDIDO_ANTIGO = {
+  fechado: "pagamento_1",
+  pagamento_andamento: "pagamento_1",
+  pagamento_encerrado: "pagamento_1_encerrado",
+  impressao: "pagamento_1_encerrado",
+  costura: "pagamento_1_encerrado",
+  logistica: "pagamento_1_encerrado",
+  entregue: "pagamento_1_encerrado"
+};
+
 // Status que NÃO fazem parte da linha do tempo do pedido: ficam fora da barra
 // de etapas e travam o pedido, apesar de virem no fim da lista acima.
 const STATUS_FORA_DA_LINHA = ["suspenso", "bloqueado"];
@@ -869,10 +892,11 @@ function statusForaDaLinha(statusId) {
   return STATUS_FORA_DA_LINHA.includes(statusId);
 }
 
-// Status atual do time (com compatibilidade para times antigos que só têm `fechado`).
+// Status atual do time (com compatibilidade para times antigos que só têm
+// `fechado` ou que ainda estão num status da sequência antiga).
 function statusPedidoDe(time) {
-  if (time && time.statusPedido) return time.statusPedido;
-  return time && time.fechado ? "fechado" : "aberto";
+  if (time && time.statusPedido) return STATUS_PEDIDO_ANTIGO[time.statusPedido] || time.statusPedido;
+  return time && time.fechado ? "pagamento_1" : "aberto";
 }
 
 function indiceStatus(id) {
@@ -880,7 +904,7 @@ function indiceStatus(id) {
 }
 
 function labelStatus(id) {
-  const s = STATUS_PEDIDO.find((x) => x.id === id);
+  const s = STATUS_PEDIDO.find((x) => x.id === (STATUS_PEDIDO_ANTIGO[id] || id));
   return s ? s.label : id;
 }
 
@@ -909,33 +933,35 @@ function pedidoTravado(time) {
   return statusForaDaLinha(statusPedidoDe(time));
 }
 
-// Etapas em que o representante ainda pode ADICIONAR/EDITAR nomes na lista.
-// A lista só trava de verdade quando o pagamento encerra (pagamento_encerrado
-// em diante). "Suspenso" e "Bloqueado" ficam de fora (travam tudo).
+// Etapas em que o representante ainda pode ADICIONAR/EDITAR nomes na lista:
+// aberto e as duas janelas de pagamento (quem ficou de fora do 1º lote ainda
+// entra no 2º). Com o pagamento de um lote encerrado, a lista trava.
+// "Suspenso" e "Bloqueado" ficam de fora (travam tudo).
 function pedidoAceitaCadastro(time) {
   const s = statusPedidoDe(time);
-  return s === "aberto" || s === "fechado" || s === "pagamento_andamento";
+  return s === "aberto" || s === "pagamento_1" || s === "pagamento_2";
 }
 
-// Etapas em que o representante pode PAGAR (fechado e pagamento em andamento).
+// Etapas em que dá para PAGAR: as janelas de pagamento do 1º e do 2º lote.
 function pedidoAceitaPagamento(time) {
   const s = statusPedidoDe(time);
-  return s === "fechado" || s === "pagamento_andamento";
+  return s === "pagamento_1" || s === "pagamento_2";
 }
 
-// Da Impressão em diante o pedido já está sendo produzido: é o momento em que
-// a lista se separa entre o que vai para a impressão (pago) e o que fica
-// pendente (não pago). Os status fora da linha do tempo ("Suspenso" e
+// Depois que o pagamento do 1º lote encerra, o pedido já está sendo produzido:
+// o que foi pago vai para os lotes de produção e o que não foi fica em aberto
+// (pode entrar no 2º lote). Os status fora da linha do tempo ("Suspenso" e
 // "Bloqueado") ficam de fora, apesar de virem depois na lista.
 function pedidoEmProducao(time) {
   const s = statusPedidoDe(time);
-  return !statusForaDaLinha(s) && indiceStatus(s) >= indiceStatus("impressao");
+  return !statusForaDaLinha(s) && indiceStatus(s) >= indiceStatus("pagamento_1_encerrado");
 }
 
 // Classe CSS do badge conforme o status (usada em todas as telas).
 function classeBadgeStatus(statusId) {
+  statusId = STATUS_PEDIDO_ANTIGO[statusId] || statusId;
   if (statusId === "aberto") return "aberto";
-  if (statusId === "entregue") return "pago";
+  if (statusId === "pagamento_1" || statusId === "pagamento_2") return "aguardando";
   if (statusId === "finalizado") return "finalizado";
   if (statusId === "suspenso") return "suspenso";
   if (statusId === "bloqueado") return "bloqueado";
@@ -943,12 +969,13 @@ function classeBadgeStatus(statusId) {
 }
 
 // Se o time tem data limite (string "YYYY-MM-DD") vencida e ainda está "aberto",
-// retorna "fechado" (fechamento automático). Caso contrário, null (sem mudança).
+// retorna "pagamento_1" (fechamento automático: a lista fecha e começa o
+// pagamento do 1º lote). Caso contrário, null (sem mudança).
 function statusAutoPorData(time) {
   if (statusPedidoDe(time) !== "aberto" || !time.dataLimite) return null;
   const limite = new Date(time.dataLimite + "T23:59:59");
   if (isNaN(limite.getTime())) return null;
-  return Date.now() > limite.getTime() ? "fechado" : null;
+  return Date.now() > limite.getTime() ? "pagamento_1" : null;
 }
 
 // Renderiza a barra de acompanhamento (etapas do pedido) em `container`.
@@ -970,6 +997,57 @@ function renderizarBarraStatus(container, statusId) {
   const atual = indiceStatus(statusId);
   STATUS_PEDIDO.forEach((s, i) => {
     if (statusForaDaLinha(s.id)) return; // fora da linha do tempo
+    const etapa = document.createElement("span");
+    etapa.className = "status-etapa" + (i < atual ? " concluida" : i === atual ? " atual" : "");
+    etapa.textContent = s.label;
+    container.appendChild(etapa);
+  });
+}
+
+// ============================================================
+// STATUS DO LOTE (levas da aba Produção)
+// ============================================================
+// Depois de paga, a camiseta entra num lote de produção, e é o lote que anda
+// pelas etapas abaixo. Cada camiseta de pedido que está num lote guarda uma
+// cópia do lote em `loteProducao` ({ id, nome, status }) — é por ela que a
+// página do time mostra o andamento, já que os lotes em si são só do admin.
+const STATUS_LOTE = [
+  { id: "design", label: "Design" },
+  { id: "impressao", label: "Impressão e corte" },
+  { id: "costura", label: "Costura" },
+  { id: "logistica", label: "Logística" },
+  { id: "entregue", label: "Entregue" },
+  { id: "finalizado", label: "Finalizado" }
+];
+
+// Levas gravadas com os status antigos caem na etapa equivalente.
+const STATUS_LOTE_ANTIGO = { aberta: "design", enviada: "impressao", concluida: "finalizado" };
+
+function normalizarStatusLote(id) {
+  const s = STATUS_LOTE_ANTIGO[id] || id;
+  return STATUS_LOTE.some((x) => x.id === s) ? s : STATUS_LOTE[0].id;
+}
+
+function labelStatusLote(id) {
+  const s = normalizarStatusLote(id);
+  return STATUS_LOTE.find((x) => x.id === s).label;
+}
+
+function classeBadgeLote(id) {
+  const s = normalizarStatusLote(id);
+  if (s === "finalizado") return "finalizado";
+  if (s === "entregue") return "pago";
+  if (s === "design") return "aberto";
+  return "aguardando";
+}
+
+// Barra de etapas de um lote (mesmo visual da barra do pedido).
+function renderizarBarraLote(container, statusId) {
+  if (!container) return;
+  container.className = "barra-status";
+  container.innerHTML = "";
+  const atual = STATUS_LOTE.findIndex((s) => s.id === normalizarStatusLote(statusId));
+  STATUS_LOTE.forEach((s, i) => {
     const etapa = document.createElement("span");
     etapa.className = "status-etapa" + (i < atual ? " concluida" : i === atual ? " atual" : "");
     etapa.textContent = s.label;

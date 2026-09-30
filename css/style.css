@@ -469,6 +469,44 @@ tr.duplicado td { background: #fef3c7; }
 /* No card da home a imagem ocupa a largura toda do card. */
 .wrap-imagem-card { display: block; width: 100%; }
 
+/* Lista do time: títulos dos blocos (em aberto / em produção por lote). */
+.linha-secao-lista > td {
+  padding: 14px 8px 6px;
+  border-bottom: 2px solid var(--cinza-borda);
+  font-size: 1rem;
+  background: transparent;
+}
+.linha-lote-lista > td {
+  padding: 10px 8px;
+  background: var(--cinza-bg);
+  border-bottom: 1px solid var(--cinza-borda);
+}
+.lote-lista-titulo { font-weight: 700; }
+.linha-lote-lista .barra-status { margin-top: 8px; }
+@media (max-width: 700px) {
+  .tabela-responsiva tr.linha-secao-lista,
+  .tabela-responsiva tr.linha-lote-lista {
+    border: 0;
+    padding: 0;
+    margin: 12px 0 8px;
+    background: transparent;
+  }
+  .tabela-responsiva tr.linha-lote-lista {
+    border-radius: 10px;
+    background: var(--cinza-bg);
+    padding: 8px 12px;
+  }
+  .tabela-responsiva tr.linha-secao-lista > td,
+  .tabela-responsiva tr.linha-lote-lista > td {
+    display: block;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-weight: 400;
+  }
+}
+
 /* Produção: linha que ficou de fora (não paga até a impressão). */
 .linha-fora-producao > td {
   opacity: 0.6;
