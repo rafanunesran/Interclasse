@@ -67,12 +67,13 @@ function sangriaDaPrevia() {
 // Brasão (do time) e logo (da empresa) são caixas de imagem: mantêm a
 // proporção e não têm estilo de texto.
 function ehCaixaImagem(el) {
-  return el.tipo === "brasao" || el.tipo === "logo" || el.tipo === "detalhe";
+  return el.tipo === "brasao" || el.tipo === "logo" || el.tipo === "detalhe" || el.tipo === "imagem";
 }
 
 // Miniatura (url) de uma caixa de imagem para um time e uma peça.
 function imagemDaCaixa(el, prod, pecaId) {
   if (el.tipo === "logo") return logoEmpresa && logoEmpresa.previaUrl;
+  if (el.tipo === "imagem") return el.arquivo && el.arquivo.previaUrl;
   if (el.tipo === "detalhe") {
     const d = EPS.detalheDaPeca(prod, pecaId);
     return d && d.img.previaUrl;
@@ -273,52 +274,138 @@ function producaoGoleiroPropria(prod) {
 function temVarianteGoleiro(time) {
   const g = producaoGoleiroPropria(producaoDoTime(time));
   return !!(Object.keys(g.pecas || {}).length || g.brasao || g.fonte || g.detalheManga || g.detalheMangaDir ||
-    Object.keys(g.layoutAjustes || {}).length);
+    Object.keys(g.layoutAjustes || {}).length || Object.keys(g.elementos || {}).length || Object.keys(g.ordem || {}).length);
 }
 
-// Ajuste do goleiro por cima do da comum: a posição vem inteira de um ou do
-// outro; o estilo mistura (o do goleiro ganha); "oculto" do goleiro ganha.
-function mesclarAjusteGoleiro(comum, gol) {
-  if (!gol) return comum;
-  const m = { ...(comum || {}) };
-  if (gol.base || gol.tamanhos) {
-    delete m.base;
-    delete m.tamanhos;
-    if (gol.base) m.base = gol.base;
-    if (gol.tamanhos) m.tamanhos = gol.tamanhos;
-  }
-  if (gol.estilo) m.estilo = { ...(m.estilo || {}), ...gol.estilo };
-  if ("oculto" in gol) m.oculto = gol.oculto;
-  return m;
-}
-
-// Os arquivos e ajustes que valem para a camiseta do goleiro.
+// Os arquivos que valem para a camiseta do goleiro (os dele; o que faltar,
+// os da comum). Os ajustes de layout ficam onde estão: o nível "goleiro"
+// entra na montagem das camadas (ver niveisDoTime).
 function producaoDoGoleiro(prod) {
   const p = prod || {};
   const g = producaoGoleiroPropria(p);
   const saida = { ...p, pecas: { ...(p.pecas || {}), ...(g.pecas || {}) } };
-  delete saida.goleiro;
   ["brasao", "fonte", "detalheManga", "detalheMangaDir"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
-  const ajustes = {};
-  const pecasAj = new Set([...Object.keys(p.layoutAjustes || {}), ...Object.keys(g.layoutAjustes || {})]);
-  pecasAj.forEach((pecaId) => {
-    const c = (p.layoutAjustes || {})[pecaId] || {};
-    const gl = (g.layoutAjustes || {})[pecaId] || {};
-    const porPeca = {};
-    new Set([...Object.keys(c), ...Object.keys(gl)]).forEach((elId) => {
-      porPeca[elId] = mesclarAjusteGoleiro(c[elId], gl[elId]);
-    });
-    ajustes[pecaId] = porPeca;
-  });
-  saida.layoutAjustes = ajustes;
   return saida;
 }
 
 // O time "vestido" de goleiro (ou o próprio time), para a prévia, o editor e
-// a folha EPS — que leem tudo de time.producao.
+// a folha EPS — que leem tudo de time.producao. `_goleiro` liga o nível do
+// goleiro nas camadas.
 function timeNaVariante(time, goleiro) {
   if (!time || !goleiro) return time;
-  return { ...time, producao: producaoDoGoleiro(producaoDoTime(time)) };
+  return { ...time, _goleiro: true, producao: producaoDoGoleiro(producaoDoTime(time)) };
+}
+
+// ============================================================
+// NÍVEIS DA ARTE: geral → cliente → time → goleiro
+// ============================================================
+// O layout de cada peça é montado em níveis, do mais geral ao mais
+// específico:
+//   • geral (aba Artes, config/layout): vale para todos os times;
+//   • cliente (clientes/{id}.arte): só os times daquele cliente — os outros
+//     clientes nunca recebem o que é mudado ou acrescentado ali;
+//   • time (producao.layoutAjustes / elementos / ordem);
+//   • goleiro (producao.goleiro.*): só na camiseta do goleiro.
+// Cada nível pode AJUSTAR um elemento que veio de cima (`ajustes[peca][id]`:
+// posição, estilo, ocultar/mostrar), ACRESCENTAR elementos próprios
+// (`elementos[peca]`: imagem, texto, nome, número…) e mudar a ORDEM das
+// camadas (`ordem[peca]`: ids de baixo para cima). O que não muda segue o
+// de cima.
+
+function clienteDaArte(time) {
+  const id = clienteIdDoTime(time);
+  return id && typeof estadoClientes !== "undefined" && estadoClientes[id] ? estadoClientes[id] : null;
+}
+
+function nivelDoCliente(cliente) {
+  const a = (cliente && cliente.arte) || {};
+  return { tipo: "cliente", ajustes: a.ajustes, elementos: a.elementos, ordem: a.ordem };
+}
+
+function nivelDaProducao(p, tipo) {
+  return { tipo, ajustes: p.layoutAjustes, elementos: p.elementos, ordem: p.ordem };
+}
+
+// Níveis de um time (o layout geral é a base, fora da lista).
+function niveisDoTime(time) {
+  if (!time) return [];
+  const niveis = [];
+  const cli = clienteDaArte(time);
+  if (cli) niveis.push(nivelDoCliente(cli));
+  const prod = producaoDoTime(time);
+  niveis.push(nivelDaProducao(prod, "time"));
+  if (time._goleiro) niveis.push(nivelDaProducao(producaoGoleiroPropria(prod), "goleiro"));
+  return niveis;
+}
+
+// O elemento com o ajuste de um nível por cima. A posição do nível entra no
+// lugar da de cima: a caixa base dele (todos os tamanhos proporcionais a
+// ela, menos os que ele mesmo ajustou) ou só os tamanhos que ele ajustou.
+function aplicarAjusteNivel(el, aj) {
+  const e = { ...el };
+  if (aj.estilo) Object.assign(e, aj.estilo);
+  if (aj.base) {
+    e.caixa = aj.base;
+    e.ajustes = { ...(aj.tamanhos || {}) };
+  } else if (aj.tamanhos) {
+    e.ajustes = { ...(e.ajustes || {}), ...aj.tamanhos };
+  }
+  if ("oculto" in aj) e.oculto = !!aj.oculto;
+  return e;
+}
+
+// Reordena pela ordem gravada; quem não está nela (acrescentado depois)
+// fica por cima, na ordem em que veio.
+function aplicarOrdem(itens, ordem) {
+  const pos = new Map(ordem.map((id, i) => [id, i]));
+  const dentro = itens.filter((it) => pos.has(it.el.id)).sort((a, b) => pos.get(a.el.id) - pos.get(b.el.id));
+  return [...dentro, ...itens.filter((it) => !pos.has(it.el.id))];
+}
+
+// Camadas de uma peça depois dos níveis, de baixo para cima:
+// [{ el, origem: "geral" | "cliente" | "time" | "goleiro" }]. Os ocultos
+// continuam na lista (el.oculto) — o editor mostra apagados; quem desenha
+// ou imprime pula.
+function resolverPeca(pecaId, niveis) {
+  const geral = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
+  let itens = geral.map((el) => ({ el: { ...el }, origem: "geral" }));
+  (niveis || []).forEach((n) => {
+    const ajs = (n.ajustes || {})[pecaId] || {};
+    itens.forEach((it) => {
+      const aj = ajs[it.el.id];
+      if (aj) it.el = aplicarAjusteNivel(it.el, aj);
+    });
+    ((n.elementos || {})[pecaId] || []).forEach((el) => itens.push({ el: { ...el }, origem: n.tipo }));
+    const ordem = (n.ordem || {})[pecaId];
+    if (ordem && ordem.length) itens = aplicarOrdem(itens, ordem);
+  });
+  return itens;
+}
+
+// Elementos visíveis de uma peça, na ordem de desenho.
+function elementosVisiveis(pecaId, niveis) {
+  return resolverPeca(pecaId, niveis).filter((it) => !it.el.oculto).map((it) => it.el);
+}
+
+function elementosDoTime(time, pecaId) {
+  return elementosVisiveis(pecaId, niveisDoTime(time));
+}
+
+// Layout pronto (sem ajustes pendentes) para a folha EPS: cada peça com os
+// elementos já resolvidos pelos níveis.
+function layoutComNiveis(niveis) {
+  const pecas = {};
+  PECAS_PRODUCAO.forEach((p) => { pecas[p.id] = { elementos: elementosVisiveis(p.id, niveis) }; });
+  return { ...layoutConfig, pecas };
+}
+
+function layoutDoTime(time) {
+  return layoutComNiveis(niveisDoTime(time));
+}
+
+// O time com os ajustes já embutidos no layout resolvido (para a folha EPS).
+function timeSemAjustes(time) {
+  return { ...time, producao: { ...producaoDoTime(time), layoutAjustes: {} } };
 }
 
 // Seletor "Camiseta comum | Goleiro" das abas do pedido.
@@ -352,14 +439,13 @@ function pendenciasProducao(time) {
   const falta = [];
   const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id]);
   if (!temArte) falta.push("arte das peças");
-  const usaTexto = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => !ehCaixaImagem(e)));
-  const usaBrasao = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo === "brasao"));
+  // O que o layout DESTE time usa (geral + cliente + time [+ goleiro]).
+  const todos = PECAS_PRODUCAO.flatMap((x) => elementosDoTime(time, x.id));
+  const usaTexto = todos.some((e) => !ehCaixaImagem(e));
+  const usaBrasao = todos.some((e) => e.tipo === "brasao");
   if (usaTexto && !p.fonte) falta.push("fonte");
   if (usaBrasao && !p.brasao) falta.push("brasão");
-  const usaDetalhe = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo === "detalhe"));
+  const usaDetalhe = todos.some((e) => e.tipo === "detalhe");
   if (usaDetalhe && !p.detalheManga) falta.push("detalhe da manga");
   return falta;
 }
@@ -559,6 +645,34 @@ async function miniaturaDaArte(bytes, info) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
+// Envia um PNG de produção (600 dpi) ao Drive, com a miniatura para a tela.
+// Devolve os dados a gravar, ou null se cancelado. `marcar(texto)` mostra o
+// andamento.
+async function enviarPngProducao(file, pref, marcar) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const info = PngStream.lerCabecalho(bytes); // valida (8 bits, sem entrelaçamento)
+  if (info.dpi && info.dpi !== 600 &&
+      !confirm(`Este PNG está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return null;
+  marcar("enviando 0%…");
+  const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
+    (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
+  marcar("gerando miniatura…");
+  let previaUrl = "";
+  try {
+    const mini = await miniaturaDaArte(bytes, info);
+    previaUrl = (await enviarArquivoDrive(driveScriptUrl,
+      new File([mini], file.name.replace(/\.png$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
+  } catch (e) {
+    console.warn("Miniatura não gerada:", e);
+  } finally {
+    marcar("");
+  }
+  return {
+    partes: env.partes, nomeArquivo: file.name,
+    larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600, previaUrl
+  };
+}
+
 async function enviarArquivoProducao(timeId, slot, goleiro) {
   if (!exigirDriveProducao()) return;
   const accept = slot === "brasao" ? ".eps,.ps,application/postscript"
@@ -582,26 +696,8 @@ async function enviarArquivoProducao(timeId, slot, goleiro) {
       guardarArquivoDriveNoCache(env.partes, bytes);
       dados = { partes: env.partes, nome: file.name.replace(/\.(ttf|otf)$/i, "") };
     } else {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const info = PngStream.lerCabecalho(bytes); // valida (8 bits, sem entrelaçamento)
-      if (info.dpi && info.dpi !== 600 &&
-          !confirm(`Este PNG está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return;
-      marcar("enviando 0%…");
-      const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
-        (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
-      marcar("gerando miniatura…");
-      let previaUrl = "";
-      try {
-        const mini = await miniaturaDaArte(bytes, info);
-        previaUrl = (await enviarArquivoDrive(driveScriptUrl,
-          new File([mini], file.name.replace(/\.png$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
-      } catch (e) {
-        console.warn("Miniatura não gerada:", e);
-      }
-      dados = {
-        partes: env.partes, nomeArquivo: file.name,
-        larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600, previaUrl
-      };
+      dados = await enviarPngProducao(file, pref, marcar);
+      if (!dados) return;
     }
     const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
     const alvo = goleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
@@ -692,12 +788,9 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   }
 
   const fonte = fonteProntaDoTime(time);
-  const elementos = (layoutConfig.pecas[pecaId] && layoutConfig.pecas[pecaId].elementos) || [];
-  (soArte === true ? [] : elementos).forEach((elGeral) => {
-    const ajTime = ajusteDaProducao(prod, pecaId, elGeral.id);
-    const el = EPS.elementoDoTime(elGeral, ajTime);
-    if (!el) return; // oculto neste time
-    const c = EPS.caixaEfetiva(el, tam, base, dim, ajTime);
+  // As camadas do time (geral + cliente + time [+ goleiro]), já ajustadas.
+  (soArte === true ? [] : elementosDoTime(time, pecaId)).forEach((el) => {
+    const c = EPS.caixaEfetiva(el, tam, base, dim);
     if (ehCaixaImagem(el)) {
       const url = imagemDaCaixa(el, prod, pecaId);
       if (url) {
@@ -1140,25 +1233,67 @@ function criarPreviaArteTime(timeId, timeComum) {
 // EDITOR DE LAYOUT (aba Artes)
 // ============================================================
 
-// O mesmo editor serve à aba Artes (#editorLayout, layout geral ou um time)
-// e à aba "Editar arte" do pedido (travado naquele time). Só um desenha por
-// vez: o do pedido quando está visível, senão o da aba Artes.
+// O mesmo editor serve à aba Artes (#editorLayout: layout geral, um cliente
+// ou um time) e à aba "Editar arte" do pedido (travado naquele time). Só um
+// desenha por vez: o do pedido quando está visível, senão o da aba Artes.
+// Ele sempre edita UM nível (ver NÍVEIS DA ARTE): o que é deste nível muda
+// direto; o que veio de cima vira um ajuste deste nível.
 let elEditorLayout = document.getElementById("editorLayout");
 let editorPedido = null;    // { container, timeId } da aba "Editar arte"
 let editorTravado = false;  // desenhando no pedido?
 let layoutModoArtes = "";   // o que a aba Artes estava editando
-let layoutModo = "";        // "" = layout geral; timeId = ajuste daquele time
+let layoutModo = "";        // "" = layout geral; "c:<id>" = cliente; timeId = time
 let layoutGoleiro = false;  // no pedido: editando a variante do goleiro?
-let layoutTimePrevia = "";  // time cuja arte/fonte aparece na prévia (modo geral)
+let layoutTimePrevia = "";  // time cuja arte/fonte aparece na prévia (geral e cliente)
 let layoutPeca = "costas";
 let layoutTam = "";
 let layoutElSel = "";
 let layoutArrastando = false;
 const amostraLayout = { nomeCamiseta: "JOÃO PEDRO", nome: "João Pedro Silva", numero: "10" };
 
+const PREFIXO_MODO_CLIENTE = "c:";
+
+function modoCliente() {
+  return layoutModo.startsWith(PREFIXO_MODO_CLIENTE) ? layoutModo.slice(PREFIXO_MODO_CLIENTE.length) : "";
+}
+
+function modoTime() {
+  return layoutModo && !layoutModo.startsWith(PREFIXO_MODO_CLIENTE) ? layoutModo : "";
+}
+
+// "geral" | "cliente" | "time" | "goleiro": o nível que o editor está mexendo.
+function nivelAtualTipo() {
+  if (modoCliente()) return "cliente";
+  if (modoTime()) return layoutGoleiro ? "goleiro" : "time";
+  return "geral";
+}
+
+const NOME_NIVEL = { geral: "layout geral", cliente: "cliente", time: "time", goleiro: "goleiro" };
+
+// Para quem vale o que se muda no nível aberto (para os textos de ajuda).
+function alvoDoNivel() {
+  const tipo = nivelAtualTipo();
+  if (tipo === "cliente") {
+    const c = estadoClientes[modoCliente()];
+    return `os times de ${c ? c.nome || c.id : "este cliente"}`;
+  }
+  if (tipo === "time") return "este time";
+  if (tipo === "goleiro") return "o goleiro deste time";
+  return "todos os times";
+}
+
 // "Ajustar layout deste time": abre a aba "Editar arte" do pedido.
 function abrirLayoutDoTime(timeId) {
   if (typeof abrirTimeAdmin === "function") abrirTimeAdmin(timeId, "editarArte");
+}
+
+// "Editar arte do cliente": abre a aba Artes editando aquele cliente.
+function abrirArteDoCliente(clienteId) {
+  layoutModo = layoutModoArtes = PREFIXO_MODO_CLIENTE + clienteId;
+  layoutElSel = "";
+  const aba = document.querySelector('.aba[data-aba="artes"]');
+  if (aba) aba.click();
+  else renderizarEditorLayout();
 }
 
 // Chamado pela aba "Editar arte" do pedido: desenha o editor ali.
@@ -1206,9 +1341,51 @@ function timesParaLayout() {
     .sort((a, b) => a[1].time.nome.localeCompare(b[1].time.nome, "pt-BR"));
 }
 
+// Times da prévia: no modo cliente, só os daquele cliente.
+function timesDaPreviaLayout() {
+  const cid = modoCliente();
+  const times = timesParaLayout();
+  return cid ? times.filter(([, e]) => clienteIdDoTime(e.time) === cid) : times;
+}
+
+// Time cujos arquivos (arte, brasão, fonte) aparecem no palco. No modo time,
+// é o próprio time (na variante aberta).
 function timeDaPrevia() {
-  const id = layoutModo || layoutTimePrevia;
-  return id && estadoTimes[id] ? timeNaVariante(estadoTimes[id].time, layoutModo && layoutGoleiro) : null;
+  const t = modoTime();
+  if (t) return estadoTimes[t] ? timeNaVariante(estadoTimes[t].time, layoutGoleiro) : null;
+  return layoutTimePrevia && estadoTimes[layoutTimePrevia] ? estadoTimes[layoutTimePrevia].time : null;
+}
+
+// Níveis aplicados no editor, do mais geral ao aberto (o último é o que se
+// edita; no layout geral, nenhum).
+function niveisDoEditor() {
+  const cid = modoCliente();
+  if (cid) return estadoClientes[cid] ? [nivelDoCliente(estadoClientes[cid])] : [];
+  if (modoTime()) return niveisDoTime(timeDaPrevia());
+  return [];
+}
+
+// Camadas da peça aberta como ficam no nível editado, de baixo para cima.
+function itensDoEditor(pecaId) {
+  return resolverPeca(pecaId || layoutPeca, niveisDoEditor());
+}
+
+// As mesmas camadas sem o nível editado (o que vem "de cima").
+function itensAcimaDoEditor(pecaId) {
+  return resolverPeca(pecaId || layoutPeca, niveisDoEditor().slice(0, -1));
+}
+
+// Dados próprios do nível editado (ajustes, elementos, ordem).
+function nivelDoEditor() {
+  const niveis = niveisDoEditor();
+  return niveis.length ? niveis[niveis.length - 1] : null;
+}
+
+// Ajuste que o nível editado fez num elemento herdado.
+function ajusteDoNivel(pecaId, elId) {
+  const n = nivelDoEditor();
+  const aj = n && n.ajustes;
+  return aj && aj[pecaId] && aj[pecaId][elId];
 }
 
 function tamanhosComMolde(pecaId) {
@@ -1232,26 +1409,51 @@ function renderizarEditorLayout() {
   if (foco && foco.tagName === "INPUT" && foco.type !== "checkbox") return;
 
   const times = timesParaLayout();
-  if (layoutModo && !estadoTimes[layoutModo]) layoutModo = "";
-  if (!layoutModo && (!layoutTimePrevia || !estadoTimes[layoutTimePrevia])) {
-    const comArte = times.find(([, e]) => e.time.producao && e.time.producao.pecas);
-    layoutTimePrevia = comArte ? comArte[0] : "";
+  if (modoTime() && !estadoTimes[modoTime()]) layoutModo = "";
+  if (modoCliente() && !estadoClientes[modoCliente()]) layoutModo = "";
+  if (!modoTime()) {
+    const daPrevia = timesDaPreviaLayout();
+    if (!daPrevia.some(([id]) => id === layoutTimePrevia)) {
+      const comArte = daPrevia.find(([, e]) => e.time.producao && e.time.producao.pecas);
+      layoutTimePrevia = comArte ? comArte[0] : (daPrevia[0] ? daPrevia[0][0] : "");
+    }
   }
+  const tipo = nivelAtualTipo();
   const tam = tamanhoDoEditor();
-  const opcTimes = (sel) => times.map(([id, e]) =>
+  const opcTimes = (lista, sel) => lista.map(([id, e]) =>
     `<option value="${escAttr(id)}"${id === sel ? " selected" : ""}>${escapeHtmlAdmin(e.time.nome)}</option>`).join("");
+  const clientes = typeof clientesOrdenados === "function" ? clientesOrdenados() : [];
+  const opcClientes = clientes.map((c) => {
+    const v = PREFIXO_MODO_CLIENTE + c.id;
+    return `<option value="${escAttr(v)}"${v === layoutModo ? " selected" : ""}>Cliente: ${escapeHtmlAdmin(c.nome || c.id)}</option>`;
+  }).join("");
+
+  let aviso = "";
+  if (tipo === "cliente") {
+    aviso = `Arte do cliente <strong>${escapeHtmlAdmin(estadoClientes[modoCliente()].nome || modoCliente())}</strong>: o que mudar ou acrescentar aqui vale só para os times dele — os outros clientes não veem nada disto. Cada time ainda pode ter o seu ajuste próprio por cima.`;
+  } else if (tipo === "time" || tipo === "goleiro") {
+    const time = estadoTimes[modoTime()].time;
+    const cli = clienteDaArte(time);
+    const deCima = cli ? `a arte do cliente <strong>${escapeHtmlAdmin(cli.nome || cli.id)}</strong> e o layout geral` : "o layout geral (aba Artes)";
+    aviso = tipo === "goleiro"
+      ? `🧤 Ajustes do <strong>goleiro</strong> de <strong>${escapeHtmlAdmin(time.nome)}</strong>: valem só para a camiseta do goleiro. O que não for mudado aqui segue a camiseta comum deste time.`
+      : `Ajustes próprios de <strong>${escapeHtmlAdmin(time.nome)}</strong>: posição, tamanho da letra, cores, o que aparece, camadas e elementos novos valem só para este time. O que não for mudado aqui segue ${deCima}.`;
+    if (cli && editorTravado) {
+      aviso += ` <button type="button" class="link-botao" data-l="abrirCliente">Editar a arte do cliente</button>`;
+    }
+  }
 
   elEditorLayout.innerHTML = `
     <div class="layout-topo">
       ${editorTravado ? "" : `<label>Editando
-        <select data-l="modo"><option value="">Layout geral (todos os times)</option>${opcTimes(layoutModo)}</select></label>`}
-      ${layoutModo ? "" : `<label>Prévia com a arte de
-        <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(layoutTimePrevia)}</select></label>`}
+        <select data-l="modo"><option value="">Layout geral (todos os times)</option>
+          ${opcClientes ? `<optgroup label="Clientes (só os times do cliente)">${opcClientes}</optgroup>` : ""}
+          <optgroup label="Times">${opcTimes(times, modoTime())}</optgroup></select></label>`}
+      ${modoTime() ? "" : `<label>Prévia com a arte de
+        <select data-l="previa"><option value="">(nenhum time)</option>${opcTimes(timesDaPreviaLayout(), layoutTimePrevia)}</select></label>`}
       <span id="layoutEstadoSalvar" class="pix-ajuda"></span>
     </div>
-    ${!layoutModo ? "" : layoutGoleiro
-      ? `<p class="aviso">🧤 Ajustes do <strong>goleiro</strong> de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para a camiseta do goleiro. O que não for mudado aqui segue a camiseta comum deste time.</p>`
-      : `<p class="aviso">Ajustes próprios de <strong>${escapeHtmlAdmin(estadoTimes[layoutModo].time.nome)}</strong>: posição, tamanho da letra, cores e o que aparece valem só para este time. O que não for mudado aqui segue o layout geral (aba Artes).</p>`}
+    ${aviso ? `<p class="aviso">${aviso}</p>` : ""}
     <nav class="fin-subabas layout-pecas">${PECAS_PRODUCAO.map((p) =>
       `<button type="button" class="fin-subaba${p.id === layoutPeca ? " ativa" : ""}" data-peca="${p.id}">${escapeHtmlAdmin(p.nome)}</button>`).join("")}</nav>
     <div class="arte-area">
@@ -1261,12 +1463,14 @@ function renderizarEditorLayout() {
             `<option value="${escAttr(t)}"${t === tam ? " selected" : ""}>${escapeHtmlAdmin(t)}${t === moldesConfig.tamanhoBase ? " (base)" : ""}</option>`).join("")}</select></label>
           <label>Apelido de teste <input type="text" data-amostra="nomeCamiseta" value="${escAttr(amostraLayout.nomeCamiseta)}" /></label>
           <label>Número <input type="text" data-amostra="numero" value="${escAttr(amostraLayout.numero)}" style="width:60px" /></label>
-          <span class="arte-botoes-add">
-            ${layoutModo ? "" : `<button type="button" class="secundario" data-add="brasao">+ Brasão</button>
+          <span class="arte-botoes-add" title="${tipo === "geral" ? "Acrescenta no layout geral (todos os times)" : `Acrescenta só para ${escAttr(alvoDoNivel())}`}">
+            <button type="button" class="secundario" data-add="imagem" title="Imagem própria (PNG 600 dpi ou EPS): um patrocinador, um desenho, um selo…">+ Imagem</button>
+            <button type="button" class="secundario" data-add="texto" title="Texto fixo, igual em todas as camisetas">+ Texto</button>
+            <button type="button" class="secundario" data-add="brasao">+ Brasão</button>
             <button type="button" class="secundario" data-add="logo" title="Logo da empresa (enviado em Configurações)">+ Logo</button>
             <button type="button" class="secundario" data-add="detalhe" title="Detalhe da manga (PNG enviado em cada time)">+ Detalhe</button>
             <button type="button" class="secundario" data-add="nome">+ Nome</button>
-            <button type="button" class="secundario" data-add="numero">+ Número</button>`}
+            <button type="button" class="secundario" data-add="numero">+ Número</button>
             <button type="button" class="secundario" data-l="teste">⬇ EPS de teste</button>
           </span>
         </div>
@@ -1279,10 +1483,14 @@ function renderizarEditorLayout() {
   if (q('[data-l="modo"]')) q('[data-l="modo"]').onchange = (ev) => {
     layoutModo = ev.target.value;
     layoutModoArtes = layoutModo;
-    if (layoutModo) layoutTimePrevia = layoutModo;
+    if (modoTime()) layoutTimePrevia = layoutModo;
+    layoutElSel = "";
     renderizarEditorLayout();
   };
   if (q('[data-l="previa"]')) q('[data-l="previa"]').onchange = (ev) => { layoutTimePrevia = ev.target.value; renderizarEditorLayout(); };
+  if (q('[data-l="abrirCliente"]')) {
+    q('[data-l="abrirCliente"]').onclick = () => abrirArteDoCliente(clienteIdDoTime(estadoTimes[modoTime()].time));
+  }
   elEditorLayout.querySelectorAll("[data-peca]").forEach((b) => {
     b.onclick = () => { layoutPeca = b.dataset.peca; layoutElSel = ""; renderizarEditorLayout(); };
   });
@@ -1313,32 +1521,9 @@ function medidasLayout() {
   return { tam, molde, dim, base, s, ehBase: tam === moldesConfig.tamanhoBase || !mb };
 }
 
-function ajusteDaProducao(prod, pecaId, elId) {
-  const aj = prod && prod.layoutAjustes;
-  return aj && aj[pecaId] && aj[pecaId][elId];
-}
-
-// Ajuste que vale no time (na variante do goleiro: o dele por cima do da comum).
-function ajusteDoTime(timeId, pecaId, elId, goleiro) {
-  const t = timeId && estadoTimes[timeId] && estadoTimes[timeId].time;
-  if (!t) return undefined;
-  const prod = producaoDoTime(t);
-  return ajusteDaProducao(goleiro ? producaoDoGoleiro(prod) : prod, pecaId, elId);
-}
-
-// O que vale no editor (time e variante abertos).
-function ajusteNoEditor(pecaId, elId) {
-  return ajusteDoTime(layoutModo, pecaId, elId, layoutGoleiro);
-}
-
-// Só o ajuste próprio do goleiro (sem o da comum), no editor.
-function ajusteProprioGoleiro(pecaId, elId) {
-  const t = layoutModo && estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
-  return layoutGoleiro && t ? ajusteDaProducao(producaoGoleiroPropria(producaoDoTime(t)), pecaId, elId) : undefined;
-}
-
+// Caixa de um elemento já resolvido (os ajustes dos níveis já estão nele).
 function caixaNoEditor(el, m) {
-  return EPS.caixaEfetiva(el, m.tam, m.base, m.dim, ajusteNoEditor(layoutPeca, el.id));
+  return EPS.caixaEfetiva(el, m.tam, m.base, m.dim);
 }
 
 function cmykParaCss(c) {
@@ -1357,11 +1542,21 @@ function caminhoSvg(comandos, s) {
 }
 
 function rotuloElementoLayout(el) {
+  if (el.rotulo) return el.rotulo;
   if (el.tipo === "brasao") return "Brasão";
   if (el.tipo === "logo") return "Logo da empresa";
   if (el.tipo === "detalhe") return "Detalhe da manga";
+  if (el.tipo === "imagem") return (el.arquivo && el.arquivo.nomeArquivo) || "Imagem";
+  if (el.tipo === "texto") return `Texto “${el.texto || ""}”`;
   if (el.tipo === "numero") return "Número";
   return el.campo === "nomeCompleto" ? "Nome completo" : "Nome na camiseta";
+}
+
+function rotuloVazioDaCaixa(el) {
+  if (el.tipo === "logo") return "Logo<br>(envie em Configurações)";
+  if (el.tipo === "detalhe") return "Detalhe da manga";
+  if (el.tipo === "imagem") return "Imagem";
+  return "Brasão";
 }
 
 function renderizarPalcoLayout() {
@@ -1406,25 +1601,26 @@ function renderizarPalcoLayout() {
   }
 
   const fonte = fonteProntaDoTime(time);
-  elementosDaPeca(layoutPeca).forEach((elGeral) => {
-    const ajTime = ajusteNoEditor(layoutPeca, elGeral.id);
-    // Oculto neste time: aparece apagado (dá para selecionar e mostrar de novo).
-    const el = EPS.elementoDoTime(elGeral, ajTime) || elGeral;
-    const oculto = !!(ajTime && ajTime.oculto);
+  const tipoNivel = nivelAtualTipo();
+  // As camadas na ordem (a de cima por último). Ocultas aparecem apagadas
+  // (dá para selecionar e mostrar de novo).
+  itensDoEditor().forEach((it, i) => {
+    const el = it.el;
     const c = caixaNoEditor(el, m);
     const div = document.createElement("div");
-    const temAjusteTime = !!ajTime;
+    const temAjusteNivel = tipoNivel !== "geral" && (it.origem === tipoNivel || !!ajusteDoNivel(layoutPeca, el.id));
     div.className = "arte-el arte-el-" + el.tipo + (el.id === layoutElSel ? " selecionado" : "") +
-      (temAjusteTime ? " ajuste-time" : "") + (oculto ? " oculto-time" : "");
+      (temAjusteNivel ? " ajuste-time" : "") + (el.oculto ? " oculto-time" : "");
     div.style.left = c.x * s + "px";
     div.style.top = c.y * s + "px";
     div.style.width = c.w * s + "px";
     div.style.height = c.h * s + "px";
+    div.style.zIndex = String(10 + i);
     if (ehCaixaImagem(el)) {
       const url = imagemDaCaixa(el, prod, layoutPeca);
       div.innerHTML = url
         ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${EPS.imagemLivre(el) ? "fill" : "contain"}" />`
-        : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : "Brasão"}</span>`;
+        : `<span class="arte-el-rotulo">${rotuloVazioDaCaixa(el)}</span>`;
     } else if (fonte) {
       const l = EPS.layoutTexto(fonte, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h }, el);
       const contorno = el.contornoMm > 0
@@ -1438,24 +1634,28 @@ function renderizarPalcoLayout() {
     const alca = document.createElement("span");
     alca.className = "arte-el-alca";
     div.appendChild(alca);
-    ligarArrasteLayout(div, alca, elGeral);
+    ligarArrasteLayout(div, alca, el.id);
     palco.appendChild(div);
   });
 }
 
-// Arrastar (mover) e a alça do canto (redimensionar). O brasão mantém a
-// proporção; as caixas de texto são livres (são o limite do texto).
-function ligarArrasteLayout(div, alca, el) {
+// Arrastar (mover) e a alça do canto (redimensionar). Imagens mantêm a
+// proporção (a não ser que desmarcada); as caixas de texto são livres (são
+// o limite do texto).
+function ligarArrasteLayout(div, alca, elId) {
   div.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
     ev.preventDefault();
     const redimensionar = ev.target === alca;
-    if (layoutElSel !== el.id) {
-      layoutElSel = el.id;
+    if (layoutElSel !== elId) {
+      layoutElSel = elId;
       document.querySelectorAll("#layoutPalco .arte-el").forEach((d) => d.classList.toggle("selecionado", d === div));
       renderizarPainelLayout();
     }
     const m = medidasLayout();
+    const it = itensDoEditor().find((x) => x.el.id === elId);
+    if (!m || !it) return;
+    const el = it.el;
     const ini = caixaNoEditor(el, m);
     const x0 = ev.clientX, y0 = ev.clientY;
     const prop = ini.w / ini.h;
@@ -1467,8 +1667,7 @@ function ligarArrasteLayout(div, alca, el) {
       if (redimensionar) {
         const w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        const livre = EPS.imagemLivre(EPS.elementoDoTime(el, ajusteNoEditor(layoutPeca, el.id)) || el);
-        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
+        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !EPS.imagemLivre(el) ? w / prop : Math.max(2, ini.h + dy) };
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
       }
@@ -1483,7 +1682,7 @@ function ligarArrasteLayout(div, alca, el) {
       div.removeEventListener("pointercancel", soltar);
       layoutArrastando = false;
       if (atual.x !== ini.x || atual.y !== ini.y || atual.w !== ini.w || atual.h !== ini.h) {
-        gravarCaixaLayout(el, m, atual);
+        gravarCaixaLayout(elId, m, atual);
       }
       renderizarPalcoLayout();
       renderizarPainelLayout();
@@ -1494,121 +1693,341 @@ function ligarArrasteLayout(div, alca, el) {
   });
 }
 
-// Grava a caixa onde ela deve ir: no layout geral (tamanho base = posição do
-// elemento; outro tamanho = ajuste daquele tamanho) ou no ajuste do time.
-function gravarCaixaLayout(el, m, caixa) {
-  const c = { x: arred1(caixa.x), y: arred1(caixa.y), w: arred1(caixa.w), h: arred1(caixa.h) };
-  if (layoutModo) {
-    const time = estadoTimes[layoutModo].time;
-    const prod = limparParaFirestore(producaoDoTime(time));
-    const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
-    alvo.layoutAjustes = alvo.layoutAjustes || {};
-    const porPeca = alvo.layoutAjustes[layoutPeca] = alvo.layoutAjustes[layoutPeca] || {};
-    const aj = porPeca[el.id] = porPeca[el.id] || {};
-    // Primeira mudança de posição do goleiro: parte da posição da comum (a
-    // posição vale inteira de um ou do outro — ver mesclarAjusteGoleiro).
-    if (layoutGoleiro && !aj.base && !aj.tamanhos) {
-      const daComum = ajusteDaProducao(producaoDoTime(time), layoutPeca, el.id) || {};
-      if (daComum.base) aj.base = limparParaFirestore(daComum.base);
-      if (daComum.tamanhos) aj.tamanhos = limparParaFirestore(daComum.tamanhos);
-    }
-    if (m.ehBase) aj.base = c;
-    else {
-      aj.tamanhos = aj.tamanhos || {};
-      aj.tamanhos[m.tam] = c;
-    }
-    gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
-      .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
-    return;
-  }
-  if (m.ehBase) el.caixa = c;
-  else {
-    el.ajustes = el.ajustes || {};
-    el.ajustes[m.tam] = c;
-  }
-  salvarLayout();
+// ---------------- Gravar no nível editado ----------------
+
+// Tira o que ficou vazio de um nível { ajustes, elementos, ordem }.
+function compactarNivel(n) {
+  const saida = {};
+  const ajustes = {};
+  Object.entries(n.ajustes || {}).forEach(([pecaId, porPeca]) => {
+    const limpo = {};
+    Object.entries(porPeca || {}).forEach(([elId, aj]) => {
+      if (!aj) return;
+      if (aj.estilo && !Object.keys(aj.estilo).length) delete aj.estilo;
+      if (aj.tamanhos && !Object.keys(aj.tamanhos).length) delete aj.tamanhos;
+      if (Object.keys(aj).length) limpo[elId] = aj;
+    });
+    if (Object.keys(limpo).length) ajustes[pecaId] = limpo;
+  });
+  const elementos = {};
+  Object.entries(n.elementos || {}).forEach(([pecaId, lista]) => { if (lista && lista.length) elementos[pecaId] = lista; });
+  const ordem = {};
+  Object.entries(n.ordem || {}).forEach(([pecaId, lista]) => { if (lista && lista.length) ordem[pecaId] = lista; });
+  if (Object.keys(ajustes).length) saida.ajustes = ajustes;
+  if (Object.keys(elementos).length) saida.elementos = elementos;
+  if (Object.keys(ordem).length) saida.ordem = ordem;
+  return saida;
 }
 
-function adicionarElementoLayout(tipo) {
+// Muda o nível editado (cliente, time ou goleiro) e grava. `mudar(n)`
+// recebe { ajustes, elementos, ordem } editáveis. O layout geral não passa
+// por aqui (é o config/layout, gravado por salvarLayout).
+function gravarNivelEditor(mudar) {
+  const tipo = nivelAtualTipo();
+  const erro = (e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); };
+  if (tipo === "cliente") {
+    const cid = modoCliente();
+    const cli = estadoClientes[cid];
+    if (!cli) return Promise.resolve();
+    const arte = limparParaFirestore(cli.arte || {});
+    const n = { ajustes: arte.ajustes || {}, elementos: arte.elementos || {}, ordem: arte.ordem || {} };
+    mudar(n);
+    const nova = compactarNivel(n);
+    cli.arte = nova; // já mostra, sem esperar o Firestore
+    estadoSalvarLayout("Salvando…");
+    return db.collection(COL_CLIENTES).doc(cid).update({ arte: nova })
+      .then(() => {
+        estadoSalvarLayout("✓ Salvo no cliente");
+        // A prévia do cliente de cada time dele muda junto.
+        Object.entries(estadoTimes).forEach(([id, e]) => { if (clienteIdDoTime(e.time) === cid) agendarPreviaCliente(id); });
+      })
+      .catch(erro);
+  }
+  const timeId = modoTime();
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
+  if (!time) return Promise.resolve();
+  const prod = limparParaFirestore(producaoDoTime(time));
+  const alvo = tipo === "goleiro" ? (prod.goleiro = prod.goleiro || {}) : prod;
+  const n = { ajustes: alvo.layoutAjustes || {}, elementos: alvo.elementos || {}, ordem: alvo.ordem || {} };
+  mudar(n);
+  const c = compactarNivel(n);
+  [["layoutAjustes", "ajustes"], ["elementos", "elementos"], ["ordem", "ordem"]].forEach(([k, kn]) => {
+    if (c[kn]) alvo[k] = c[kn]; else delete alvo[k];
+  });
+  if (tipo === "goleiro") limparGoleiroVazio(prod);
+  return gravarProducaoTime(timeId, prod)
+    .then(() => estadoSalvarLayout(tipo === "goleiro" ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
+    .catch(erro);
+}
+
+// Muda um elemento da peça aberta no nível editado: se ele é deste nível,
+// muda ele mesmo (`noElemento`); se veio de cima, grava um ajuste deste
+// nível (`noAjuste`). O que o ajuste não muda continua seguindo o de cima.
+function mudarElementoNoEditor(elId, noElemento, noAjuste) {
+  const tipo = nivelAtualTipo();
+  if (tipo === "geral") {
+    const el = elementosDaPeca(layoutPeca).find((e) => e.id === elId);
+    if (el) {
+      noElemento(el);
+      salvarLayout();
+    }
+    return Promise.resolve();
+  }
+  const it = itensDoEditor().find((x) => x.el.id === elId);
+  if (!it) return Promise.resolve();
+  const acima = itensAcimaDoEditor().find((x) => x.el.id === elId);
+  return gravarNivelEditor((n) => {
+    if (it.origem === tipo) {
+      const el = (n.elementos[layoutPeca] || []).find((e) => e.id === elId);
+      if (el) noElemento(el);
+      return;
+    }
+    const porPeca = n.ajustes[layoutPeca] = n.ajustes[layoutPeca] || {};
+    const aj = porPeca[elId] = porPeca[elId] || {};
+    noAjuste(aj);
+    // "oculto" só fica gravado quando é diferente do que vem de cima.
+    if ("oculto" in aj && !!aj.oculto === !!(acima && acima.el.oculto)) delete aj.oculto;
+  });
+}
+
+// Posição/tamanho: no tamanho base é a caixa; noutro, o ajuste do tamanho.
+function gravarCaixaLayout(elId, m, caixa) {
+  const c = { x: arred1(caixa.x), y: arred1(caixa.y), w: arred1(caixa.w), h: arred1(caixa.h) };
+  return mudarElementoNoEditor(elId,
+    (el) => {
+      if (m.ehBase) el.caixa = c;
+      else (el.ajustes = el.ajustes || {})[m.tam] = c;
+    },
+    (aj) => {
+      if (m.ehBase) aj.base = c;
+      else (aj.tamanhos = aj.tamanhos || {})[m.tam] = c;
+    });
+}
+
+function gravarEstiloLayout(elId, k, v) {
+  return mudarElementoNoEditor(elId,
+    (el) => { el[k] = v; },
+    (aj) => { aj.estilo = { ...(aj.estilo || {}), [k]: v }; });
+}
+
+function gravarOcultoLayout(elId, oculto) {
+  return mudarElementoNoEditor(elId,
+    (el) => { if (oculto) el.oculto = true; else delete el.oculto; },
+    (aj) => { aj.oculto = !!oculto; });
+}
+
+// Acrescenta um elemento pronto no nível editado (por cima das camadas).
+function acrescentarElementoNoNivel(el) {
+  if (nivelAtualTipo() === "geral") {
+    elementosDaPeca(layoutPeca).push(el);
+    salvarLayout(true);
+    return Promise.resolve();
+  }
+  const ordemAtual = itensDoEditor().map((x) => x.el.id);
+  return gravarNivelEditor((n) => {
+    (n.elementos[layoutPeca] = n.elementos[layoutPeca] || []).push(el);
+    // Com uma ordem própria gravada, o novo entra no topo dela.
+    if (n.ordem[layoutPeca]) n.ordem[layoutPeca] = [...ordemAtual, el.id];
+  });
+}
+
+// Sobe (+1) ou desce (-1) uma camada. No layout geral muda a ordem da lista;
+// nos outros níveis grava a ordem deste nível.
+function moverCamadaLayout(elId, delta) {
+  const ids = itensDoEditor().map((x) => x.el.id);
+  const i = ids.indexOf(elId);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= ids.length) return Promise.resolve();
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  if (nivelAtualTipo() === "geral") {
+    const els = elementosDaPeca(layoutPeca);
+    els.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    salvarLayout(true);
+    return Promise.resolve();
+  }
+  return gravarNivelEditor((n) => { n.ordem[layoutPeca] = ids; });
+}
+
+// Imagem própria de um elemento: PNG (600 dpi) ou EPS, enviado ao Drive.
+async function escolherImagemDeElemento() {
+  if (!exigirDriveProducao()) return null;
+  const file = await escolherArquivos(".png,image/png,.eps,.ps,application/postscript");
+  if (!file) return null;
+  const pref = "elemento-" + (slugify(file.name.replace(/\.[^.]+$/, "")) || "imagem");
+  try {
+    if (/\.(eps|ps)$/i.test(file.name) || file.type === "application/postscript") {
+      const d = await enviarEpsComPrevia(file, pref, 600);
+      if (d.semPrevia) alert("A imagem foi enviada, mas a prévia não pôde ser desenhada. Ela aparece como uma caixa no editor.");
+      return { formato: "eps", partes: d.partes, epsId: d.epsId, bbox: d.bbox, previaUrl: d.previaUrl, nomeArquivo: d.nomeArquivo };
+    }
+    const d = await enviarPngProducao(file, pref, (t) => estadoSalvarLayout(t ? `Imagem: ${t}` : ""));
+    return d ? { formato: "png", ...d } : null;
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Não foi possível enviar a imagem.");
+    return null;
+  } finally {
+    avisoProducao("");
+  }
+}
+
+// Proporção (altura / largura) do arquivo de um elemento de imagem.
+function proporcaoDoArquivo(a) {
+  if (!a) return 1;
+  if (a.formato === "eps" && a.bbox) {
+    const d = EPS.tamanhoMmDoBbox(a.bbox);
+    return d.w ? d.h / d.w : 1;
+  }
+  return a.larguraPx ? a.alturaPx / a.larguraPx : 1;
+}
+
+async function adicionarElementoLayout(tipo) {
   const m = medidasLayout();
   if (!m) {
     alert("Envie o molde de corte desta peça na aba Tamanhos primeiro.");
     return;
   }
   const b = m.base;
-  const caixa = tipo === "numero" ? { x: b.w * 0.3, y: b.h * 0.3, w: b.w * 0.4, h: b.h * 0.28 }
-    : tipo === "nome" ? { x: b.w * 0.2, y: b.h * 0.18, w: b.w * 0.6, h: b.h * 0.07 }
-      : tipo === "logo" ? caixaLogoInicial(b)
-        : tipo === "detalhe" ? caixaDetalheInicial(b)
-        : { x: b.w * 0.6, y: b.h * 0.15, w: b.w * 0.18, h: b.w * 0.2 };
-  ["x", "y", "w", "h"].forEach((k) => (caixa[k] = arred1(caixa[k])));
-  const el = { id: novoIdLayout("e"), tipo, caixa };
-  if (tipo !== "brasao" && tipo !== "logo" && tipo !== "detalhe") {
+  const el = { id: novoIdLayout("e"), tipo };
+  if (tipo === "imagem") {
+    const arquivo = await escolherImagemDeElemento();
+    if (!arquivo) return;
+    const w = b.w * 0.3;
+    el.arquivo = arquivo;
+    el.caixa = { x: (b.w - w) / 2, y: b.h * 0.3, w, h: w * proporcaoDoArquivo(arquivo) };
+  } else if (tipo === "texto") {
+    const texto = prompt("Texto (igual em todas as camisetas):", "");
+    if (texto == null || !texto.trim()) return;
+    el.texto = texto.trim();
+    el.caixa = { x: b.w * 0.2, y: b.h * 0.1, w: b.w * 0.6, h: b.h * 0.05 };
+  } else {
+    el.caixa = tipo === "numero" ? { x: b.w * 0.3, y: b.h * 0.3, w: b.w * 0.4, h: b.h * 0.28 }
+      : tipo === "nome" ? { x: b.w * 0.2, y: b.h * 0.18, w: b.w * 0.6, h: b.h * 0.07 }
+        : tipo === "logo" ? caixaLogoInicial(b)
+          : tipo === "detalhe" ? caixaDetalheInicial(b)
+            : { x: b.w * 0.6, y: b.h * 0.15, w: b.w * 0.18, h: b.w * 0.2 };
+  }
+  ["x", "y", "w", "h"].forEach((k) => (el.caixa[k] = arred1(el.caixa[k])));
+  if (!ehCaixaImagem(el)) {
     Object.assign(el, {
-      campo: tipo === "nome" ? "nomeCamiseta" : "numero",
+      campo: tipo === "nome" ? "nomeCamiseta" : tipo === "texto" ? "texto" : "numero",
       corCmyk: [0, 0, 0, 100], contornoMm: 0, contornoCmyk: [0, 0, 0, 0],
       alinhamento: "centro", ajuste: "encolher", maiusculas: true, espacamento: 0, usarNomeSeVazio: true
     });
   }
-  elementosDaPeca(layoutPeca).push(el);
   layoutElSel = el.id;
-  salvarLayout(true);
+  await acrescentarElementoNoNivel(el);
   renderizarPalcoLayout();
   renderizarPainelLayout();
 }
 
-// Selos da lista de elementos: o que este time mudou.
+// Selos da lista de camadas: o que o nível editado mudou num elemento herdado.
 function seloAjusteTime(aj) {
   if (!aj) return "";
   const selos = [];
-  if (aj.oculto) selos.push('<span class="badge pendente">oculto</span>');
-  if (aj.base || aj.tamanhos) selos.push('<span class="badge aguardando">posição do time</span>');
-  if (aj.estilo && Object.keys(aj.estilo).length) selos.push('<span class="badge aguardando">estilo do time</span>');
+  if ("oculto" in aj) selos.push(aj.oculto ? '<span class="badge pendente">oculto</span>' : '<span class="badge aguardando">mostrado</span>');
+  if (aj.base || aj.tamanhos) selos.push('<span class="badge aguardando">posição</span>');
+  if (aj.estilo && Object.keys(aj.estilo).length) selos.push('<span class="badge aguardando">estilo</span>');
   return selos.length ? " " + selos.join(" ") : "";
 }
+
+// Selo de onde o elemento veio (quando não é do layout geral).
+function seloOrigem(origem) {
+  if (origem === "geral") return "";
+  return ` <span class="badge origem-${origem}" title="Acrescentado no nível ${escAttr(NOME_NIVEL[origem])}">${origem === "goleiro" ? "🧤 " : ""}${escapeHtmlAdmin(NOME_NIVEL[origem])}</span>`;
+}
+
+// ---------------- Painel: camadas + o elemento escolhido ----------------
 
 function renderizarPainelLayout() {
   const painel = document.getElementById("layoutPainel");
   if (!painel) return;
-  const els = elementosDaPeca(layoutPeca);
-  const el = els.find((e) => e.id === layoutElSel);
+  const tipoNivel = nivelAtualTipo();
+  const itens = itensDoEditor();
+  const it = itens.find((x) => x.el.id === layoutElSel);
+  const n = nivelDoEditor();
+  const temOrdemPropria = !!(n && n.ordem && n.ordem[layoutPeca]);
+
+  // Camadas de cima para baixo (a primeira da lista fica na frente).
+  const linhas = itens.map((x, i) => {
+    const el = x.el;
+    const ajN = tipoNivel !== "geral" && x.origem !== tipoNivel ? ajusteDoNivel(layoutPeca, el.id) : null;
+    return `<li class="camada${el.id === layoutElSel ? " ativo" : ""}${el.oculto ? " camada-oculta" : ""}" data-id="${escAttr(el.id)}">
+      <button type="button" class="camada-olho" data-olho title="${el.oculto ? "Mostrar" : "Ocultar"}" aria-label="${el.oculto ? "Mostrar" : "Ocultar"}">${el.oculto ? "◌" : "👁"}</button>
+      <span class="camada-nome">${escapeHtmlAdmin(rotuloElementoLayout(el))}${seloOrigem(x.origem)}${seloAjusteTime(ajN)}</span>
+      <span class="camada-mover">
+        <button type="button" data-mover="1" title="Subir (para a frente)" ${i === itens.length - 1 ? "disabled" : ""}>↑</button>
+        <button type="button" data-mover="-1" title="Descer (para trás)" ${i === 0 ? "disabled" : ""}>↓</button>
+      </span></li>`;
+  }).reverse().join("");
+
   painel.innerHTML = `
-    <h4>${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
-    <ul class="arte-lista-el">${els.map((e) =>
-      `<li class="${e.id === layoutElSel ? "ativo" : ""}" data-id="${escAttr(e.id)}">${escapeHtmlAdmin(rotuloElementoLayout(e))}` +
-      `${seloAjusteTime(ajusteNoEditor(layoutPeca, e.id))}` +
-      `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">🧤 goleiro</span>' : ""}</li>`).join("") ||
-      `<li class="pix-ajuda">Nada nesta peça${layoutModo ? " no layout geral" : " — use + Brasão / + Nome / + Número"}. A arte do time entra sozinha, cobrindo o molde.</li>`}</ul>
+    <div class="camadas-topo">
+      <h4>Camadas — ${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}</h4>
+      ${temOrdemPropria ? '<button type="button" class="link-botao" data-ordem="voltar" title="Esquecer a ordem deste nível">Voltar à ordem de cima</button>' : ""}
+    </div>
+    <ul class="arte-lista-el arte-camadas">${linhas ||
+      `<li class="pix-ajuda">Nada nesta peça — use + Imagem, + Texto, + Nome…</li>`}
+      <li class="camada camada-fundo" title="A arte da peça fica sempre por baixo de tudo">🖼 Arte da peça (fundo)</li>
+    </ul>
     <div id="layoutPainelEl"></div>`;
   painel.querySelectorAll("li[data-id]").forEach((li) => {
-    li.onclick = () => { layoutElSel = li.dataset.id; renderizarPalcoLayout(); renderizarPainelLayout(); };
+    const id = li.dataset.id;
+    li.onclick = () => { layoutElSel = id; renderizarPalcoLayout(); renderizarPainelLayout(); };
+    li.querySelector("[data-olho]").onclick = async (ev) => {
+      ev.stopPropagation();
+      const x = itens.find((y) => y.el.id === id);
+      await gravarOcultoLayout(id, !(x && x.el.oculto));
+      renderizarPalcoLayout();
+      renderizarPainelLayout();
+    };
+    li.querySelectorAll("[data-mover]").forEach((b) => {
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        await moverCamadaLayout(id, Number(b.dataset.mover));
+        renderizarPalcoLayout();
+        renderizarPainelLayout();
+      };
+    });
   });
+  const btOrdem = painel.querySelector('[data-ordem="voltar"]');
+  if (btOrdem) {
+    btOrdem.onclick = async () => {
+      await gravarNivelEditor((x) => { delete x.ordem[layoutPeca]; });
+      renderizarPalcoLayout();
+      renderizarPainelLayout();
+    };
+  }
+
   const m = medidasLayout();
-  if (!el || !m) return;
-  const aj = ajusteNoEditor(layoutPeca, el.id);
-  // No goleiro, os botões de "voltar" desfazem só o ajuste dele.
-  const ajProprio = layoutGoleiro ? ajusteProprioGoleiro(layoutPeca, el.id) : aj;
-  const posProprio = !!(ajProprio && (ajProprio.base || ajProprio.tamanhos));
-  const estiloProprio = !!(ajProprio && ajProprio.estilo && Object.keys(ajProprio.estilo).length);
-  // Valores que valem para o que está sendo editado: no time, o estilo
-  // próprio dele por cima do geral.
-  const elT = layoutModo ? (EPS.elementoDoTime(el, aj) || el) : el;
-  const c = caixaNoEditor(elT, m);
+  if (!it || !m) return;
+  const el = it.el;
+  const dono = tipoNivel === "geral" || it.origem === tipoNivel;
+  const aj = dono ? null : ajusteDoNivel(layoutPeca, el.id);
+  const c = caixaNoEditor(el, m);
   const box = document.getElementById("layoutPainelEl");
   const temPosicao = !!(aj && (aj.base || aj.tamanhos));
   const temEstilo = !!(aj && aj.estilo && Object.keys(aj.estilo).length);
   const ehTexto = !ehCaixaImagem(el);
+  const ajustesTam = dono && el.ajustes && el.ajustes[m.tam];
 
-  let html = `<p class="pix-ajuda">${layoutGoleiro
-    ? ajProprio ? `O goleiro tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
-      : "Igual à camiseta comum deste time — mudar qualquer coisa aqui cria um ajuste só para o goleiro."
-    : layoutModo
-    ? aj ? `Este time tem ajuste próprio${temPosicao ? " de posição" : ""}${temPosicao && temEstilo ? " e" : ""}${temEstilo ? " de estilo" : ""}${aj.oculto ? " (oculto)" : ""}.`
-      : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para este time."
-    : m.ehBase ? `Posição no tamanho base (${escapeHtmlAdmin(m.tam)}).`
-      : el.ajustes && el.ajustes[m.tam] ? `Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.`
-        : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`}</p>
-    ${layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-oculto ${aj && aj.oculto ? "checked" : ""} /> ${layoutGoleiro ? "Ocultar no goleiro" : "Ocultar neste time"}</label>` : ""}
+  let explica;
+  if (tipoNivel === "geral") {
+    explica = m.ehBase ? `Posição no tamanho base (${escapeHtmlAdmin(m.tam)}).`
+      : ajustesTam ? `Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.`
+        : `Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base. Mexer aqui cria um ajuste só deste tamanho.`;
+  } else if (dono) {
+    explica = `Acrescentado neste nível (${escapeHtmlAdmin(NOME_NIVEL[tipoNivel])}): só aparece para ${escapeHtmlAdmin(alvoDoNivel())}.` +
+      (m.ehBase ? "" : ajustesTam ? ` Ajuste próprio do tamanho ${escapeHtmlAdmin(m.tam)}.` : ` Tamanho ${escapeHtmlAdmin(m.tam)}: proporcional ao base.`);
+  } else if (aj) {
+    explica = `Ajustado aqui${temPosicao ? " (posição)" : ""}${temEstilo ? " (estilo)" : ""}${"oculto" in aj ? (aj.oculto ? " (oculto)" : " (mostrado)") : ""} — só para ${escapeHtmlAdmin(alvoDoNivel())}.`;
+  } else {
+    explica = `Vem de cima (${escapeHtmlAdmin(NOME_NIVEL[it.origem])}). Mudar qualquer coisa aqui cria um ajuste só para ${escapeHtmlAdmin(alvoDoNivel())}.`;
+  }
+
+  let html = `<p class="pix-ajuda">${explica}</p>
+    <label class="checkbox-inline"><input type="checkbox" data-oculto ${el.oculto ? "checked" : ""} /> ${tipoNivel === "geral" ? "Ocultar (em todos os times)" : "Ocultar"}</label>
+    <label>Nome da camada<input type="text" data-p="rotulo" value="${escAttr(el.rotulo || "")}" placeholder="${escAttr(rotuloElementoLayout({ ...el, rotulo: "" }))}" /></label>
     <div class="arte-grade arte-grade-4">
       <label>X (mm)<input type="number" step="0.5" data-cx="x" value="${c.x.toFixed(1)}" /></label>
       <label>Y (mm)<input type="number" step="0.5" data-cx="y" value="${c.y.toFixed(1)}" /></label>
@@ -1619,13 +2038,18 @@ function renderizarPainelLayout() {
       <input type="number" step="0.5" min="1" data-letra value="${c.h.toFixed(1)}" /></label>` : ""}
     <div class="arte-botoes-el">
       <button type="button" class="secundario" data-acao="centralizar">Centralizar na largura</button>
-      ${layoutModo && ajProprio ? `<button type="button" class="secundario" data-acao="voltarGeral">${layoutGoleiro ? "Voltar à camiseta comum" : "Voltar ao layout geral"}</button>` : ""}
-      ${layoutModo && posProprio && (estiloProprio || (ajProprio && "oculto" in ajProprio)) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
-      ${!layoutModo && !m.ehBase && el.ajustes && el.ajustes[m.tam] ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
+      ${aj ? '<button type="button" class="secundario" data-acao="voltarGeral">Voltar ao de cima</button>' : ""}
+      ${temPosicao && (temEstilo || "oculto" in aj) ? '<button type="button" class="secundario" data-acao="voltarPosicao">Voltar só a posição</button>' : ""}
+      ${dono && !m.ehBase && ajustesTam ? '<button type="button" class="secundario" data-acao="semAjusteTam">Voltar ao proporcional</button>' : ""}
     </div>`;
 
   if (!ehTexto) {
-    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${EPS.imagemLivre(elT) ? "" : "checked"} /> Manter proporção</label>
+    if (el.tipo === "imagem") {
+      const a = el.arquivo || {};
+      html += `<p class="pix-ajuda">Arquivo: <strong>${escapeHtmlAdmin(a.nomeArquivo || "—")}</strong>${a.formato ? ` (${a.formato.toUpperCase()})` : ""}</p>
+        <div class="arte-botoes-el"><button type="button" class="secundario" data-acao="trocarImagem">Trocar imagem${dono ? "" : " (só aqui)"}</button></div>`;
+    }
+    html += `<label class="checkbox-inline"><input type="checkbox" data-proporcao ${EPS.imagemLivre(el) ? "" : "checked"} /> Manter proporção</label>
       <p class="pix-ajuda">Desmarque para esticar ${escapeHtmlAdmin(rotuloElementoLayout(el).toLowerCase())} na largura e na altura, cada uma no seu (a alça do canto e os campos passam a mexer só na medida escolhida).</p>`;
   } else {
     const cmyk = (nome, v) => `<div class="arte-cmyk" data-cor="${nome}">` +
@@ -1634,58 +2058,41 @@ function renderizarPainelLayout() {
       `<span class="arte-amostra-cor" style="background:${cmykParaCss(v)}"></span></div>`;
     html += `
       <div class="arte-grade">
-        ${el.tipo === "nome" && !layoutModo ? `<label>Texto
+        ${el.tipo === "texto" ? `<label>Texto<input type="text" data-p="texto" value="${escAttr(el.texto || "")}" /></label>` : ""}
+        ${el.tipo === "nome" ? `<label>Texto
           <select data-p="campo"><option value="nomeCamiseta">Nome na camiseta (apelido)</option><option value="nomeCompleto">Nome completo</option></select></label>` : ""}
         <label>Alinhamento
           <select data-p="alinhamento"><option value="centro">Centro</option><option value="esquerda">Esquerda</option><option value="direita">Direita</option></select></label>
         <label>Texto maior que a caixa
           <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
-        <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
-        <label>Contorno (mm, 0 = sem)<input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(elT.contornoMm) || 0}" /></label>
-        <label class="checkbox-inline"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> MAIÚSCULAS</label>
-        ${el.tipo === "nome" && !layoutModo ? `<label class="checkbox-inline"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> Sem apelido, usar o nome</label>` : ""}
+        <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(el.espacamento) || 0}" /></label>
+        <label>Contorno (mm, 0 = sem)<input type="number" step="0.5" min="0" data-p="contornoMm" value="${Number(el.contornoMm) || 0}" /></label>
+        <label class="checkbox-inline"><input type="checkbox" data-p="maiusculas" ${el.maiusculas !== false ? "checked" : ""} /> MAIÚSCULAS</label>
+        ${el.tipo === "nome" ? `<label class="checkbox-inline"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> Sem apelido, usar o nome</label>` : ""}
       </div>
-      <p class="arte-rotulo-cor">Cor (CMYK %)</p>${cmyk("corCmyk", elT.corCmyk)}
-      <p class="arte-rotulo-cor">Cor do contorno (CMYK %)</p>${cmyk("contornoCmyk", elT.contornoCmyk)}
-      <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>`;
+      <p class="arte-rotulo-cor">Cor (CMYK %)</p>${cmyk("corCmyk", el.corCmyk)}
+      <p class="arte-rotulo-cor">Cor do contorno (CMYK %)</p>${cmyk("contornoCmyk", el.contornoCmyk)}
+      <p class="pix-ajuda">A caixa é o limite: o texto comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>`;
   }
-  if (!layoutModo) {
-    html += `<div class="arte-botoes-el">
-      <button type="button" class="secundario" data-acao="duplicar">Duplicar</button>
-      <button type="button" class="perigo" data-acao="excluir">Excluir</button></div>`;
-  }
+  html += `<div class="arte-botoes-el">
+    <button type="button" class="secundario" data-acao="duplicar" title="${tipoNivel === "geral" ? "Cópia no layout geral" : `Cópia só para ${escAttr(alvoDoNivel())}`}">Duplicar</button>
+    ${dono ? '<button type="button" class="perigo" data-acao="excluir">Excluir</button>' : ""}</div>`;
   box.innerHTML = html;
 
   const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
-  // Estilo: no layout geral muda o elemento; no time, o estilo próprio dele.
-  const gravarEstilo = (k, v) => {
-    if (layoutModo) {
-      gravarAjusteTime(el.id, (a) => { a.estilo = { ...(a.estilo || {}), [k]: v }; }).then(redesenhar);
-    } else {
-      el[k] = v;
-      salvarLayout();
-    }
-    redesenhar();
-  };
+  const gravarEstilo = (k, v) => gravarEstiloLayout(el.id, k, v).then(redesenhar);
 
-  const chkOculto = box.querySelector("[data-oculto]");
-  if (chkOculto) {
-    chkOculto.onchange = () => {
-      gravarAjusteTime(el.id, (a) => { a.oculto = chkOculto.checked; }).then(redesenhar);
-      redesenhar();
-    };
-  }
+  box.querySelector("[data-oculto]").onchange = (ev) => gravarOcultoLayout(el.id, ev.target.checked).then(redesenhar);
   const chkProp = box.querySelector("[data-proporcao]");
   if (chkProp) chkProp.onchange = () => gravarEstilo("livre", !chkProp.checked);
   box.querySelectorAll("[data-cx]").forEach((inp) => {
     inp.onchange = () => {
       const nova = { ...c, [inp.dataset.cx]: Number(inp.value) || 0 };
-      if (!ehTexto && !EPS.imagemLivre(elT) && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
+      if (!ehTexto && !EPS.imagemLivre(el) && (inp.dataset.cx === "w" || inp.dataset.cx === "h")) {
         const prop = c.w / c.h;
         if (inp.dataset.cx === "w") nova.h = nova.w / prop; else nova.w = nova.h * prop;
       }
-      gravarCaixaLayout(el, m, nova);
-      redesenhar();
+      gravarCaixaLayout(el.id, m, nova).then(redesenhar);
     };
   });
   const inpLetra = box.querySelector("[data-letra]");
@@ -1693,14 +2100,16 @@ function renderizarPainelLayout() {
     // A altura da caixa é a altura das maiúsculas: muda pelo centro.
     inpLetra.onchange = () => {
       const h = Math.max(1, Number(inpLetra.value) || c.h);
-      gravarCaixaLayout(el, m, { ...c, y: c.y + (c.h - h) / 2, h });
-      redesenhar();
+      gravarCaixaLayout(el.id, m, { ...c, y: c.y + (c.h - h) / 2, h }).then(redesenhar);
     };
   }
   box.querySelectorAll("[data-p]").forEach((inp) => {
-    if (inp.tagName === "SELECT") inp.value = elT[inp.dataset.p] || inp.options[0].value;
+    if (inp.tagName === "SELECT") inp.value = el[inp.dataset.p] || inp.options[0].value;
     inp.onchange = () => {
-      gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value);
+      const k = inp.dataset.p;
+      let v = inp.type === "checkbox" ? inp.checked : inp.type === "number" ? Number(inp.value) || 0 : inp.value;
+      if (k === "rotulo" || k === "texto") v = String(v).trim();
+      gravarEstilo(k, v);
     };
   });
   box.querySelectorAll("[data-cor]").forEach((grupo) => {
@@ -1715,54 +2124,49 @@ function renderizarPainelLayout() {
     b.onclick = async () => {
       const a = b.dataset.acao;
       if (a === "centralizar") {
-        gravarCaixaLayout(el, m, { ...c, x: (m.dim.w - c.w) / 2 });
+        await gravarCaixaLayout(el.id, m, { ...c, x: (m.dim.w - c.w) / 2 });
       } else if (a === "voltarGeral") {
-        await gravarAjusteTime(el.id, (x) => { Object.keys(x).forEach((k) => delete x[k]); });
+        await gravarNivelEditor((x) => { if (x.ajustes[layoutPeca]) delete x.ajustes[layoutPeca][el.id]; });
       } else if (a === "voltarPosicao") {
-        await gravarAjusteTime(el.id, (x) => { delete x.base; delete x.tamanhos; });
+        await gravarNivelEditor((x) => {
+          const y = x.ajustes[layoutPeca] && x.ajustes[layoutPeca][el.id];
+          if (y) { delete y.base; delete y.tamanhos; }
+        });
       } else if (a === "semAjusteTam") {
-        delete el.ajustes[m.tam];
-        salvarLayout(true);
+        await mudarElementoNoEditor(el.id, (e) => { if (e.ajustes) delete e.ajustes[m.tam]; }, () => {});
+      } else if (a === "trocarImagem") {
+        const arquivo = await escolherImagemDeElemento();
+        if (!arquivo) return;
+        await gravarEstiloLayout(el.id, "arquivo", arquivo);
       } else if (a === "duplicar") {
+        // Cópia do elemento como está aqui, no nível editado.
         const copia = limparParaFirestore(el);
         copia.id = novoIdLayout("e");
-        copia.caixa = { ...copia.caixa, x: copia.caixa.x + 10, y: copia.caixa.y + 10 };
+        const cx = copia.caixa || c;
+        copia.caixa = { ...cx, x: arred1(cx.x + 10), y: arred1(cx.y + 10) };
         delete copia.ajustes;
-        els.push(copia);
+        delete copia.oculto;
+        if (copia.rotulo) copia.rotulo += " (cópia)";
         layoutElSel = copia.id;
-        salvarLayout(true);
+        await acrescentarElementoNoNivel(copia);
       } else if (a === "excluir") {
-        if (!confirm(`Excluir "${rotuloElementoLayout(el)}" da peça ${nomePecaProducao(layoutPeca)}? Vale para todos os times.`)) return;
-        els.splice(els.indexOf(el), 1);
+        if (!confirm(`Excluir "${rotuloElementoLayout(el)}" da peça ${nomePecaProducao(layoutPeca)}? Vale para ${alvoDoNivel()}.`)) return;
+        if (tipoNivel === "geral") {
+          const els = elementosDaPeca(layoutPeca);
+          const i = els.findIndex((e) => e.id === el.id);
+          if (i >= 0) els.splice(i, 1);
+          salvarLayout(true);
+        } else {
+          await gravarNivelEditor((x) => {
+            x.elementos[layoutPeca] = (x.elementos[layoutPeca] || []).filter((e) => e.id !== el.id);
+            if (x.ordem[layoutPeca]) x.ordem[layoutPeca] = x.ordem[layoutPeca].filter((id) => id !== el.id);
+          });
+        }
         layoutElSel = "";
-        salvarLayout(true);
       }
       redesenhar();
     };
   });
-}
-
-// Muda o ajuste próprio do time aberto no editor para um elemento da peça
-// mostrada (posição, estilo, oculto) e grava. Ajuste vazio é apagado.
-function gravarAjusteTime(elId, mudar) {
-  const time = estadoTimes[layoutModo] && estadoTimes[layoutModo].time;
-  if (!time) return Promise.resolve();
-  const prod = limparParaFirestore(producaoDoTime(time));
-  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
-  alvo.layoutAjustes = alvo.layoutAjustes || {};
-  const porPeca = alvo.layoutAjustes[layoutPeca] = alvo.layoutAjustes[layoutPeca] || {};
-  const aj = porPeca[elId] = porPeca[elId] || {};
-  mudar(aj);
-  if (aj.estilo && !Object.keys(aj.estilo).length) delete aj.estilo;
-  // No goleiro, "mostrar" (oculto: false) só precisa ficar gravado quando
-  // a comum esconde o elemento.
-  const comumOculto = !!(ajusteDaProducao(prod, layoutPeca, elId) || {}).oculto;
-  if (!aj.oculto && !(layoutGoleiro && comumOculto && aj.oculto === false)) delete aj.oculto;
-  if (!Object.keys(aj).length) delete porPeca[elId];
-  if (!Object.keys(porPeca).length) delete alvo.layoutAjustes[layoutPeca];
-  if (layoutGoleiro) limparGoleiroVazio(prod);
-  return gravarProducaoTime(layoutModo, prod).then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time"))
-    .catch((e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); });
 }
 
 // ============================================================
@@ -1771,9 +2175,12 @@ function gravarAjusteTime(elId, mudar) {
 
 // Carrega o que o time usa: fonte, brasão, moldes dos tamanhos pedidos e as
 // artes (convertidas para CMYK na resolução de saída).
-async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso) {
+// `lay`: o layout já resolvido (padrão: o do time, com os níveis).
+async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso, lay) {
   const pako = await carregarLib("pako");
   const prod = producaoDoTime(time);
+  const layout = lay || layoutDoTime(time);
+  const elementosDe = (pecaId) => (layout.pecas[pecaId] && layout.pecas[pecaId].elementos) || [];
   const rec = { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
   if (prod.fonte && prod.fonte.partes) {
     aviso("Carregando a fonte…");
@@ -1783,8 +2190,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
     const bytes = await baixarArquivoDrive(driveScriptUrl, ref);
     return { bytes: EPS.extrairPostScript(bytes), bbox: bbox || EPS.lerBoundingBox(bytes) };
   };
-  const usaLogo = Object.values(layoutConfig.pecas || {}).some((l) =>
-    (l.elementos || []).some((e) => e.tipo === "logo"));
+  const usaLogo = pecasIds.some((id) => elementosDe(id).some((e) => e.tipo === "logo"));
   if (usaLogo && logoEmpresa) {
     aviso("Carregando o logo da empresa…");
     rec.eps.logo = await lerEps(logoEmpresa.partes || logoEmpresa.epsId, logoEmpresa.bbox);
@@ -1803,14 +2209,27 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
   }
   // Imagens (PNG → CMYK): a arte de cada peça e o detalhe da manga. A mesma
   // arte nas duas mangas é convertida uma vez só (mesma chave).
+  // Elementos de imagem acrescentados no layout (PNG ou EPS de cada um).
   const imagens = [];
-  pecasIds.forEach((pecaId) => {
+  for (const pecaId of pecasIds) {
     const ad = EPS.arteDaPeca(prod, pecaId);
     if (ad) imagens.push({ chave: ad.chave, img: ad.arte, nome: nomePecaProducao(pecaId) });
-    const usaDetalhe = elementosDaPeca(pecaId).some((e) => e.tipo === "detalhe");
+    const usaDetalhe = elementosDe(pecaId).some((e) => e.tipo === "detalhe");
     const d = usaDetalhe && EPS.detalheDaPeca(prod, pecaId);
     if (d) imagens.push({ chave: d.chave, img: d.img, nome: "detalhe da manga" });
-  });
+    for (const el of elementosDe(pecaId)) {
+      const a = el.tipo === "imagem" && el.arquivo;
+      if (!a) continue;
+      const chave = EPS.chaveDoElemento(el);
+      if (a.formato === "eps") {
+        if (rec.eps[chave]) continue;
+        aviso(`Carregando a imagem ${rotuloElementoLayout(el)}…`);
+        rec.eps[chave] = await lerEps(a.partes || a.epsId, a.bbox);
+      } else {
+        imagens.push({ chave, img: a, nome: rotuloElementoLayout(el) });
+      }
+    }
+  }
   for (const { chave, img, nome } of imagens) {
     if (rec.imagens[chave]) continue;
     aviso(`Baixando a arte ${nome}…`);
@@ -1830,7 +2249,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
 function pecasDoTime(time) {
   const prod = producaoDoTime(time);
   return PECAS_PRODUCAO.map((p) => p.id).filter((id) =>
-    EPS.arteDaPeca(prod, id) || elementosDaPeca(id).length);
+    EPS.arteDaPeca(prod, id) || elementosDoTime(time, id).length);
 }
 
 // Time de cada linha da leva: o do pedido; para o avulso, o time com o
@@ -1961,7 +2380,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
         (t) => avisoProducao(`${rotuloTime}: ${t}`));
       avisoProducao(`${rotuloTime}: montando a folha…`);
       await esperarTela();
-      const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutConfig, time, g.camisetas, rec,
+      const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutDoTime(time), timeSemAjustes(time), g.camisetas, rec,
         { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
       avB.forEach((a) => avisos.push(`${rotuloTime}: ${a}`));
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
@@ -2009,8 +2428,10 @@ async function baixarEpsDeTesteLayout() {
   if (!time) { alert("Escolha um time (com os arquivos de produção enviados) para o teste."); return; }
   if (!exigirDriveProducao()) return;
   try {
-    const rec = await carregarRecursosDoTime(time, [m.tam], [layoutPeca], 150, avisoProducao);
-    const { blocos, avisos } = EPS.montarBlocos(moldesConfig, layoutConfig, time,
+    // O layout do nível aberto no editor (geral, cliente ou time).
+    const lay = layoutComNiveis(niveisDoEditor());
+    const rec = await carregarRecursosDoTime(time, [m.tam], [layoutPeca], 150, avisoProducao, lay);
+    const { blocos, avisos } = EPS.montarBlocos(moldesConfig, lay, timeSemAjustes(time),
       [{ ...amostraLayout, tamanho: m.tam }], rec, { molde: "frente", etiqueta: true, sangriaMm: (layoutConfig.folha || {}).sangriaMm, pecas: [layoutPeca], nomePeca: nomePecaProducao, nomeTime: time.nome });
     const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 26, espacoMm: 10, rotacao: "0" });
     avisoProducao("");

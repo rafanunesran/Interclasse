@@ -490,9 +490,44 @@ comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No text
 **contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do
 molde (dá para ajustar um tamanho específico).
 
-O layout **geral** vale para todos os times. Em **Editando**, escolha um time para um **ajuste
-próprio** dele (só a posição; **Voltar ao layout geral** desfaz). **⬇ EPS de teste** baixa a peça
-aberta com o apelido e o número de teste, usando os arquivos do time.
+O layout **geral** vale para todos os times. Em **Editando**, escolha um **cliente** ou um
+**time** para mexer só nele (ver *Níveis da arte* abaixo). **⬇ EPS de teste** baixa a peça
+aberta com o apelido e o número de teste, usando os arquivos do time da prévia e o nível aberto.
+
+### Níveis da arte: geral → cliente → time → goleiro
+
+A arte de uma camiseta é montada em níveis, do mais geral ao mais específico. O que um nível não
+muda segue o de cima:
+
+| Nível | Onde se edita | Vale para |
+|---|---|---|
+| **Geral** | aba Artes → *Layout geral* | todos os times |
+| **Cliente** | aba Artes → *Cliente: …* (ou aba Clientes → **🎨 Arte do cliente**) | só os times daquele cliente — **os outros clientes nunca veem** |
+| **Time** | time aberto → **Editar arte** | só aquele time |
+| **Goleiro** | time aberto → Editar arte → **🧤 Goleiro** | só a camiseta do goleiro do time |
+
+Em qualquer nível dá para:
+
+- **ajustar** um elemento que veio de cima — posição, tamanho da letra, cores, ocultar ou mostrar
+  de novo (ex.: um cliente **sem o logo**, ou com o **nome em outra cor/fonte**);
+- **acrescentar elementos** que só existem ali: **+ Imagem** (PNG 600 dpi ou EPS — um
+  patrocinador, um selo, um desenho), **+ Texto** (texto fixo, igual em todas as camisetas) e
+  também brasão, logo, detalhe, nome e número;
+- mudar a **ordem das camadas**.
+
+**Camadas:** o painel à direita lista os elementos da peça de cima (frente) para baixo; a arte
+da peça fica sempre no fundo. **👁** mostra/oculta, **↑ ↓** sobem/descem a camada, e cada uma
+pode ganhar um **nome**. Os selos dizem de onde o elemento veio (*cliente*, *time*, *goleiro*) e o
+que o nível aberto mudou nele (*posição*, *estilo*, *oculto*/*mostrado*). **Voltar ao de cima**
+desfaz o ajuste do nível; **Voltar à ordem de cima** esquece a ordem própria. **Duplicar** cria uma
+cópia só no nível aberto; **Excluir** só aparece nos elementos do próprio nível. Mover a caixa
+**no tamanho base** num nível faz os outros tamanhos seguirem proporcionais a ela (menos os que
+aquele nível ajustou um a um).
+
+Onde fica: geral em `config/layout`; cliente em `clientes/{id}.arte`
+(`ajustes`, `elementos`, `ordem`); time em `producao.layoutAjustes`, `producao.elementos` e
+`producao.ordem`; goleiro nos mesmos campos dentro de `producao.goleiro`. A folha EPS, a prévia,
+o mockup e a prévia do cliente já saem com tudo isso.
 
 ### Logo da empresa (aba **Configurações**)
 
@@ -510,12 +545,12 @@ o resto continua seguindo o layout geral:
   **cor/espessura do contorno** (CMYK), alinhamento, espaço entre letras, maiúsculas e o que
   fazer com texto comprido;
 - nas imagens (brasão, logo, detalhe): **manter proporção** ou esticar (o **detalhe da manga estica por padrão**, na largura e na altura, para a arte se adaptar à caixa);
-- **Ocultar neste time** (ex.: um time sem o logo) — o elemento aparece apagado no editor.
+- **Ocultar** (ex.: um time sem o logo) — o elemento aparece apagado no editor.
 
-A lista de elementos mostra os selos *posição do time*, *estilo do time* e *oculto*. **Voltar ao
-layout geral** desfaz tudo daquele elemento; **Voltar só a posição** mantém o estilo. A folha
-EPS, a prévia, o mockup e a prévia do cliente já saem com os ajustes (guardados em
-`producao.layoutAjustes` do time).
+Dá também para acrescentar imagens e textos só deste time e mudar a ordem das camadas — ver
+*Níveis da arte* acima. **Voltar ao de cima** desfaz o ajuste daquele elemento; **Voltar só a
+posição** mantém o estilo. Quando o time é de um cliente com arte própria, o aviso do editor tem
+o atalho **Editar a arte do cliente**.
 
 ### Prévia do time (time aberto → Arquivos de produção)
 

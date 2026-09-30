@@ -151,6 +151,8 @@ function escutarClientes() {
       renderizarSeletoresDeCliente();
       renderizarClientesAdmin();
       renderizarTimesAdmin();
+      // A arte do cliente (aba Artes) pode ter mudado.
+      if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
     },
     (erro) => console.error("Erro ao carregar clientes:", erro)
   );
@@ -403,6 +405,19 @@ function renderizarClientesAdmin() {
       if (abaInicial) abaInicial.click();
     };
     botoes.appendChild(btnVer);
+
+    // Arte só deste cliente (aba Artes): tirar um logo, mudar um texto,
+    // acrescentar uma imagem… sem aparecer para os outros clientes.
+    if (typeof abrirArteDoCliente === "function") {
+      const btnArte = document.createElement("button");
+      btnArte.className = "secundario";
+      const nArte = Object.values((cliente.arte && cliente.arte.ajustes) || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0) +
+        Object.values((cliente.arte && cliente.arte.elementos) || {}).reduce((s, l) => s + (l || []).length, 0);
+      btnArte.textContent = "🎨 Arte do cliente" + (nArte ? ` (${nArte})` : "");
+      btnArte.title = "Ajustes e elementos da arte só para os times deste cliente";
+      btnArte.onclick = () => abrirArteDoCliente(cliente.id);
+      botoes.appendChild(btnArte);
+    }
 
     const btnEditar = document.createElement("button");
     btnEditar.className = "secundario";
@@ -972,8 +987,10 @@ function renderizarTimeAberto(timeId) {
     arquivos: faltaProducao.length ? ' <span class="subaba-ponto pendente" title="Faltam arquivos">●</span>' : ' <span class="subaba-ok">✓</span>',
     editarArte: (() => {
       const prod = time.producao || {};
+      const g = prod.goleiro || {};
       const contar = (aj) => Object.values(aj || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-      const n = contar(prod.layoutAjustes) + contar(prod.goleiro && prod.goleiro.layoutAjustes);
+      const contarEls = (els) => Object.values(els || {}).reduce((s, l) => s + (l || []).length, 0);
+      const n = contar(prod.layoutAjustes) + contar(g.layoutAjustes) + contarEls(prod.elementos) + contarEls(g.elementos);
       return n ? `<span class="subaba-qtd" title="Ajustes próprios deste time (comum e goleiro)">${n}</span>` : "";
     })()
   };
@@ -1429,7 +1446,8 @@ function renderizarEditarArteTime(timeId) {
   card.className = "card";
   card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
     '<p class="pix-ajuda">Escolha a peça e clique num elemento (nome, número, brasão…) para mudar a posição, o tamanho da letra, as cores ou ocultá-lo — só neste time. ' +
-    'O que não for mudado aqui segue o layout geral (aba <strong>Artes</strong>). A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
+    'Em <strong>+ Imagem</strong> / <strong>+ Texto</strong> você acrescenta elementos só deste time, e a lista de <strong>Camadas</strong> muda o que fica na frente. ' +
+    'O que não for mudado aqui segue a arte do cliente e o layout geral (aba <strong>Artes</strong>). A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
   // Camiseta comum ou a do goleiro (o mesmo seletor da aba Arquivos).
   if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
   const host = document.createElement("div");

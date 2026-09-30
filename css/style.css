@@ -2414,3 +2414,22 @@ button.kanban-card-nome:hover { color: var(--azul); text-decoration: underline; 
 .producao-time.variante-goleiro .producao-slot.ok { border-color: #67e8f9; }
 .producao-slot.herdado .producao-slot-previa img { opacity: 0.4; filter: grayscale(0.5); }
 .producao-slot.herdado .producao-slot-info { font-style: italic; }
+
+/* Camadas do editor de arte (geral → cliente → time → goleiro) */
+.link-botao { background: none; border: 0; padding: 0; margin: 0 0 0 4px; color: var(--azul); text-decoration: underline; cursor: pointer; font: inherit; }
+.camadas-topo { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.camadas-topo h4 { margin: 0; }
+.arte-lista-el.arte-camadas { list-style: none; padding: 0; margin: 6px 0 10px; border: 1px solid var(--cinza-borda); border-radius: 8px; overflow: hidden; }
+.arte-camadas .camada { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-bottom: 1px solid var(--cinza-borda); background: #fff; }
+.arte-camadas .camada:last-child { border-bottom: 0; }
+.arte-camadas .camada.ativo { background: #eff6ff; color: var(--azul); font-weight: 700; }
+.arte-camadas .camada.camada-oculta .camada-nome { opacity: 0.5; text-decoration: line-through; }
+.arte-camadas .camada-fundo { cursor: default; color: #6b7280; font-style: italic; background: #f9fafb; }
+.arte-camadas .camada-nome { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.arte-camadas button { margin: 0; padding: 2px 7px; font-size: 0.8rem; line-height: 1.2; background: #fff; color: var(--texto); border: 1px solid var(--cinza-borda); border-radius: 6px; }
+.arte-camadas button:disabled { opacity: 0.35; cursor: default; }
+.arte-camadas .camada-olho { border: 0; background: transparent; font-size: 0.95rem; }
+.arte-camadas .camada-mover { display: inline-flex; gap: 2px; }
+.badge.origem-cliente { background: #ede9fe; color: #5b21b6; }
+.badge.origem-time { background: #dbeafe; color: #1e40af; }
+.badge.origem-goleiro { background: #cffafe; color: #155e75; }
