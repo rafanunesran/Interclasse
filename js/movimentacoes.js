@@ -262,7 +262,7 @@ function movNovoCustoDoLote(levaId) {
   }
 }
 
-function finViewMovimentacoes(alvo) {
+function finViewMovimentacoes(alvo, f) {
   if (!movCarregadas) {
     alvo.innerHTML = '<p class="pix-ajuda">Carregando as movimentações…</p>';
     return;
@@ -273,6 +273,10 @@ function finViewMovimentacoes(alvo) {
   const totAtivas = movSomar(movAtivas(movDoCliente()));
   const recebidoLiq = movRecebidoLiquido(lancTodos);
   const saldo = recebidoLiq + totAtivas.entrada - totAtivas.saque - totAtivas.pagamento;
+  // Disponível para saque = lucro realizado (recebido − custos das camisetas
+  // pagas − taxas − internas − avulsas dos lotes) − tudo o que já foi sacado.
+  const lucroRealizado = (f || finUltimo || calcularFinanceiro()).lucroRealizado || 0;
+  const disponivelSaque = lucroRealizado - totAtivas.saque;
   const contasAPagar = movAtivas(movDoCliente()).filter((m) => m.tipo === "pagamento" && m.aPagar === true);
 
   // Recorte do período (o que aparece na lista e nos totais do período).
@@ -358,9 +362,10 @@ function finViewMovimentacoes(alvo) {
         <span class="fin-sub">líquido · ${escapeHtmlAdmin(label)}${noPeriodo.entrada ? ` · + ${formatarReais(noPeriodo.entrada)} de entradas` : ""}</span>
       </div>
       <div class="fin-card fin-card-vermelho">
-        <span class="fin-rotulo">Saques</span>
-        <span class="fin-valor fin-valor-md">${formatarReais(noPeriodo.saque)}</span>
-        <span class="fin-sub">${escapeHtmlAdmin(label)}</span>
+        <span class="fin-rotulo">Disponível para saque</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(disponivelSaque)}</span>
+        <span class="fin-sub">lucro realizado ${formatarReais(lucroRealizado)} − sacado ${formatarReais(totAtivas.saque)}</span>
+        <span class="fin-sub">saques ${escapeHtmlAdmin(label)}: ${formatarReais(noPeriodo.saque)}</span>
       </div>
       <div class="fin-card fin-card-amarelo">
         <span class="fin-rotulo">Pagamentos</span>
@@ -369,7 +374,7 @@ function finViewMovimentacoes(alvo) {
       </div>
     </div>
     ${contasAPagar.length ? `<p class="aviso">Contas a pagar: <strong>${formatarReais(contasAPagar.reduce((s, m) => s + (Number(m.valor) || 0), 0))}</strong> em ${contasAPagar.length} lançamento(s) — ainda fora do saldo. Use <em>Marcar como pago</em> quando quitar.</p>` : ""}
-    <p class="pix-ajuda">Saldo = recebido dos pedidos (já sem a taxa do Mercado Pago) + entradas − saques − pagamentos já pagos. Pagamentos ligados a um <strong>lote</strong> viram o custo real por unidade daquele lote no Financeiro (veja <em>Custos por lote</em>); os demais não mudam o DRE, que usa os custos por tamanho.</p>
+    <p class="pix-ajuda">Saldo = recebido dos pedidos (já sem a taxa do Mercado Pago) + entradas − saques − pagamentos já pagos. <strong>Disponível para saque</strong> = lucro realizado (Visão geral) − tudo o que já foi sacado. Pagamentos ligados a um <strong>lote</strong> viram o custo real por unidade daquele lote no Financeiro (veja <em>Custos por lote</em>); os demais não mudam o DRE, que usa os custos por tamanho.</p>
 
     ${movFormAberto ? form : `<button type="button" class="primario" data-mov-acao="abrir-form">${icone("plus")} Nova movimentação</button>`}
 
