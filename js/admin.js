@@ -13,8 +13,8 @@ const PAGINA_LOGIN = "admin.html";
 
 const estadoTimes = {}; // timeId -> { time, alunos, expandido }
 const estadoClientes = {}; // clienteId -> dados do cliente
-const precosTimeAbertos = {}; // timeId -> true quando o bloco de preços está aberto
-const precosTimeSalvos = {};  // timeId -> aviso a mostrar depois de salvar/limpar
+const precosTimeAbertos = {}; // "time:ID" / "cliente:ID" -> bloco de preços aberto
+const precosTimeSalvos = {};  // "time:ID" / "cliente:ID" -> aviso depois de salvar/limpar
 
 // Cliente escolhido no seletor do topo. "" = todos; SEM_CLIENTE = só os times
 // que ainda não foram atribuídos a nenhum cliente. Vale para o painel inteiro
@@ -53,15 +53,55 @@ let painelIniciado = false;
 // Guarda de acesso: o Firebase mantém a sessão salva no navegador, então
 // quem já entrou continua logado ao recarregar. Se não for a conta admin,
 // volta para a página de login.
+// Roda `f` quando todos os <script> da página já foram carregados.
+function aoCarregarScripts(f) {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => setTimeout(f, 0));
+  else setTimeout(f, 0);
+}
+
+// Sai por inatividade: 24h sem uso em nenhuma aba (ver js/auth-admin.js).
+async function sairPorInatividade() {
+  elPainel.classList.add("oculto");
+  await auth.signOut();
+  window.location.replace(PAGINA_LOGIN);
+}
+
+let ultimaGravacaoAtividade = 0;
+function aoUsarPainel() {
+  // No máximo uma gravação por minuto (o mousemove dispara sem parar).
+  const agora = Date.now();
+  if (agora - ultimaGravacaoAtividade < 60 * 1000) return;
+  if (sessaoAdminExpirada()) {
+    sairPorInatividade();
+    return;
+  }
+  ultimaGravacaoAtividade = agora;
+  registrarAtividadeAdmin();
+}
+["click", "keydown", "scroll", "pointermove", "touchstart"].forEach((ev) =>
+  window.addEventListener(ev, aoUsarPainel, { passive: true, capture: true }));
+// Confere de tempos em tempos (e ao voltar para a aba) se o prazo acabou.
+setInterval(() => { if (auth.currentUser && sessaoAdminExpirada()) sairPorInatividade(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") aoUsarPainel();
+});
+
 auth.onAuthStateChanged((user) => {
+  if (ehContaAdmin(user) && sessaoAdminExpirada()) {
+    sairPorInatividade();
+    return;
+  }
   if (ehContaAdmin(user)) {
+    registrarAtividadeAdmin();
     if (elEmailLogado) elEmailLogado.textContent = user.email;
     elPainel.classList.remove("oculto");
     if (!painelIniciado) {
       painelIniciado = true;
-      // Adiado com setTimeout para garantir que as declarações let/const do
-      // restante do arquivo já existam quando rodarem (evita "TDZ").
-      setTimeout(() => {
+      // Só começa depois de TODOS os scripts da página carregarem: entre um
+      // script e outro o navegador pode rodar o login, e o painel desenharia
+      // antes de producao.js/artes.js existirem (erro e editor pela metade).
+      // Também garante que as declarações let/const deste arquivo existam.
+      aoCarregarScripts(() => {
         escutarClientes();
         escutarTimes();
         carregarPainelConfig();
@@ -70,7 +110,10 @@ auth.onAuthStateChanged((user) => {
         // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
         if (typeof escutarMoldes === "function") escutarMoldes();
         if (typeof escutarLayout === "function") escutarLayout();
-      }, 0);
+        escutarPrecos();
+        // Financeiro → Movimentações (js/movimentacoes.js).
+        if (typeof escutarMovimentacoes === "function") escutarMovimentacoes();
+      });
     }
   } else {
     elPainel.classList.add("oculto");
@@ -151,8 +194,6 @@ function escutarClientes() {
       renderizarSeletoresDeCliente();
       renderizarClientesAdmin();
       renderizarTimesAdmin();
-      // A arte do cliente (aba Artes) pode ter mudado.
-      if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
     },
     (erro) => console.error("Erro ao carregar clientes:", erro)
   );
@@ -386,7 +427,9 @@ function renderizarClientesAdmin() {
     const camisetas = times.reduce((soma, e) => soma + e.alunos.length, 0);
 
     card.innerHTML = `
-      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}</h2>
+      <h2>${escapeHtmlAdmin(cliente.nome || cliente.id)}${
+        cliente.oculto === true ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}</h2>
+      ${cliente.oculto === true ? '<p class="pix-ajuda">Este cliente e os times dele não aparecem na loja. Os links diretos dos times continuam funcionando.</p>' : ""}
       ${cliente.contato ? `<p>Contato: ${escapeHtmlAdmin(cliente.contato)}</p>` : ""}
       <p>${times.length} time(s) &middot; ${camisetas} camiseta(s) &middot; Link: <code>index.html?cliente=${cliente.id}</code></p>
     `;
@@ -406,19 +449,6 @@ function renderizarClientesAdmin() {
     };
     botoes.appendChild(btnVer);
 
-    // Arte só deste cliente (aba Artes): tirar um logo, mudar um texto,
-    // acrescentar uma imagem… sem aparecer para os outros clientes.
-    if (typeof abrirArteDoCliente === "function") {
-      const btnArte = document.createElement("button");
-      btnArte.className = "secundario";
-      const nArte = Object.values((cliente.arte && cliente.arte.ajustes) || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0) +
-        Object.values((cliente.arte && cliente.arte.elementos) || {}).reduce((s, l) => s + (l || []).length, 0);
-      btnArte.textContent = "🎨 Arte do cliente" + (nArte ? ` (${nArte})` : "");
-      btnArte.title = "Ajustes e elementos da arte só para os times deste cliente";
-      btnArte.onclick = () => abrirArteDoCliente(cliente.id);
-      botoes.appendChild(btnArte);
-    }
-
     const btnEditar = document.createElement("button");
     btnEditar.className = "secundario";
     btnEditar.textContent = "Editar cliente";
@@ -428,6 +458,14 @@ function renderizarClientesAdmin() {
     };
     botoes.appendChild(btnEditar);
 
+    const btnOcultar = document.createElement("button");
+    btnOcultar.className = "secundario";
+    btnOcultar.innerHTML = cliente.oculto === true
+      ? icone("eye") + " Mostrar na loja"
+      : icone("eye-off") + " Ocultar da loja";
+    btnOcultar.onclick = () => alternarClienteOculto(cliente, btnOcultar);
+    botoes.appendChild(btnOcultar);
+
     const btnExcluir = document.createElement("button");
     btnExcluir.className = "perigo";
     btnExcluir.textContent = "Excluir cliente";
@@ -435,8 +473,25 @@ function renderizarClientesAdmin() {
     botoes.appendChild(btnExcluir);
 
     card.appendChild(botoes);
+
+    // Tabela de preço do cliente (vale para todos os times dele).
+    card.appendChild(criarBlocoPrecos("cliente", cliente.id));
     elListaClientesAdmin.appendChild(card);
   });
+}
+
+// Ocultar/mostrar o cliente na loja: com ele oculto, nenhum time dele aparece
+// em index.html (os links diretos dos times continuam abrindo).
+async function alternarClienteOculto(cliente, botao) {
+  const ocultar = cliente.oculto !== true;
+  botao.disabled = true;
+  try {
+    await db.collection(COL_CLIENTES).doc(cliente.id).update({ oculto: ocultar });
+  } catch (erro) {
+    console.error(erro);
+    botao.disabled = false;
+    alert("Erro ao salvar. Tente novamente.");
+  }
 }
 
 // Formulário inline de edição do nome/contato do cliente.
@@ -514,6 +569,8 @@ async function excluirCliente(cliente, qtdTimes) {
   if (!confirm(`Excluir o cliente "${cliente.nome}"?`)) return;
   try {
     await db.collection(COL_CLIENTES).doc(cliente.id).delete();
+    // Os preços do cliente vão junto (se falhar, não atrapalha).
+    db.collection(COL_PRECOS).doc(idDocPrecoCliente(cliente.id)).delete().catch(() => {});
   } catch (erro) {
     console.error(erro);
     alert("Erro ao excluir o cliente. Verifique as regras do Firestore (firestore.rules).");
@@ -611,6 +668,7 @@ function escutarTimes() {
           if (!idsAtuais.has(id)) delete estadoTimes[id];
         });
         timesCarregados = true;
+        if (typeof migrarPrecosAntigos === "function") migrarPrecosAntigos();
         aplicarFechamentoAutomatico();
         renderizarTimesAdmin();
       },
@@ -832,7 +890,7 @@ function renderizarListaTimes() {
       if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
     });
     elArquivados.innerHTML =
-      `<summary>📦 Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
+      `<summary>${icone("archive")} Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
       '<p class="pix-ajuda">Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.</p>';
     elArquivados.appendChild(criarListaDeLinhas(idsArquivados, termosBusca));
     elListaTimesAdmin.appendChild(elArquivados);
@@ -870,6 +928,9 @@ function criarLinhaTime(timeId, termosBusca) {
   if (achado.alunos.length > 0) sinais.push(`<span class="sinal sinal-busca">🔎 ${achado.alunos.length}</span>`);
   if (nAjustes > 0) sinais.push(`<span class="sinal sinal-ajuste" title="Ajustes solicitados">! ${nAjustes}</span>`);
   if (nConfirmar > 0) sinais.push(`<span class="sinal sinal-pix" title="PIX avisado, a confirmar">PIX ${nConfirmar}</span>`);
+  if (timeOcultoNaLoja(time, estadoClientes)) {
+    sinais.push(`<span class="sinal sinal-oculto" title="${time.oculto === true ? "Time oculto na loja" : "Cliente oculto na loja"}">${icone("eye-off")}</span>`);
+  }
 
   linha.innerHTML = `
     <span class="linha-time-avatar">${avatar}</span>
@@ -904,8 +965,8 @@ function representanteCurtoHtml(time) {
   const texto = escapeHtmlAdmin(nome || "Representante") +
     (telefone ? ` · ${escapeHtmlAdmin(formatarTelefone(telefone))}` : "");
   return url
-    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">💬 ${texto}</a>`
-    : `<span title="Sem um WhatsApp válido (informe com DDD)">👤 ${texto}</span>`;
+    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="link-whats" title="Falar no WhatsApp">${icone("message-circle")} ${texto}</a>`
+    : `<span title="Sem um WhatsApp válido (informe com DDD)">${icone("user")} ${texto}</span>`;
 }
 
 // ---------------- Time aberto ----------------
@@ -915,7 +976,7 @@ function renderizarTimeAberto(timeId) {
   const voltar = document.createElement("button");
   voltar.type = "button";
   voltar.className = "botao-voltar";
-  voltar.textContent = "← Todos os times";
+  voltar.innerHTML = icone("arrow-left") + " Todos os times";
   voltar.onclick = voltarParaListaAdmin;
 
   if (!estado) {
@@ -941,7 +1002,7 @@ function renderizarTimeAberto(timeId) {
   verPagina.href = "time.html?id=" + encodeURIComponent(timeId);
   verPagina.target = "_blank";
   verPagina.rel = "noopener";
-  verPagina.textContent = "Ver a página do pedido ↗";
+  verPagina.innerHTML = "Ver a página do pedido " + icone("arrow-up-right");
   topo.appendChild(verPagina);
   elListaTimesAdmin.appendChild(topo);
 
@@ -952,7 +1013,9 @@ function renderizarTimeAberto(timeId) {
     <div class="detalhe-titulo">
       <p class="detalhe-cliente">${escapeHtmlAdmin(nomeClienteDoTime(time))}${
         time.modeloCamiseta ? ` · Modelo: ${escapeHtmlAdmin(time.modeloCamiseta)}` : ""}</p>
-      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span></h2>
+      <h2>${escapeHtmlAdmin(time.nome)} <span class="badge ${classeBadgeStatus(statusId)}">${escapeHtmlAdmin(labelStatus(statusId))}</span>${
+        timeOcultoNaLoja(time, estadoClientes) ? ` <span class="badge oculto-loja">${icone("eye-off")} Oculto na loja</span>` : ""}${
+        precoOculto(time) ? ` <span class="badge oculto-loja">${icone("eye-off")} Preço oculto</span>` : ""}</h2>
       <p class="linha-time-rep">${representanteCurtoHtml(time)}</p>
     </div>`;
 
@@ -987,10 +1050,8 @@ function renderizarTimeAberto(timeId) {
     arquivos: faltaProducao.length ? ' <span class="subaba-ponto pendente" title="Faltam arquivos">●</span>' : ' <span class="subaba-ok">✓</span>',
     editarArte: (() => {
       const prod = time.producao || {};
-      const g = prod.goleiro || {};
       const contar = (aj) => Object.values(aj || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-      const contarEls = (els) => Object.values(els || {}).reduce((s, l) => s + (l || []).length, 0);
-      const n = contar(prod.layoutAjustes) + contar(g.layoutAjustes) + contarEls(prod.elementos) + contarEls(g.elementos);
+      const n = contar(prod.layoutAjustes) + contar(prod.goleiro && prod.goleiro.layoutAjustes);
       return n ? `<span class="subaba-qtd" title="Ajustes próprios deste time (comum e goleiro)">${n}</span>` : "";
     })()
   };
@@ -1034,8 +1095,8 @@ function renderizarListaDoTime(timeId) {
     `<span class="numero-chip"><strong>${alunos.length - nPagos}</strong> pendente(s)</span>`
   ];
   if (nConfirmar) numeros.push(`<span class="numero-chip alerta"><strong>${nConfirmar}</strong> PIX a confirmar</span>`);
-  if (nGoleiros) numeros.push(`<span class="numero-chip">🧤 <strong>${nGoleiros}</strong> goleiro(s)</span>`);
-  if (nProfs) numeros.push(`<span class="numero-chip">🎓 <strong>${nProfs}</strong> prof</span>`);
+  if (nGoleiros) numeros.push(`<span class="numero-chip">${icone("hand")} <strong>${nGoleiros}</strong> goleiro(s)</span>`);
+  if (nProfs) numeros.push(`<span class="numero-chip">${icone("graduation-cap")} <strong>${nProfs}</strong> prof</span>`);
   if (nAjustes) numeros.push(`<span class="numero-chip alerta"><span class="marca-ajuste">!</span> <strong>${nAjustes}</strong> ajuste(s)</span>`);
 
   const cab = document.createElement("div");
@@ -1177,6 +1238,51 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
   selPag.value = aluno.pago ? (aluno.pagamentoForma || "pix") : "pendente";
   selPag.onchange = () => atualizarPagamento(timeId, aluno.id, selPag.value);
   tdPag.appendChild(selPag);
+
+  // Preço especial desta camiseta: preenchido, ela é vendida por este valor
+  // (no pagamento, no Financeiro e no DRE). Em branco, vale o preço do tamanho.
+  if (!ehInterno(aluno)) {
+    const especial = precoEspecialDoAluno(configGeralAtual, timeId, aluno.id);
+    const normal = precoDoTamanhoNoTime(aluno.tamanho, configGeralAtual, timeId);
+    const lbl = document.createElement("label");
+    lbl.className = "preco-aluno" + (especial != null ? " ativo" : "");
+    lbl.title = "Preço especial desta camiseta. Em branco = preço do tamanho.";
+    lbl.innerHTML = '<span>R$</span>';
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.min = "0";
+    inp.inputMode = "decimal";
+    inp.placeholder = normal != null ? Number(normal).toFixed(2) : "preço";
+    inp.value = especial != null ? especial : "";
+    inp.setAttribute("aria-label", "Preço especial da camiseta de " + aluno.nome);
+    inp.disabled = precosAdminErro;
+    if (precosAdminErro) lbl.title = "Publique o firestore.rules atualizado para usar o preço especial.";
+    inp.onchange = async () => {
+      const bruto = inp.value.trim().replace(",", ".");
+      const v = bruto === "" ? null : Math.round(parseFloat(bruto) * 100) / 100;
+      if (v != null && (isNaN(v) || v < 0)) {
+        alert("Informe um valor válido (0 ou mais) ou deixe em branco.");
+        inp.value = especial != null ? especial : "";
+        return;
+      }
+      if ((v == null && especial == null) || v === especial) return;
+      if (aluno.pago && !confirm(`Esta camiseta já está paga. Mudar o valor dela para ${v == null ? "o preço do tamanho" : formatarReais(v)} altera o recebido e o lucro no Financeiro. Continuar?`)) {
+        inp.value = especial != null ? especial : "";
+        return;
+      }
+      inp.disabled = true;
+      try {
+        await gravarPrecoAluno(timeId, aluno.id, v);
+      } catch (erro) {
+        console.error(erro);
+        inp.disabled = false;
+        alert("Erro ao salvar o preço especial. Confira se o firestore.rules atualizado foi publicado.");
+      }
+    };
+    lbl.appendChild(inp);
+    tdPag.appendChild(lbl);
+  }
   if (aluno.pagamentoDeclarado && !aluno.pago) {
     const nota = document.createElement("small");
     nota.className = "motivo-ajuste";
@@ -1425,6 +1531,59 @@ function renderizarConfigTime(timeId) {
   cardPrecos.appendChild(blocoPrecos);
   elListaTimesAdmin.appendChild(cardPrecos);
 
+  // Visibilidade na loja (vale na hora, fora do rascunho da configuração).
+  const clienteOculto = !!(estadoClientes[clienteIdDoTime(time)] && estadoClientes[clienteIdDoTime(time)].oculto === true);
+  const cardVisivel = document.createElement("div");
+  cardVisivel.className = "card";
+  cardVisivel.innerHTML = '<h3 class="titulo-bloco">Visibilidade para o cliente</h3>' +
+    `<p class="pix-ajuda">${time.oculto === true
+      ? "Este time está <strong>oculto</strong>: não aparece na loja (index.html). O link direto do pedido continua funcionando."
+      : "Este time aparece na loja (index.html). Ocultando, ele some da loja, mas o link direto do pedido continua funcionando."}${
+      clienteOculto ? " <strong>O cliente deste time está oculto</strong>, então ele já não aparece na loja (aba Clientes)." : ""}</p>`;
+  const btnOcultar = document.createElement("button");
+  btnOcultar.type = "button";
+  btnOcultar.className = "secundario";
+  btnOcultar.innerHTML = time.oculto === true
+    ? icone("eye") + " Mostrar na loja"
+    : icone("eye-off") + " Ocultar da loja";
+  btnOcultar.onclick = async () => {
+    btnOcultar.disabled = true;
+    try {
+      await db.collection(COL_TIMES).doc(timeId).update({ oculto: time.oculto !== true });
+    } catch (erro) {
+      console.error(erro);
+      btnOcultar.disabled = false;
+      alert("Erro ao salvar. Tente novamente.");
+    }
+  };
+  cardVisivel.appendChild(btnOcultar);
+
+  // Preço oculto: o pedido continua na loja, só sem mostrar o valor.
+  const pPreco = document.createElement("p");
+  pPreco.className = "pix-ajuda";
+  pPreco.innerHTML = precoOculto(time)
+    ? "O <strong>preço está oculto</strong>: a loja e a página do pedido não mostram o valor da camiseta. O pagamento continua funcionando — o valor aparece só na hora de pagar (no PIX)."
+    : "O preço aparece na loja e na página do pedido. Ocultando, o pedido continua visível, mas sem o valor da camiseta (ele só aparece na hora de pagar).";
+  cardVisivel.appendChild(pPreco);
+  const btnPreco = document.createElement("button");
+  btnPreco.type = "button";
+  btnPreco.className = "secundario";
+  btnPreco.innerHTML = precoOculto(time)
+    ? icone("eye") + " Mostrar o preço"
+    : icone("eye-off") + " Ocultar o preço";
+  btnPreco.onclick = async () => {
+    btnPreco.disabled = true;
+    try {
+      await db.collection(COL_TIMES).doc(timeId).update({ ocultarPreco: !precoOculto(time) });
+    } catch (erro) {
+      console.error(erro);
+      btnPreco.disabled = false;
+      alert("Erro ao salvar. Tente novamente.");
+    }
+  };
+  cardVisivel.appendChild(btnPreco);
+  elListaTimesAdmin.appendChild(cardVisivel);
+
   // Zona de perigo.
   const cardPerigo = document.createElement("div");
   cardPerigo.className = "card zona-perigo";
@@ -1443,11 +1602,10 @@ function renderizarConfigTime(timeId) {
 
 function renderizarEditarArteTime(timeId) {
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "card tema-escuro";
   card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
-    '<p class="pix-ajuda">Escolha a peça e clique num elemento (nome, número, brasão…) para mudar a posição, o tamanho da letra, as cores ou ocultá-lo — só neste time. ' +
-    'Em <strong>+ Imagem</strong> / <strong>+ Texto</strong> você acrescenta elementos só deste time, e a lista de <strong>Camadas</strong> muda o que fica na frente. ' +
-    'O que não for mudado aqui segue a arte do cliente e o layout geral (aba <strong>Artes</strong>). A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
+    '<p class="pix-ajuda">Clique num elemento (no desenho ou na lista) para mudar a posição, a letra, as cores ou ocultá-lo — só neste time. ' +
+    'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
   // Camiseta comum ou a do goleiro (o mesmo seletor da aba Arquivos).
   if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
   const host = document.createElement("div");
@@ -1466,9 +1624,9 @@ function renderizarArquivosTime(timeId) {
   // Arquivos da folha EPS: arte de cada peça (PNG 600 dpi), brasão e fonte.
   if (typeof criarBlocoProducaoTime === "function") {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card tema-escuro";
     card.innerHTML = '<h3 class="titulo-bloco">Arquivos para impressão</h3>' +
-      '<p class="pix-ajuda">A arte de cada peça em PNG 600 dpi (feita para o molde do tamanho base), o brasão em EPS e a fonte do nome e do número.</p>';
+      '<p class="pix-ajuda">Clique num espaço ou arraste o arquivo para cima dele. Arquivos grandes vão ao Drive em partes.</p>';
     // Camiseta comum ou a do goleiro: o que o goleiro não tiver usa o da comum.
     if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
     const bloco = criarBlocoProducaoTime(timeId, time);
@@ -1481,16 +1639,16 @@ function renderizarArquivosTime(timeId) {
   // Prévia montada com os arquivos acima: a arte plana e no mockup.
   if (typeof criarPreviaArteTime === "function") {
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card tema-escuro";
     const golPrevia = typeof editandoGoleiro === "function" && editandoGoleiro(timeId);
-    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — 🧤 goleiro" : ""}</h3>`;
+    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — " + icone("hand") + " goleiro" : ""}</h3>`;
     card.appendChild(criarPreviaArteTime(timeId, time));
     elListaTimesAdmin.appendChild(card);
   }
 
   // Imagens que o cliente vê na loja e na página do pedido.
   const cardImagens = document.createElement("div");
-  cardImagens.className = "card";
+  cardImagens.className = "card tema-escuro";
   cardImagens.innerHTML = '<h3 class="titulo-bloco">Imagens da página do pedido</h3>' +
     '<p class="pix-ajuda">É o que o cliente vê na loja e no topo da página do pedido: a simulação na camiseta (mockup) e a arte sem simulação.</p>';
   cardImagens.appendChild(criarBlocoImagemTime(timeId, time));
@@ -1613,9 +1771,9 @@ function renderizarKanban() {
       coluna.classList.add("kanban-coluna-arquivo");
       const aviso = document.createElement("p");
       aviso.className = "kanban-vazio";
-      aviso.textContent = timesDaColuna.length > 0
-        ? `📦 ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
-        : "📦 Solte aqui para arquivar";
+      aviso.innerHTML = icone("archive") + (timesDaColuna.length > 0
+        ? ` ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
+        : " Solte aqui para arquivar");
       listaCards.appendChild(aviso);
       coluna.appendChild(listaCards);
       board.appendChild(coluna);
@@ -1697,7 +1855,7 @@ function criarCardKanban(timeId, statusId) {
     link.target = "_blank";
     link.rel = "noopener";
     const contato = contatoDoTime(time);
-    link.textContent = "💬 " + (contato.nome || formatarTelefone(contato.telefone));
+    link.innerHTML = icone("message-circle") + " " + escapeHtmlAdmin(contato.nome || formatarTelefone(contato.telefone));
     link.title = "Falar no WhatsApp com o representante do time";
     // O card é arrastável: sem isso, clicar no link viraria um arraste.
     link.addEventListener("pointerdown", (ev) => ev.stopPropagation());
@@ -1776,10 +1934,10 @@ function renderizarResumoPagamentos() {
   const pendentes = total - pagos - aguardando;
   // Quantas camisetas saem na cor de goleiro (só aparece quando há alguma).
   const marcaGoleiros = goleiros > 0
-    ? `<span class="badge goleiro" title="Camiseta de cor especial">🧤 Goleiros: ${goleiros}</span>`
+    ? `<span class="badge goleiro" title="Camiseta de cor especial">${icone("hand")} Goleiros: ${goleiros}</span>`
     : "";
   const marcaProfs = profs > 0
-    ? `<span class="badge prof" title="Camisetas de professor">🎓 Prof: ${profs}</span>`
+    ? `<span class="badge prof" title="Camisetas de professor">${icone("graduation-cap")} Prof: ${profs}</span>`
     : "";
 
   el.innerHTML = `
@@ -1828,15 +1986,16 @@ function renderizarResumoPrecosTimes() {
   const linhas = ids.map((id) => {
     const proprios = precosPersonalizadosDoTime(configGeralAtual, id);
     const efetivos = precosDoTime(configGeralAtual, id);
+    const clienteId = clienteIdDoTime(estadoTimes[id].time);
+    const doCliente = precosPersonalizadosDoCliente(configGeralAtual, clienteId);
     const celulas = GRUPOS_TAMANHO.map((g) => {
       const valor = efetivos[g.grupo];
       if (valor == null) return '<td class="fin-sub">—</td>';
-      const proprio = proprios[g.grupo] != null;
+      const proprio = proprios[g.grupo] != null || doCliente[g.grupo] != null;
       return `<td class="${proprio ? "preco-proprio" : "fin-sub"}">${formatarReais(valor)}</td>`;
     }).join("");
-    const marca = Object.keys(proprios).length > 0
-      ? ' <span class="badge interno">próprio</span>'
-      : "";
+    const marca = (Object.keys(proprios).length > 0 ? ' <span class="badge interno">próprio</span>' : "") +
+      (Object.keys(doCliente).length > 0 ? ' <span class="badge aguardando">do cliente</span>' : "");
     return `<tr><td>${escapeHtmlAdmin(estadoTimes[id].time.nome)}${marca}</td>${celulas}</tr>`;
   }).join("");
 
@@ -1847,7 +2006,7 @@ function renderizarResumoPrecosTimes() {
         <tbody>${linhas}</tbody>
       </table>
     </div>
-    <p class="pix-ajuda">Em destaque, os preços próprios do time; em cinza, os da tabela geral. Para mudar, abra o time (aba Inicial) → Configuração → Tabela especial de preço.</p>
+    <p class="pix-ajuda">Em destaque, os preços especiais (do cliente ou do próprio time); em cinza, os da tabela geral. Para mudar: aba <strong>Clientes</strong> → tabela de preço do cliente, ou abra o time (aba Inicial) → Configuração → Tabela especial de preço.</p>
   `;
 }
 
@@ -1949,8 +2108,11 @@ function taxaMpDoAluno(a) {
 // Percorre os times/alunos que passam pelo filtro de cliente e calcula os
 // números do financeiro. venda = preço do tamanho no time (o geral da aba
 // Pagamentos ou o preço personalizado do time); custo = Impressão +
-// Costureira do grupo (aba Tamanhos). "Já chegou" = pagos; "aguardando" =
-// declarado mas não confirmado; "pendente" = nem declarado.
+// Costureira do grupo (aba Tamanhos). Quando a camiseta está num lote (leva
+// da Produção) com custos lançados, vale o custo REAL por unidade do lote no
+// lugar da estimativa — ver custosDosLotes() em js/movimentacoes.js.
+// "Já chegou" = pagos; "aguardando" = declarado mas não confirmado;
+// "pendente" = nem declarado.
 function calcularFinanceiro() {
   const fin = {
     previsto: 0, recebido: 0, aguardando: 0, pendente: 0,
@@ -1958,6 +2120,11 @@ function calcularFinanceiro() {
     // Mesma quebra dos custos, mas só das camisetas já pagas: é o que entra
     // no lucro realizado.
     custoImpressaoRecebido: 0, custoCostureiraRecebido: 0,
+    // Custos dos lotes fora de impressão/costureira (malha, frete...), rateados
+    // por unidade; e o custo das unidades do lote que não são de nenhum pedido
+    // (avulsas), que só entra na visão sem cliente escolhido.
+    custoOutros: 0, custoOutrosRecebido: 0, custoAvulsas: 0, qtdAvulsasLotes: 0,
+    qtdCustoReal: 0, qtdCustoProjetado: 0,
     // Taxas do Mercado Pago já descontadas do que entrou: só existem nos
     // pagamentos online, que o webhook grava camiseta a camiseta.
     taxas: 0, qtdComTaxa: 0, recebidoOnline: 0,
@@ -1972,23 +2139,40 @@ function calcularFinanceiro() {
   // Acumulado por cliente (nome -> totais), montado junto com o por time.
   const clientes = {};
 
+  // Custo real por unidade dos lotes com custos lançados (Financeiro → Custos por lote).
+  const lotes = typeof custosDosLotes === "function" ? custosDosLotes() : null;
+
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const precos = precosDoTime(configGeralAtual, timeId);
-    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, taxas: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, qtd: alunos.length, pagas: 0, internas: 0 };
+    const t = { nome: time.nome, cliente: nomeClienteDoTime(time), previsto: 0, recebido: 0, taxas: 0, custos: 0, custoImpressao: 0, custoCostureira: 0, custoOutros: 0, qtdCustoReal: 0, qtd: alunos.length, pagas: 0, internas: 0 };
     alunos.forEach((a) => {
       const interno = ehInterno(a);
       // Camiseta interna não tem receita (venda 0); as demais usam o preço do tamanho.
-      const venda = interno ? 0 : Number(precoDoTamanho(a.tamanho, precos) || 0);
-      const cImp = custoImpressaoDoTamanho(a.tamanho);
-      const cCos = custoCostureiraDoTamanho(a.tamanho);
-      const custo = cImp + cCos; // custo entra sempre (a camiseta é produzida)
+      // O preço especial da camiseta (lista do time) ganha do preço do tamanho.
+      const venda = interno ? 0 : Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0);
+      const real = lotes && lotes.porItem.get(`${timeId}__${a.id}`);
+      // Fora de lote com custo (ou sem aquela categoria no lote): vale a
+      // projeção do último lote lançado — ver custoProjetado().
+      const projetar = (k) => typeof custoProjetado === "function"
+        ? custoProjetado(lotes, k, a.tamanho)
+        : (k === "impressao" ? custoImpressaoDoTamanho(a.tamanho) : k === "costureira" ? custoCostureiraDoTamanho(a.tamanho) : 0);
+      const cImp = real && real.impressao !== null ? real.impressao : projetar("impressao");
+      const cCos = real && real.costureira !== null ? real.costureira : projetar("costureira");
+      const cOut = real ? real.outros : projetar("outros");
+      const custo = cImp + cCos + cOut; // custo entra sempre (a camiseta é produzida)
       fin.custos += custo;
       fin.custoImpressao += cImp;
       fin.custoCostureira += cCos;
+      fin.custoOutros += cOut;
       fin.qtd++;
       t.custos += custo;
       t.custoImpressao += cImp;
       t.custoCostureira += cCos;
+      t.custoOutros += cOut;
+      if (real) {
+        fin.qtdCustoReal++;
+        t.qtdCustoReal++;
+      }
+      else if (lotes && lotes.projecao && Object.keys(lotes.projecao).length) fin.qtdCustoProjetado++;
 
       const g = grupoDoTamanho(a.tamanho);
       const gnome = g ? g.grupo : "Sem grupo";
@@ -2014,6 +2198,7 @@ function calcularFinanceiro() {
         fin.custosRecebido += custo;
         fin.custoImpressaoRecebido += cImp;
         fin.custoCostureiraRecebido += cCos;
+        fin.custoOutrosRecebido += cOut;
         fin.taxas += taxa;
         fin.qtdPagas++;
         t.recebido += venda;
@@ -2058,14 +2243,21 @@ function calcularFinanceiro() {
     }))
     .sort((a, b) => b.previsto - a.previsto);
 
+  // Unidades dos lotes que não vêm de pedido nenhum (avulsas): não têm cliente,
+  // então o custo delas só entra quando o seletor está em "Todos".
+  if (lotes && !clienteFiltro) {
+    fin.custoAvulsas = lotes.custoAvulsas;
+    fin.qtdAvulsasLotes = lotes.qtdAvulsas;
+  }
+
   fin.qtdVendaveis = fin.qtd - fin.qtdInternas;
   fin.aReceber = fin.previsto - fin.recebido;
-  fin.lucroPrevisto = fin.previsto - fin.custos;
+  fin.lucroPrevisto = fin.previsto - fin.custos - fin.custoAvulsas;
   // O que entrou de verdade na conta: o preço menos a taxa do Mercado Pago.
   fin.recebidoLiquido = fin.recebido - fin.taxas;
   // As internas não têm receita, mas são produzidas: o custo delas sai do
   // lucro realizado (como já sai do previsto).
-  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas - fin.custoInterno;
+  fin.lucroRealizado = fin.recebido - fin.custosRecebido - fin.taxas - fin.custoInterno - fin.custoAvulsas;
   fin.taxaMedia = fin.recebidoOnline > 0 ? (fin.taxas / fin.recebidoOnline) * 100 : 0;
   fin.margem = fin.previsto > 0 ? (fin.lucroPrevisto / fin.previsto) * 100 : 0;
   fin.pctRecebido = fin.previsto > 0 ? (fin.recebido / fin.previsto) * 100 : 0;
@@ -2082,7 +2274,6 @@ function calcularFinanceiro() {
 function finLancamentos() {
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const precos = precosDoTime(configGeralAtual, timeId);
     alunos.forEach((a) => {
       if (!a.pago || ehInterno(a)) return; // interna não gera receita
       lista.push({
@@ -2092,7 +2283,7 @@ function finLancamentos() {
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
-        valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
+        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
         custo: custoDoTamanho(a.tamanho),
         taxa: taxaMpDoAluno(a), // o que o Mercado Pago descontou
         forma: a.pagamentoForma === "dinheiro" ? "dinheiro" : "pix",
@@ -2111,7 +2302,6 @@ function finLancamentos() {
 function finPendencias() {
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
-    const precos = precosDoTime(configGeralAtual, timeId);
     const fechadoEm = finParaData(time.fechadoEm);
     const limite = time.dataLimite ? finParaData(time.dataLimite) : null;
     alunos.forEach((a) => {
@@ -2129,7 +2319,7 @@ function finPendencias() {
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
-        valor: Number(precoDoTamanho(a.tamanho, precos) || 0),
+        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
         tipo: declarado ? "aguardando" : "pendente",
         bloqueado: !!a.ajusteSolicitado, // ajuste em aberto trava o pagamento
         contato: a.ajusteContato || "",
@@ -2225,8 +2415,10 @@ function renderizarFinanceiro() {
   const f = calcularFinanceiro();
   finUltimo = f;
 
-  if (f.qtd === 0) {
-    el.innerHTML = "<p>Nenhuma camiseta cadastrada ainda. Assim que houver pedidos, os números aparecem aqui.</p>";
+  if (f.qtd === 0 && finVisao !== "movimentacoes" && finVisao !== "lotes") {
+    el.innerHTML = "<p>Nenhuma camiseta cadastrada ainda. Assim que houver pedidos, os números aparecem aqui.</p>" +
+      '<button type="button" class="secundario" data-fin-visao="movimentacoes">Ver movimentações (saques e pagamentos)</button>';
+    el.querySelector("[data-fin-visao]").onclick = () => { finVisao = "movimentacoes"; renderizarFinanceiro(); };
     return;
   }
 
@@ -2256,6 +2448,8 @@ function renderizarVisaoFinanceira(f) {
   if (finVisao === "evolucao") return finViewEvolucao(alvo, f);
   if (finVisao === "cobranca") return finViewCobranca(alvo, f);
   if (finVisao === "resultado") return finViewResultado(alvo, f);
+  if (finVisao === "movimentacoes" && typeof finViewMovimentacoes === "function") return finViewMovimentacoes(alvo, f);
+  if (finVisao === "lotes" && typeof finViewLotes === "function") return finViewLotes(alvo, f);
   return finViewGeral(alvo, f);
 }
 
@@ -2415,7 +2609,7 @@ function finViewGeral(alvo, f) {
       <div class="fin-card fin-card-click" data-fin-modal="total" role="button" tabindex="0" title="Ver detalhe do custo">
         <span class="fin-rotulo">Custos previstos</span>
         <span class="fin-valor fin-valor-md">${formatarReais(f.custos)}</span>
-        <span class="fin-sub fin-link">Impressão + Costureira · ver detalhe ›</span>
+        <span class="fin-sub fin-link">${f.qtdCustoReal > 0 || f.qtdCustoProjetado > 0 ? `${f.qtdCustoReal} un. custo real · ${f.qtdCustoProjetado} projetada(s)` : "Impressão + Costureira"} · ver detalhe ›</span>
       </div>
       <div class="fin-card">
         <span class="fin-rotulo">Taxas do Mercado Pago</span>
@@ -2475,7 +2669,9 @@ function finViewGeral(alvo, f) {
 
   ligarDetalhe(alvo.querySelector('[data-fin-modal="total"]'), () =>
     abrirModalCusto("Custo previsto — total", {
-      impressao: f.custoImpressao, costureira: f.custoCostureira, total: f.custos, qtd: f.qtd
+      impressao: f.custoImpressao, costureira: f.custoCostureira, outros: f.custoOutros,
+      avulsas: f.custoAvulsas, qtdAvulsas: f.qtdAvulsasLotes,
+      total: f.custos + f.custoAvulsas, qtd: f.qtd, qtdReal: f.qtdCustoReal, qtdProjetado: f.qtdCustoProjetado
     }));
 
   ligarDetalhe(alvo.querySelector('[data-fin-modal="lucro-realizado"]'), () =>
@@ -2484,7 +2680,8 @@ function finViewGeral(alvo, f) {
     const t = f.porTime[Number(cel.dataset.timeIdx)];
     if (!t) return;
     ligarDetalhe(cel, () => abrirModalCusto("Custo previsto — " + t.nome, {
-      impressao: t.custoImpressao, costureira: t.custoCostureira, total: t.custos, qtd: t.qtd
+      impressao: t.custoImpressao, costureira: t.custoCostureira, outros: t.custoOutros,
+      total: t.custos, qtd: t.qtd, qtdReal: t.qtdCustoReal
     }));
   });
 }
@@ -2899,11 +3096,14 @@ function finViewResultado(alvo, f) {
     ["Receita prevista (camisetas vendáveis)", f.previsto, "linha"],
     ["(-) Custo de impressão", -f.custoImpressao, "linha"],
     ["(-) Custo de costureira", -f.custoCostureira, "linha"],
+    ...(f.custoOutros > 0 ? [["(-) Outros custos dos lotes (malha, frete…)", -f.custoOutros, "linha"]] : []),
+    ...(f.custoAvulsas > 0 ? [["(-) Custo das avulsas dos lotes (sem pedido)", -f.custoAvulsas, "linha"]] : []),
     ["(=) Lucro previsto", f.lucroPrevisto, "total"],
     ["Receita já recebida", f.recebido, "linha"],
     ["(-) Custo das camisetas já pagas", -f.custosRecebido, "linha"],
     ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
     ["(-) Custo das camisetas internas (sem receita)", -f.custoInterno, "linha"],
+    ...(f.custoAvulsas > 0 ? [["(-) Custo das avulsas dos lotes", -f.custoAvulsas, "linha"]] : []),
     ["(=) Lucro realizado", f.lucroRealizado, "total"],
     ["(=) Caixa a receber", f.aReceber, "total"]
   ].map(([rotulo, valor, tipo]) => `
@@ -2992,11 +3192,20 @@ function abrirModalDetalhe(titulo, linhas, nota) {
 
 // Detalhe do custo (Impressão + Costureira) do total ou de um time.
 function abrirModalCusto(titulo, d) {
+  const nota = `${d.qtd} camiseta(s) considerada(s) (inclui as internas).` +
+    (d.qtdReal > 0
+      ? ` ${d.qtdReal} delas com o custo real por unidade do lote (Financeiro → Custos por lote).`
+      : " Nenhuma está num lote com custos lançados.") +
+    (d.qtdProjetado > 0
+      ? ` ${d.qtdProjetado} ainda fora dos lotes usam o custo projetado pelo último lote lançado.`
+      : "");
   abrirModalDetalhe(titulo, [
     ["Impressão", d.impressao, "linha"],
     ["Costureira", d.costureira, "linha"],
+    ...(d.outros > 0 ? [["Outros custos dos lotes (malha, frete…)", d.outros, "linha"]] : []),
+    ...(d.avulsas > 0 ? [[`Unidades avulsas dos lotes (${d.qtdAvulsas})`, d.avulsas, "linha"]] : []),
     ["Total", d.total, "total"]
-  ], `${d.qtd} camiseta(s) considerada(s) (inclui as internas).`);
+  ], nota);
 }
 
 // Detalhe do lucro realizado: o que já entrou, menos os custos das camisetas
@@ -3010,9 +3219,11 @@ function abrirModalLucroRealizado(f) {
     ["Receita já recebida", f.recebido, "linha"],
     ["(-) Custo de impressão", -f.custoImpressaoRecebido, "linha"],
     ["(-) Custo de costureira", -f.custoCostureiraRecebido, "linha"],
+    ...(f.custoOutrosRecebido > 0 ? [["(-) Outros custos dos lotes", -f.custoOutrosRecebido, "linha"]] : []),
     ["(=) Custos realizados", -f.custosRecebido, "subtotal"],
     ["(-) Taxas do Mercado Pago", -f.taxas, "linha"],
     ...(f.qtdInternas > 0 ? [["(-) Custo das camisetas internas", -f.custoInterno, "linha"]] : []),
+    ...(f.custoAvulsas > 0 ? [["(-) Custo das avulsas dos lotes", -f.custoAvulsas, "linha"]] : []),
     ["(=) Lucro realizado", f.lucroRealizado, "total"]
   ], nota);
 }
@@ -3025,6 +3236,9 @@ function fecharModalCusto() {
 // ---------------- Exportação (segue a visão aberta) ----------------
 
 function exportarFinanceiro() {
+  // Movimentações (js/movimentacoes.js) não dependem de haver camisetas.
+  if (finVisao === "movimentacoes" && typeof exportarMovimentacoes === "function") return exportarMovimentacoes();
+  if (finVisao === "lotes" && typeof exportarCustosLotes === "function") return exportarCustosLotes();
   const f = finUltimo || calcularFinanceiro();
   if (f.qtd === 0) {
     alert("Não há dados financeiros para exportar.");
@@ -3150,12 +3364,15 @@ function exportarResultado(f) {
     ["Receita prevista", f.previsto],
     ["Custo de impressao", -f.custoImpressao],
     ["Custo de costureira", -f.custoCostureira],
+    ["Outros custos dos lotes", -f.custoOutros],
+    ["Custo das avulsas dos lotes", -f.custoAvulsas],
     ["Lucro previsto", f.lucroPrevisto],
     ["Receita recebida", f.recebido],
     ["Custo das camisetas pagas", -f.custosRecebido],
     ["Taxas do Mercado Pago", -f.taxas],
     ["Receita liquida recebida", f.recebidoLiquido],
     ["Custo das camisetas internas", -f.custoInterno],
+    ["Custo das avulsas dos lotes", -f.custoAvulsas],
     ["Lucro realizado", f.lucroRealizado],
     ["Caixa a receber", f.aReceber]
   ].forEach(([r, v]) => linhas.push([r, v.toFixed(2)]));
@@ -3217,15 +3434,15 @@ async function excluirTime(timeId, time) {
       await lote.commit();
     }
     await db.collection(COL_TIMES).doc(timeId).delete();
-    // Os preços próprios do time ficam em config/geral; apaga junto para não
-    // sobrar lixo (se falhar, não atrapalha: o time já não existe).
+    // Apaga os preços próprios do time junto, para não sobrar lixo (se
+    // falhar, não atrapalha: o time já não existe).
     try {
       await limparPrecosDoTime(timeId);
     } catch (e) {
       console.warn("Time excluído, mas não deu para apagar os preços dele.", e);
     }
-    delete precosTimeAbertos[timeId];
-    delete precosTimeSalvos[timeId];
+    delete precosTimeAbertos["time:" + timeId];
+    delete precosTimeSalvos["time:" + timeId];
     delete rascunhoConfigTime[timeId];
     // O onSnapshot dos times remove o time da lista; se ele estava aberto,
     // volta para a lista.
@@ -3281,7 +3498,7 @@ function abrirNovaCamiseta(timeId) {
     const statusId = statusPedidoDe(time);
     let aviso = "";
     if (pedidoEmProducao(time)) {
-      aviso = `⚠️ Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
+      aviso = `${icone("triangle-alert")} Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
         "a camiseta nova entra como pendente e não está nos CSVs já exportados. " +
         "Confirme o pagamento e exporte de novo (ou leve na próxima leva).";
     } else if (statusId !== "aberto") {
@@ -3560,26 +3777,114 @@ const IMAGENS_TIME = [
   }
 ];
 
-// ---------------- Preço personalizado por time ----------------
-// Cada time pode ter preços próprios, grupo a grupo. O que ele não define
-// continua valendo o preço geral (aba Pagamentos). Os valores ficam em
-// config/geral -> precosPorTime[timeId], documento que só o admin grava.
+// ---------------- Preços especiais (por cliente e por time) ----------------
+// Por cima da tabela geral (aba Pagamentos), grupo a grupo: o preço do
+// cliente (vale para todos os times dele) e o do time (ganha do cliente).
+// Ficam na coleção `precos` (docs "cliente_ID" e "time_ID") — ver o
+// comentário em js/utils.js: qualquer um lê um documento pelo id, mas só o
+// admin lista a coleção, então um cliente não descobre o preço dos outros.
 
-// Bloco da tabela especial de preço (aba Configuração do time), com um campo por grupo.
-function criarBlocoPrecosTime(timeId) {
+const precosAdmin = { time: {}, cliente: {}, aluno: {} }; // espelho da coleção `precos`
+let precosAdminCarregados = false;
+let precosAdminErro = false;   // regras do Firestore ainda sem a coleção
+let precosMigracaoFeita = false;
+
+// Pendura os preços especiais no configGeralAtual (só em memória), para
+// precosDoTime() e companhia enxergarem cliente e time.
+function anexarPrecosAdmin() {
+  configGeralAtual._precosTime = precosAdmin.time;
+  configGeralAtual._precosCliente = precosAdmin.cliente;
+  configGeralAtual._precosAluno = precosAdmin.aluno;
+  configGeralAtual._clienteDoTime = (id) => (estadoTimes[id] ? clienteIdDoTime(estadoTimes[id].time) : "");
+}
+
+function escutarPrecos() {
+  db.collection(COL_PRECOS).onSnapshot(
+    (snap) => {
+      precosAdmin.time = {};
+      precosAdmin.cliente = {};
+      precosAdmin.aluno = {};
+      snap.forEach((doc) => {
+        const d = doc.data();
+        if (doc.id.startsWith("time_")) {
+          if (d.precos) precosAdmin.time[doc.id.slice(5)] = d.precos;
+          if (d.porAluno) precosAdmin.aluno[doc.id.slice(5)] = d.porAluno;
+        } else if (doc.id.startsWith("cliente_")) {
+          precosAdmin.cliente[doc.id.slice(8)] = d.precos || {};
+        }
+      });
+      precosAdminCarregados = true;
+      precosAdminErro = false;
+      anexarPrecosAdmin();
+      migrarPrecosAntigos();
+      renderizarClientesAdmin();
+      renderizarTimesAdmin();
+    },
+    (erro) => {
+      console.error("Erro ao ler os preços especiais:", erro);
+      precosAdminErro = true;
+      renderizarClientesAdmin();
+      renderizarTimesAdmin();
+    }
+  );
+}
+
+// Os preços por time moravam em config/geral (legível por todos). Quando a
+// coleção nova já está acessível, move cada um para "time_ID", marca o time
+// e apaga o campo antigo. Roda uma vez, depois de carregar o config e os
+// preços (se as regras novas não estiverem publicadas, fica para depois).
+async function migrarPrecosAntigos() {
+  if (precosMigracaoFeita || !precosAdminCarregados || !painelConfigPronto || !timesCarregados) return;
+  const antigos = mapaPrecosPorTime(configGeralAtual);
+  const ids = Object.keys(antigos);
+  precosMigracaoFeita = true;
+  if (ids.length === 0) return;
+  try {
+    const lote = db.batch();
+    ids.forEach((id) => {
+      const p = precosLimpos(antigos[id]);
+      // Se já existe o documento novo, ele é o que vale.
+      if (!precosAdmin.time[id] && Object.keys(p).length > 0) {
+        lote.set(db.collection(COL_PRECOS).doc(idDocPrecoTime(id)), { precos: p, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+      }
+      if (estadoTimes[id] && Object.keys(p).length > 0) {
+        lote.update(db.collection(COL_TIMES).doc(id), { temPrecoEspecial: true });
+      }
+    });
+    lote.update(db.collection("config").doc("geral"), {
+      precosPorTime: firebase.firestore.FieldValue.delete(),
+      precosPorTurma: firebase.firestore.FieldValue.delete()
+    });
+    await lote.commit();
+    delete configGeralAtual.precosPorTime;
+    delete configGeralAtual.precosPorTurma;
+  } catch (erro) {
+    console.error("Não foi possível mover os preços por time para a coleção protegida.", erro);
+    precosMigracaoFeita = false; // tenta de novo no próximo carregamento
+  }
+}
+
+// Bloco da tabela especial de preço, com um campo por grupo.
+//   tipo "time": aba Configuração do time; a base é o geral com o do cliente.
+//   tipo "cliente": card do cliente (aba Clientes); a base é o geral.
+function criarBlocoPrecos(tipo, id) {
+  const chave = tipo + ":" + id;
+  const ehTime = tipo === "time";
   const bloco = document.createElement("details");
   bloco.className = "precos-time";
-  bloco.open = !!precosTimeAbertos[timeId];
+  bloco.open = !!precosTimeAbertos[chave];
   bloco.addEventListener("toggle", () => {
-    precosTimeAbertos[timeId] = bloco.open;
+    precosTimeAbertos[chave] = bloco.open;
   });
 
-  const personalizados = precosPersonalizadosDoTime(configGeralAtual, timeId);
+  const personalizados = ehTime
+    ? precosPersonalizadosDoTime(configGeralAtual, id)
+    : precosPersonalizadosDoCliente(configGeralAtual, id);
   const nPersonalizados = Object.keys(personalizados).length;
 
   const resumo = document.createElement("summary");
   resumo.innerHTML =
-    "Preço da camiseta neste time " +
+    (ehTime ? "Preço da camiseta neste time " : "Preço da camiseta para este cliente ") +
     (nPersonalizados > 0
       ? `<span class="badge interno">${nPersonalizados} preço(s) próprio(s)</span>`
       : '<span class="badge pendente">tabela geral</span>');
@@ -3593,18 +3898,26 @@ function criarBlocoPrecosTime(timeId) {
     bloco.appendChild(corpo);
     return bloco;
   }
+  if (precosAdminErro) {
+    corpo.innerHTML = '<p class="erro">Publique o <strong>firestore.rules</strong> atualizado no console do Firebase: os preços especiais agora ficam na coleção protegida <code>precos</code>.</p>';
+    bloco.appendChild(corpo);
+    return bloco;
+  }
+
+  // O que vale sem o preço próprio: no time, o geral com o do cliente por cima.
+  const gerais = precosLimpos(configGeralAtual.precosPorGrupo || {});
+  const clienteDoTime = ehTime && estadoTimes[id] ? clienteIdDoTime(estadoTimes[id].time) : "";
+  const doCliente = ehTime ? precosPersonalizadosDoCliente(configGeralAtual, clienteDoTime) : {};
 
   const ajuda = document.createElement("small");
   ajuda.className = "pix-ajuda";
-  ajuda.textContent =
-    "Deixe em branco para usar o preço geral (aba Pagamentos). O valor preenchido " +
-    "vale só para este time — no PIX, no Mercado Pago e no Financeiro.";
+  ajuda.textContent = ehTime
+    ? "Deixe em branco para usar o preço do cliente ou o geral. O valor preenchido vale só para este time — no PIX, no Mercado Pago e no Financeiro."
+    : "Deixe em branco para usar o preço geral. O valor preenchido vale para todos os times deste cliente (um time com preço próprio ainda ganha deste). Outros clientes não veem este valor.";
   corpo.appendChild(ajuda);
 
   const grade = document.createElement("div");
   grade.className = "linha-custos precos-time-grade";
-
-  const gerais = configGeralAtual.precosPorGrupo || {};
 
   GRUPOS_TAMANHO.forEach((g) => {
     const wrap = document.createElement("div");
@@ -3613,22 +3926,25 @@ function criarBlocoPrecosTime(timeId) {
     const lbl = document.createElement("label");
     lbl.textContent = `${g.grupo} (R$)`;
 
-    const geral = gerais[g.grupo] != null ? Number(gerais[g.grupo]) : null;
+    const doClienteG = doCliente[g.grupo];
+    const base = doClienteG != null ? doClienteG : gerais[g.grupo];
     const inp = document.createElement("input");
     inp.type = "number";
     inp.step = "0.01";
     inp.min = "0";
     inp.dataset.grupo = g.grupo;
-    inp.placeholder = geral != null ? Number(geral).toFixed(2) : "0,00";
+    inp.placeholder = base != null ? Number(base).toFixed(2) : "0,00";
     inp.value = personalizados[g.grupo] != null ? personalizados[g.grupo] : "";
 
-    const base = document.createElement("small");
-    base.className = "pix-ajuda";
-    base.textContent = geral != null ? `Geral: ${formatarReais(geral)}` : "Sem preço geral";
+    const dica = document.createElement("small");
+    dica.className = "pix-ajuda";
+    dica.textContent = doClienteG != null
+      ? `Cliente: ${formatarReais(doClienteG)}`
+      : gerais[g.grupo] != null ? `Geral: ${formatarReais(gerais[g.grupo])}` : "Sem preço geral";
 
     wrap.appendChild(lbl);
     wrap.appendChild(inp);
-    wrap.appendChild(base);
+    wrap.appendChild(dica);
     grade.appendChild(wrap);
   });
 
@@ -3640,57 +3956,34 @@ function criarBlocoPrecosTime(timeId) {
 
   const btnSalvar = document.createElement("button");
   btnSalvar.className = "sucesso";
-  btnSalvar.textContent = "Salvar preços do time";
+  btnSalvar.textContent = ehTime ? "Salvar preços do time" : "Salvar preços do cliente";
   btnSalvar.onclick = async () => {
-    const paraGravar = {};   // o que vai para o Firestore (número ou delete)
-    const paraEstado = {};   // espelho local, só com os números
+    const mapa = {};
     let invalido = false;
-
     grade.querySelectorAll("input").forEach((inp) => {
-      const grupo = inp.dataset.grupo;
       const bruto = inp.value.trim();
-      if (bruto === "") {
-        // Campo vazio = volta a usar o preço geral (apaga o personalizado).
-        paraGravar[grupo] = firebase.firestore.FieldValue.delete();
-        return;
-      }
-      const v = parseFloat(bruto);
-      if (isNaN(v) || v < 0) {
-        invalido = true;
-        return;
-      }
-      paraGravar[grupo] = v;
-      paraEstado[grupo] = v;
+      if (bruto === "") return; // vazio = usa a base
+      const v = parseFloat(bruto.replace(",", "."));
+      if (isNaN(v) || v < 0) invalido = true;
+      else mapa[inp.dataset.grupo] = v;
     });
-
     if (invalido) {
       mostrarMensagem(msg, "Informe valores válidos (0 ou mais) ou deixe em branco.", "erro");
       return;
     }
-
     btnSalvar.disabled = true;
     try {
-      await db.collection("config").doc("geral")
-        // Grava no campo novo e no antigo ("precosPorTurma"), para o backend
-        // do Mercado Pago ainda não republicado continuar cobrando certo.
-        .set({
-          precosPorTime: { [timeId]: paraGravar },
-          precosPorTurma: { [timeId]: paraGravar }
-        }, { merge: true });
-      aplicarPrecosTimeNoEstado(timeId, paraEstado);
-      precosTimeAbertos[timeId] = true;
-      precosTimeSalvos[timeId] = Object.keys(paraEstado).length > 0
-        ? "Preços deste time salvos."
-        : "Sem preço próprio: este time volta a usar a tabela geral.";
+      await gravarPrecosEspeciais(tipo, id, mapa);
+      precosTimeAbertos[chave] = true;
+      precosTimeSalvos[chave] = Object.keys(mapa).length > 0
+        ? (ehTime ? "Preços deste time salvos." : "Preços deste cliente salvos.")
+        : "Sem preço próprio: volta a valer a tabela geral.";
+      renderizarClientesAdmin();
       renderizarTimesAdmin();
     } catch (erro) {
       console.error(erro);
       btnSalvar.disabled = false;
-      mostrarMensagem(
-        msg,
-        "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
-        "erro"
-      );
+      mostrarMensagem(msg, "Erro ao salvar. Confira se o firestore.rules atualizado foi publicado no Firebase.", "erro");
     }
   };
   acoes.appendChild(btnSalvar);
@@ -3699,19 +3992,20 @@ function criarBlocoPrecosTime(timeId) {
     const btnLimpar = document.createElement("button");
     btnLimpar.className = "secundario";
     btnLimpar.textContent = "Usar a tabela geral";
-    btnLimpar.title = "Apaga os preços próprios deste time";
+    btnLimpar.title = ehTime ? "Apaga os preços próprios deste time" : "Apaga os preços próprios deste cliente";
     btnLimpar.onclick = async () => {
-      if (!confirm("Apagar os preços próprios deste time e voltar para a tabela geral?")) return;
+      if (!confirm(`Apagar os preços próprios deste ${ehTime ? "time" : "cliente"} e voltar para a tabela geral?`)) return;
       btnLimpar.disabled = true;
       try {
-        await limparPrecosDoTime(timeId);
-        precosTimeAbertos[timeId] = true;
-        precosTimeSalvos[timeId] = "Preços próprios apagados: vale a tabela geral.";
+        await gravarPrecosEspeciais(tipo, id, {});
+        precosTimeAbertos[chave] = true;
+        precosTimeSalvos[chave] = "Preços próprios apagados: vale a tabela geral.";
+        renderizarClientesAdmin();
         renderizarTimesAdmin();
       } catch (erro) {
         console.error(erro);
         btnLimpar.disabled = false;
-        mostrarMensagem(msg, "Erro ao apagar os preços deste time.", "erro");
+        mostrarMensagem(msg, "Erro ao apagar os preços.", "erro");
       }
     };
     acoes.appendChild(btnLimpar);
@@ -3721,33 +4015,68 @@ function criarBlocoPrecosTime(timeId) {
   corpo.appendChild(msg);
 
   // Aviso de "salvo" que sobrevive ao re-render disparado pelo próprio salvar.
-  if (precosTimeSalvos[timeId]) {
-    mostrarMensagem(msg, precosTimeSalvos[timeId], "aviso");
-    delete precosTimeSalvos[timeId];
+  if (precosTimeSalvos[chave]) {
+    mostrarMensagem(msg, precosTimeSalvos[chave], "aviso");
+    delete precosTimeSalvos[chave];
   }
   bloco.appendChild(corpo);
   return bloco;
 }
 
-// Espelha no estado local o que acabou de ser gravado, para o Financeiro e os
-// cards reagirem na hora (config/geral não é lido por onSnapshot).
-function aplicarPrecosTimeNoEstado(timeId, mapa) {
-  const todos = { ...mapaPrecosPorTime(configGeralAtual) };
-  if (Object.keys(mapa).length > 0) todos[timeId] = mapa;
-  else delete todos[timeId];
-  configGeralAtual = { ...configGeralAtual, precosPorTime: todos, precosPorTurma: todos };
+function criarBlocoPrecosTime(timeId) {
+  return criarBlocoPrecos("time", timeId);
 }
 
-// Apaga os preços próprios de um time (volta a valer só a tabela geral).
+// Grava (ou apaga, com mapa vazio) os preços especiais de um cliente/time e a
+// marca temPrecoEspecial no documento dele. Também tira o time do campo
+// antigo em config/geral, se ele ainda estiver lá.
+async function gravarPrecosEspeciais(tipo, id, mapa) {
+  const ehTime = tipo === "time";
+  const ref = db.collection(COL_PRECOS).doc(ehTime ? idDocPrecoTime(id) : idDocPrecoCliente(id));
+  const tem = Object.keys(mapa).length > 0;
+  // O documento do time também guarda os preços por camiseta (porAluno):
+  // só troca o campo `precos` e só apaga o documento quando não sobra nada.
+  const temPorAluno = ehTime && Object.keys(precosAdmin.aluno[id] || {}).length > 0;
+  const lote = db.batch();
+  if (tem || temPorAluno) {
+    lote.set(ref, { precos: mapa, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
+      { mergeFields: ["precos", "atualizadoEm"] });
+  } else {
+    lote.delete(ref);
+  }
+  const dono = ehTime ? estadoTimes[id] : estadoClientes[id];
+  if (dono) {
+    lote.update(db.collection(ehTime ? COL_TIMES : COL_CLIENTES).doc(id), { temPrecoEspecial: tem });
+  }
+  if (ehTime && mapaPrecosPorTime(configGeralAtual)[id]) {
+    lote.set(db.collection("config").doc("geral"), {
+      precosPorTime: { [id]: firebase.firestore.FieldValue.delete() },
+      precosPorTurma: { [id]: firebase.firestore.FieldValue.delete() }
+    }, { merge: true });
+  }
+  await lote.commit();
+  if (ehTime && configGeralAtual.precosPorTime) delete configGeralAtual.precosPorTime[id];
+  if (ehTime && configGeralAtual.precosPorTurma) delete configGeralAtual.precosPorTurma[id];
+}
+
+// Preço especial de UMA camiseta (valor = número, ou null para tirar).
+async function gravarPrecoAluno(timeId, alunoId, valor) {
+  await db.collection(COL_PRECOS).doc(idDocPrecoTime(timeId)).set({
+    porAluno: { [alunoId]: valor == null ? firebase.firestore.FieldValue.delete() : valor },
+    atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+// Apaga os preços próprios de um time excluído (o documento do time já não
+// existe, então só o de preços e o campo antigo).
 async function limparPrecosDoTime(timeId) {
-  await db.collection("config").doc("geral").set(
-    {
+  await db.collection(COL_PRECOS).doc(idDocPrecoTime(timeId)).delete();
+  if (mapaPrecosPorTime(configGeralAtual)[timeId]) {
+    await db.collection("config").doc("geral").set({
       precosPorTime: { [timeId]: firebase.firestore.FieldValue.delete() },
       precosPorTurma: { [timeId]: firebase.firestore.FieldValue.delete() }
-    },
-    { merge: true }
-  );
-  aplicarPrecosTimeNoEstado(timeId, {});
+    }, { merge: true });
+  }
 }
 
 // Bloco de imagens da camiseta no card do Super Admin (enviar/trocar/remover).
@@ -3980,7 +4309,8 @@ let gruposTamanhoEdit = []; // estado em edição do editor de tamanhos
 let painelConfigCarregado = false;
 let driveScriptUrl = ""; // URL do Apps Script para upload de imagem (config/geral)
 let precosPorGrupoAtual = {}; // preço de venda por grupo (aba Pagamentos) — usado p/ o lucro
-let configGeralAtual = {};    // config/geral inteiro (inclui precosPorTime)
+let configGeralAtual = {};    // config/geral inteiro (+ os preços especiais em memória)
+let painelConfigPronto = false; // config/geral já carregado (a migração de preços espera)
 
 // Carrega as configurações gerais e os tamanhos nos respectivos formulários.
 // Chamado uma vez quando o painel é desbloqueado.
@@ -3997,11 +4327,17 @@ async function carregarPainelConfig() {
   driveScriptUrl = cfg.driveScriptUrl || "";
 
   configGeralAtual = cfg || {};
+  anexarPrecosAdmin();
+  painelConfigPronto = true;
+  migrarPrecosAntigos();
   precosPorGrupoAtual = cfg.precosPorGrupo || {};
 
   await carregarTamanhos();
   gruposTamanhoEdit = clonarGrupos(GRUPOS_TAMANHO);
   renderizarEditorTamanhos();
+  // Moldes, layout e produção podem ter desenhado antes (com os tamanhos
+  // padrão, sem os grupos novos): redesenha com a lista de verdade.
+  redesenharListasDeTamanho();
 
   // Pagamento (PIX)
   elPixChave.value = cfg.pixChave || "";
@@ -4071,13 +4407,25 @@ elFormPix.addEventListener("submit", async (ev) => {
     mostrarMensagem(elMsgPix, "Dados de pagamento salvos.", "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(
-      elMsgPix,
-      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral.",
-      "erro"
-    );
+    mostrarMensagem(elMsgPix, textoErroConfig(erro, "geral"), "erro");
   }
 });
+
+// Explica o erro do Firestore ao salvar configurações: o código real ajuda a
+// saber se foi falta de permissão (sessão do admin caiu / regras antigas no
+// console) ou um dado recusado.
+function textoErroConfig(erro, docId) {
+  const code = (erro && erro.code) || "";
+  if (code === "permission-denied") {
+    const user = auth.currentUser;
+    if (!ehContaAdmin(user)) {
+      return "Erro ao salvar: você não está logado como administrador (a sessão pode ter caído). Saia e entre de novo no Super Admin.";
+    }
+    return `Erro ao salvar: o Firestore recusou a escrita em config/${docId}. Publique o firestore.rules atualizado no console do Firebase.`;
+  }
+  if (code === "unavailable") return "Erro ao salvar: sem conexão com o Firebase. Confira a internet e tente de novo.";
+  return `Erro ao salvar em config/${docId}: ${(erro && erro.message) || erro}${code ? ` (${code})` : ""}`;
+}
 
 // ---------------- Configurações gerais ----------------
 
@@ -4099,15 +4447,21 @@ elFormConfigGeral.addEventListener("submit", async (ev) => {
     mostrarMensagem(elMsgConfigGeral, "Configurações salvas.", "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(
-      elMsgConfigGeral,
-      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/geral (ver firestore.rules).",
-      "erro"
-    );
+    mostrarMensagem(elMsgConfigGeral, textoErroConfig(erro, "geral"), "erro");
   }
 });
 
 // ---------------- Editor de tamanhos ----------------
+
+// Telas de outros arquivos que listam os tamanhos (moldes de corte, editor de
+// layout/prévias, filtros e avulsas da Produção, cards dos times). Chamado
+// quando a lista de tamanhos chega do Firestore e quando ela é salva.
+function redesenharListasDeTamanho() {
+  if (typeof renderizarMoldes === "function") renderizarMoldes();
+  if (typeof renderizarEditorLayout === "function") renderizarEditorLayout();
+  if (typeof renderizarProducao === "function") renderizarProducao();
+  if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+}
 
 function renderizarEditorTamanhos() {
   elEditorTamanhos.innerHTML = "";
@@ -4451,13 +4805,17 @@ elBtnSalvarTamanhos.addEventListener("click", async () => {
     GRUPOS_TAMANHO = clonarGrupos(grupos);
     TODOS_TAMANHOS = GRUPOS_TAMANHO.flatMap((g) => g.tamanhos);
     renderizarEditorTamanhos();
+    // O grupo novo já ganha o campo de preço na aba Pagamentos (sem perder o
+    // que foi digitado lá e ainda não salvo).
+    const digitados = { ...precosPorGrupoAtual };
+    elPrecosPorGrupo.querySelectorAll("input").forEach((inp) => {
+      if (inp.value !== "") digitados[inp.dataset.grupo] = inp.value;
+    });
+    renderizarPrecosPorGrupo(digitados);
+    redesenharListasDeTamanho();
     mostrarMensagem(elMsgTamanhos, "Tamanhos salvos. Eles já valem para o cadastro dos times.", "aviso");
   } catch (erro) {
     console.error(erro);
-    mostrarMensagem(
-      elMsgTamanhos,
-      "Erro ao salvar. Verifique se as regras do Firestore permitem escrita em config/tamanhos (ver firestore.rules).",
-      "erro"
-    );
+    mostrarMensagem(elMsgTamanhos, textoErroConfig(erro, "tamanhos"), "erro");
   }
 });

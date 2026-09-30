@@ -56,6 +56,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Preços especiais (por cliente e por time): docs "cliente_ID" e "time_ID".
+    // Qualquer um LÊ um documento pelo id (a página do pedido precisa do preço
+    // dela), mas só o admin LISTA a coleção — assim um cliente não consegue
+    // descobrir o preço combinado com os outros. Só o admin grava.
+    match /precos/{precoId} {
+      allow get: if true;
+      allow list: if ehAdmin();
+      allow create, update, delete: if ehAdmin();
+    }
+
+    // Movimentações do caixa (Financeiro → Movimentações): saques, pagamentos
+    // e entradas lançados à mão pelo admin. Dado financeiro interno: só a
+    // conta administradora lê e grava. Nada é apagado — cancelar é um update
+    // (cancelado = true), para o histórico ficar completo.
+    match /movimentacoes/{movId} {
+      allow read, create, update: if ehAdmin();
+      allow delete: if false;
+    }
+
     // Levas de produção (aba Produção do Super Admin): o que foi escolhido
     // para ir à impressão de uma vez, incluindo camisetas avulsas que não
     // estão em nenhum pedido. É controle interno da produção, então nem a

@@ -98,7 +98,7 @@ function renderizarBackups() {
 
   elBackupStatus.innerHTML = `
     <div class="numeros-chips backup-status">
-      <span class="numero-chip ${diarioAtivo ? "ok" : "alerta"}">${diarioAtivo ? "✓ Backup diário ligado" : "⚠️ Backup diário desligado"}</span>
+      <span class="numero-chip ${diarioAtivo ? "ok" : "alerta"}">${diarioAtivo ? icone("circle-check") + " Backup diário ligado" : icone("triangle-alert") + " Backup diário desligado"}</span>
       <span class="numero-chip ${atrasado ? "alerta" : "ok"}">Último: <strong>${ultimo ? escapeHtmlAdmin(formatarDataHora(ultimo.criadoEm)) : "nenhum"}</strong></span>
       <span class="numero-chip"><strong>${backups.length}</strong> backup(s) · ${backups.filter((b) => b.protegido).length} no histórico de ${diasProtegidos} dias</span>
     </div>
@@ -146,7 +146,7 @@ function renderizarBackups() {
       <td data-label="Tamanho">${formatarBytes(b.tamanho)}</td>
       <td data-label="Conteúdo">${escapeHtmlAdmin((b.descricao || "").replace(/^[^·]*·\s*/, "") || "—")}</td>
       <td data-label="Guarda">${b.protegido
-        ? `<span class="badge pago" title="Histórico protegido: não pode ser apagado">🔒 ${Math.max(0, diasProtegidos - b.idadeDias)} dia(s)</span>`
+        ? `<span class="badge pago" title="Histórico protegido: não pode ser apagado">${icone("lock")} ${Math.max(0, diasProtegidos - b.idadeDias)} dia(s)</span>`
         : '<span class="badge aguardando">antigo</span>'}</td>
       <td data-label="" class="acoes-linha"></td>`;
     const acoes = tr.querySelector(".acoes-linha");
@@ -281,7 +281,7 @@ async function abrirRestauracao(origem) {
   }
 
   const porColecao = (info.resumo && info.resumo.porColecao) || {};
-  const nomesColecao = { turmas: "Times", "turmas/*/alunos": "Camisetas", clientes: "Clientes", config: "Configurações", producao: "Levas de produção", "producao/*/itens": "Itens das levas", cobrancas: "Cobranças" };
+  const nomesColecao = { turmas: "Times", "turmas/*/alunos": "Camisetas", clientes: "Clientes", config: "Configurações", producao: "Levas de produção", "producao/*/itens": "Itens das levas", cobrancas: "Cobranças", movimentacoes: "Movimentações", precos: "Preços especiais" };
   elRestaurarCorpo.innerHTML = `
     <p><strong>${escapeHtmlAdmin(origem.nome || "Backup")}</strong><br><span class="pix-ajuda">Feito em ${escapeHtmlAdmin(formatarDataHora(info.criadoEm))}</span></p>
     <div class="numeros-chips">${Object.keys(porColecao).map((c) =>

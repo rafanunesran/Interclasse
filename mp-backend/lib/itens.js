@@ -1,7 +1,7 @@
 // Itens de uma cobrança: uma camiseta (o formato antigo) ou várias, quando o
 // pagador junta o carrinho. Fica aqui o que os dois endpoints de cobrança
 // (`criar-pagamento` e `criar-preferencia`) precisam fazer igual.
-const { precoDoTamanhoNoTime } = require("./preco");
+const { precoDoAluno, carregarPrecosEspeciais } = require("./preco");
 
 // Teto de camisetas numa cobrança só. Existe para uma requisição estranha não
 // virar centenas de leituras no Firestore; 60 cobre até uma turma inteira.
@@ -48,16 +48,20 @@ function paresDoPedido(entrada) {
 // camiseta (que pode ter tabela própria), e não o de um time só — é isso que
 // deixa o carrinho juntar filhos de times diferentes numa cobrança só.
 // Devolve { itens, total } ou { erro } quando alguma camiseta não serve.
-async function carregarItens({ db, colecao, pares, geral, grupos }) {
+async function carregarItens({ db, colecao, pares, geral: geralBase, grupos }) {
   const refs = pares.map((p) => db.collection(colecao).doc(p.timeId).collection("alunos").doc(p.alunoId));
-  const snaps = await Promise.all(refs.map((r) => r.get()));
+  // Preço especial do cliente e do time de cada camiseta (coleção `precos`).
+  const [snaps, geral] = await Promise.all([
+    Promise.all(refs.map((r) => r.get())),
+    carregarPrecosEspeciais({ db, colecao, geral: geralBase, timeIds: pares.map((p) => p.timeId) })
+  ]);
 
   const itens = [];
   let total = 0;
   for (let i = 0; i < snaps.length; i++) {
     if (!snaps[i].exists) return { erro: `Aluno não encontrado (${pares[i].alunoId}).`, status: 404 };
     const aluno = snaps[i].data();
-    const valor = precoDoTamanhoNoTime(aluno.tamanho, geral, pares[i].timeId, grupos);
+    const valor = precoDoAluno(geral, pares[i].timeId, pares[i].alunoId, aluno.tamanho, grupos);
     if (!valor || valor <= 0) {
       return { erro: `Não há preço definido para o tamanho de ${aluno.nome || pares[i].alunoId}.`, status: 400 };
     }

@@ -12,9 +12,14 @@ const elMsgLogin = document.getElementById("msgLogin");
 // Se já houver uma sessão da conta admin (o Firebase mantém o login salvo),
 // pula o formulário e vai direto para o Super Admin.
 auth.onAuthStateChanged((user) => {
-  if (ehContaAdmin(user)) {
-    window.location.replace(DESTINO_SUPER_ADMIN);
+  if (!ehContaAdmin(user)) return;
+  // Sessão salva, mas parada há mais de 24h: sai e pede a senha de novo.
+  if (sessaoAdminExpirada()) {
+    auth.signOut();
+    mostrarMensagem(elMsgLogin, "Sua sessão expirou depois de 24h sem uso. Entre de novo.", "aviso");
+    return;
   }
+  window.location.replace(DESTINO_SUPER_ADMIN);
 });
 
 elFormLogin.addEventListener("submit", async (ev) => {
@@ -29,6 +34,7 @@ elFormLogin.addEventListener("submit", async (ev) => {
   try {
     const cred = await auth.signInWithEmailAndPassword(email, senha);
     if (ehContaAdmin(cred.user)) {
+      registrarAtividadeAdmin(); // login novo: o prazo de 24h recomeça
       window.location.replace(DESTINO_SUPER_ADMIN);
     } else {
       // Conta válida no Firebase, mas não é a conta administradora.

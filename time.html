@@ -4,24 +4,25 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Time — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20261006a" />
+<link rel="stylesheet" href="css/style.css?v=20261020h" />
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
 </head>
 <body>
 
 <header class="topo">
-  <h1>👕 Camisetas Interclasse</h1>
+  <h1><i data-icone="shirt"></i> <span class="titulo-site">Camisetas Interclasse</span></h1>
   <nav>
-    <a href="index.html">Início</a>
+    <a href="index.html"><i data-icone="house"></i> Início</a>
   </nav>
 </header>
 
 <main class="pagina-pedido">
-  <p class="migalha"><a href="index.html" id="linkVoltarLoja">← Todos os times</a></p>
+  <p class="migalha"><a href="index.html" id="linkVoltarLoja"><i data-icone="arrow-left"></i> <span>Todos os times</span></a></p>
 
   <section class="card pedido-hero">
     <!-- Acesso do representante: a senha fica atrás da engrenagem, no canto. -->
     <button type="button" id="btnEngrenagem" class="btn-engrenagem" aria-label="Acesso do representante" title="Acesso do representante">
-      <span aria-hidden="true">⚙️</span>
+      <i data-icone="settings"></i>
     </button>
 
     <div class="pedido-hero-grid">
@@ -32,7 +33,7 @@
           <div id="galeriaTrilho" class="carrossel-trilho"></div>
           <button type="button" id="galeriaDepois" class="carrossel-seta carrossel-depois" aria-label="Próxima imagem">›</button>
         </div>
-        <div id="semImagem" class="pedido-sem-imagem oculto" aria-hidden="true">👕</div>
+        <div id="semImagem" class="pedido-sem-imagem oculto" aria-hidden="true"><i data-icone="shirt"></i></div>
       </div>
 
       <div class="pedido-hero-info">
@@ -40,7 +41,7 @@
         <h2 id="nomeTime">Carregando...</h2>
         <div class="pedido-selos">
           <span id="badgeStatus" class="badge"></span>
-          <span id="badgeRep" class="badge interno oculto">🔓 Modo representante</span>
+          <span id="badgeRep" class="badge interno oculto"><i data-icone="lock-open"></i> Modo representante</span>
         </div>
         <div id="infoPrecos" class="pedido-precos oculto"></div>
         <p id="infoDataLimite" class="pedido-prazo oculto"></p>
@@ -53,10 +54,10 @@
 
     <div id="barraStatus"></div>
     <p id="mensagemSuspenso" class="aviso oculto">
-      ⏸ Este pedido está <strong>suspenso</strong> pela organização do interclasse. No momento não é possível cadastrar nomes nem realizar pagamentos. Tente novamente mais tarde.
+      <i data-icone="circle-pause"></i> Este pedido está <strong>suspenso</strong> pela organização do interclasse. No momento não é possível cadastrar nomes nem realizar pagamentos. Tente novamente mais tarde.
     </p>
     <p id="mensagemBloqueado" class="aviso oculto">
-      🚫 Este pedido está <strong>bloqueado</strong> pela organização do interclasse. Não é possível cadastrar nomes nem realizar pagamentos. Fale com a coordenação do interclasse para saber o que falta.
+      <i data-icone="ban"></i> Este pedido está <strong>bloqueado</strong> pela organização do interclasse. Não é possível cadastrar nomes nem realizar pagamentos. Fale com a coordenação do interclasse para saber o que falta.
     </p>
     <p id="mensagemFechado" class="aviso oculto">
       Este pedido já foi fechado. Não é mais possível editar a lista. Se precisar corrigir algo, fale com a coordenação do interclasse.
@@ -70,10 +71,10 @@
   <!-- Abas do pedido. As duas últimas só aparecem para o representante
        (depois de entrar pela engrenagem). -->
   <nav class="abas-pedido" role="tablist" aria-label="Seções do pedido">
-    <button type="button" role="tab" class="aba-pedido ativa" data-aba-pedido="lista">Lista</button>
-    <button type="button" role="tab" class="aba-pedido" data-aba-pedido="tamanhos">Tamanhos e preços</button>
-    <button type="button" role="tab" class="aba-pedido oculto" data-aba-pedido="cadastro">+ Adicionar camiseta</button>
-    <button type="button" role="tab" class="aba-pedido oculto" data-aba-pedido="config">⚙️ Configurações</button>
+    <button type="button" role="tab" class="aba-pedido ativa" data-aba-pedido="lista"><i data-icone="list"></i> Lista</button>
+    <button type="button" role="tab" class="aba-pedido" data-aba-pedido="tamanhos"><i data-icone="ruler"></i> Tamanhos e preços</button>
+    <button type="button" role="tab" class="aba-pedido oculto" data-aba-pedido="cadastro"><i data-icone="plus"></i> Adicionar camiseta</button>
+    <button type="button" role="tab" class="aba-pedido oculto" data-aba-pedido="config"><i data-icone="settings"></i> Configurações</button>
   </nav>
 
   <section class="card secao-pedido" id="abaPedido-lista">
@@ -83,7 +84,7 @@
     </div>
     <p id="avisoDuplicado" class="oculto"></p>
     <div id="resumoTamanhos" class="resumo-tamanhos"></div>
-    <input type="search" id="buscaLista" class="busca-lista" placeholder="🔎 Procurar um nome na lista" autocomplete="off" />
+    <span class="campo-busca busca-lista"><i data-icone="search"></i><input type="search" id="buscaLista" placeholder="Procurar um nome na lista" autocomplete="off" /></span>
 
     <div class="tabela-rolagem">
       <table id="tabelaAlunos" class="tabela-responsiva">
@@ -137,13 +138,13 @@
 
         <label class="checkbox-inline" for="goleiroAluno">
           <input type="checkbox" id="goleiroAluno" />
-          🧤 É goleiro (camiseta de cor especial)
+          <i data-icone="hand"></i> É goleiro (camiseta de cor especial)
         </label>
         <p class="pix-ajuda">O goleiro joga com uma camiseta de cor diferente, para ser identificado em quadra. Dá para marcar e desmarcar depois, na lista.</p>
 
         <label class="checkbox-inline" for="profAluno">
           <input type="checkbox" id="profAluno" />
-          🎓 É camiseta de professor
+          <i data-icone="graduation-cap"></i> É camiseta de professor
         </label>
         <p class="pix-ajuda">Marca só para organização: ajuda a separar as camisetas dos professores. Não muda nada na camiseta.</p>
 
@@ -192,7 +193,7 @@
      Fica guardado só neste navegador — não precisa de cadastro nem login. -->
 <div id="barraCarrinho" class="barra-carrinho oculto" role="region" aria-label="Carrinho de pagamento">
   <div class="carrinho-info">
-    <span class="carrinho-icone" aria-hidden="true">🛒</span>
+    <span class="carrinho-icone" aria-hidden="true"><i data-icone="shopping-cart"></i></span>
     <span id="carrinhoResumo">Carrinho vazio</span>
   </div>
   <div class="carrinho-acoes">
@@ -263,8 +264,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
-<script src="js/firebase-init.js"></script>
-<script src="js/utils.js?v=20261006a"></script>
-<script src="js/time.js?v=20261006a"></script>
+<script src="js/firebase-init.js?v=20261020h"></script>
+<script src="js/icones.js?v=20261020h"></script>
+<script src="js/utils.js?v=20261020h"></script>
+<script src="js/time.js?v=20261020h"></script>
 </body>
 </html>

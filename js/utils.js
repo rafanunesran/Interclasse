@@ -30,7 +30,9 @@ const PECAS_PRODUCAO = [
 
 function nomePecaProducao(id) {
   const p = PECAS_PRODUCAO.find((x) => x.id === id);
-  return p ? p.nome : id;
+  if (p) return p.nome;
+  const v = typeof EPS !== "undefined" && EPS.PECAS_VIRTUAIS && EPS.PECAS_VIRTUAIS[id];
+  return v || id;
 }
 
 // Tamanhos padrão (usados quando ainda não há nada salvo no Firestore
@@ -91,7 +93,7 @@ function aplicarConfigGeral(cfg) {
   if (!cfg) return;
   if (cfg.tituloEvento) {
     const h1 = document.querySelector("header.topo h1");
-    if (h1) h1.textContent = "👕 " + cfg.tituloEvento;
+    if (h1) h1.innerHTML = (typeof icone === "function" ? icone("shirt") + " " : "") + escaparHtml(cfg.tituloEvento);
     document.title = cfg.tituloEvento;
   }
   if (cfg.rodape) {
@@ -227,6 +229,26 @@ function nomeDoCliente(clientes, clienteId) {
   return (c && c.nome) || SEM_CLIENTE_NOME;
 }
 
+// Clientes e times podem ser ocultados pelo Super Admin (campo oculto = true):
+// somem da loja (index.html), mas o link direto do time continua abrindo.
+// Um time some também quando o cliente dele está oculto.
+function timeOcultoNaLoja(time, clientes) {
+  if (time && time.oculto === true) return true;
+  const id = clienteIdDoTime(time);
+  if (!id) return false;
+  const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
+  const c = lista.find((x) => x.id === id);
+  return !!(c && c.oculto === true);
+}
+
+// Preço oculto (campo ocultarPreco = true, ligado no Super Admin): o pedido
+// continua na loja, mas o preço não aparece no card, no topo da página do
+// pedido nem na aba de tamanhos. O pagamento continua: o valor só aparece na
+// hora de pagar (na tela do PIX).
+function precoOculto(time) {
+  return !!time && time.ocultarPreco === true;
+}
+
 // Um time pertence ao cliente escolhido no filtro? Filtro vazio = todos.
 function timeDoCliente(time, filtro) {
   if (!filtro) return true;
@@ -300,47 +322,133 @@ function precoDoTamanho(tamanho, precosPorGrupo) {
   return null;
 }
 
-// ---------------- Preços personalizados por time ----------------
-// A tabela geral (config/geral -> precosPorGrupo) vale para todo mundo.
-// Cada time pode ter preços próprios em config/geral -> precosPorTime:
-//   precosPorTime: { "3o-ano-a-manha": { "Normal": 50, "Plus Size": 60 } }
-// A personalização é grupo a grupo: o que o time não define continua
-// usando o preço geral. Fica em config/geral (e não no time) porque só o
-// admin grava nesse documento — assim o representante não muda o próprio preço.
+// ---------------- Preços especiais (por cliente e por time) ----------------
+// A tabela geral (config/geral -> precosPorGrupo) vale para todo mundo. Por
+// cima dela, grupo a grupo:
+//   1. o preço do CLIENTE (vale para todos os times dele);
+//   2. o preço do TIME (vale só para ele e ganha do cliente).
+// Os preços especiais ficam na coleção `precos` (docs "cliente_ID" e
+// "time_ID", campo `precos: { grupo: valor }`). As regras deixam qualquer um
+// LER UM documento pelo id (a página do pedido precisa do preço dela), mas só
+// o admin LISTA a coleção — assim ninguém descobre o preço dos outros
+// clientes. Os documentos lidos entram em memória no cfg, nos campos
+// _precosCliente, _precosTime e _clienteDoTime (nunca gravados no Firestore).
+// O cliente e o time guardam só a marca `temPrecoEspecial` (sem o valor),
+// para a loja saber que não deve mostrar o preço para qualquer um.
+//
+// Antes, os preços por time ficavam em config/geral -> precosPorTime (legível
+// por todos). O painel move esses valores para a coleção nova sozinho; até
+// lá, o campo antigo continua sendo lido ("precosPorTurma" é o nome mais antigo).
 
-// Só os preços personalizados de um time (mapa {grupo: valor}), sem os gerais.
-// Mapa {timeId: {grupo: valor}} guardado em config/geral. "precosPorTurma" é
-// o nome antigo do campo, ainda lido para não perder os preços já salvos.
+const COL_PRECOS = "precos";
+const idDocPrecoCliente = (id) => "cliente_" + id;
+const idDocPrecoTime = (id) => "time_" + id;
+
 function mapaPrecosPorTime(cfg) {
   return (cfg && (cfg.precosPorTime || cfg.precosPorTurma)) || {};
 }
 
-function precosPersonalizadosDoTime(cfg, timeId) {
-  const mapa = mapaPrecosPorTime(cfg)[timeId] || {};
+// Só os números de um mapa {grupo: valor}.
+function precosLimpos(mapa) {
   const saida = {};
-  Object.keys(mapa).forEach((g) => {
+  Object.keys(mapa || {}).forEach((g) => {
     const v = Number(mapa[g]);
-    if (mapa[g] != null && !isNaN(v)) saida[g] = v;
+    if (mapa[g] != null && mapa[g] !== "" && !isNaN(v)) saida[g] = v;
   });
   return saida;
 }
 
-// Preços que valem de fato num time: os gerais com o personalizado por cima.
+// Só os preços próprios de um time (sem os gerais e sem os do cliente).
+function precosPersonalizadosDoTime(cfg, timeId) {
+  const novo = cfg && cfg._precosTime && cfg._precosTime[timeId];
+  return precosLimpos(novo || mapaPrecosPorTime(cfg)[timeId] || {});
+}
+
+// Só os preços próprios de um cliente.
+function precosPersonalizadosDoCliente(cfg, clienteId) {
+  if (!clienteId) return {};
+  return precosLimpos((cfg && cfg._precosCliente && cfg._precosCliente[clienteId]) || {});
+}
+
+// Cliente de um time, pelo que foi carregado junto com os preços.
+function clienteDoTimeNoCfg(cfg, timeId) {
+  const m = cfg && cfg._clienteDoTime;
+  if (typeof m === "function") return m(timeId) || "";
+  return (m && m[timeId]) || "";
+}
+
+// Preços que valem de fato num time: geral → cliente → time.
 function precosDoTime(cfg, timeId) {
-  const geral = (cfg && cfg.precosPorGrupo) || {};
-  const efetivos = {};
-  Object.keys(geral).forEach((g) => {
-    const v = Number(geral[g]);
-    if (geral[g] != null && !isNaN(v)) efetivos[g] = v;
-  });
+  const efetivos = precosLimpos((cfg && cfg.precosPorGrupo) || {});
+  const doCliente = precosPersonalizadosDoCliente(cfg, clienteDoTimeNoCfg(cfg, timeId));
+  Object.keys(doCliente).forEach((g) => (efetivos[g] = doCliente[g]));
   const proprios = precosPersonalizadosDoTime(cfg, timeId);
   Object.keys(proprios).forEach((g) => (efetivos[g] = proprios[g]));
   return efetivos;
 }
 
+// O time (ou o cliente dele) tem preço especial? Só a marca, sem o valor.
+function timeTemPrecoEspecial(time, clientes) {
+  if (time && time.temPrecoEspecial === true) return true;
+  const id = clienteIdDoTime(time);
+  if (!id) return false;
+  const lista = Array.isArray(clientes) ? clientes : Object.values(clientes || {});
+  const c = lista.find((x) => x.id === id);
+  return !!(c && c.temPrecoEspecial === true);
+}
+
+// Lê os preços especiais de alguns times (e dos clientes deles) e guarda no
+// cfg. `times`: [{ id, clienteId }]. Um documento que não existe (ou que as
+// regras ainda não deixam ler) só não muda nada.
+async function carregarPrecosEspeciais(cfg, times) {
+  if (!cfg) return;
+  cfg._precosTime = cfg._precosTime || {};
+  cfg._precosCliente = cfg._precosCliente || {};
+  cfg._precosAluno = cfg._precosAluno || {};
+  if (typeof cfg._clienteDoTime !== "function") cfg._clienteDoTime = cfg._clienteDoTime || {};
+  const ler = async (docId) => {
+    try {
+      const doc = await db.collection(COL_PRECOS).doc(docId).get();
+      return doc.exists ? doc.data() : null;
+    } catch (e) {
+      return null;
+    }
+  };
+  const clientes = new Set();
+  await Promise.all((times || []).map(async ({ id, clienteId }) => {
+    if (!id) return;
+    if (typeof cfg._clienteDoTime !== "function") cfg._clienteDoTime[id] = clienteId || "";
+    if (clienteId) clientes.add(clienteId);
+    const d = await ler(idDocPrecoTime(id));
+    if (d && d.precos) cfg._precosTime[id] = d.precos;
+    if (d && d.porAluno) cfg._precosAluno[id] = d.porAluno;
+  }));
+  await Promise.all([...clientes].map(async (id) => {
+    const d = await ler(idDocPrecoCliente(id));
+    if (d && d.precos) cfg._precosCliente[id] = d.precos;
+  }));
+}
+
 // Preço de um tamanho já considerando o preço personalizado do time.
 function precoDoTamanhoNoTime(tamanho, cfg, timeId) {
   return precoDoTamanho(tamanho, precosDoTime(cfg, timeId));
+}
+
+// Preço especial de UMA camiseta (definido na lista do Super Admin, ao lado
+// da forma de pagamento). Fica no documento de preços do time (precos/time_ID
+// → porAluno), então segue o mesmo sigilo dos preços do time. null = não tem.
+function precoEspecialDoAluno(cfg, timeId, alunoId) {
+  const m = cfg && cfg._precosAluno && cfg._precosAluno[timeId];
+  const v = m ? Number(m[alunoId]) : NaN;
+  return m && m[alunoId] != null && m[alunoId] !== "" && !isNaN(v) ? v : null;
+}
+
+// Preço de venda de uma camiseta: o especial dela, se houver; senão, o do
+// tamanho no time (geral → cliente → time). É o que vale no pagamento, no
+// Financeiro e no DRE.
+function precoDoAluno(cfg, timeId, alunoId, tamanho) {
+  const especial = precoEspecialDoAluno(cfg, timeId, alunoId);
+  return especial != null ? especial : precoDoTamanhoNoTime(tamanho, cfg, timeId);
 }
 
 // Grupo de tamanho ao qual um tamanho pertence (ou null).
@@ -438,9 +546,14 @@ function ehGoleiro(aluno) {
 
 // Marca do goleiro para as listas que não têm a coluna de marcar (produção,
 // levas, conferência). Onde dá para editar, quem manda é a caixa de marcar.
+// Ícone (js/icones.js) ou, numa página sem ele, o texto de reserva.
+function iconeOu(nome, reserva) {
+  return typeof icone === "function" ? icone(nome) : reserva;
+}
+
 function badgeGoleiroHtml(aluno) {
   return ehGoleiro(aluno)
-    ? '<span class="badge goleiro" title="Goleiro — camiseta de cor especial">🧤 Goleiro</span>'
+    ? '<span class="badge goleiro" title="Goleiro — camiseta de cor especial">' + iconeOu("hand", "🧤") + ' Goleiro</span>'
     : "";
 }
 
@@ -452,7 +565,7 @@ function criarCheckGoleiro(aluno, aoMudar) {
   return criarCheckMarca(aluno, {
     classe: "check-goleiro",
     titulo: "Goleiro — camiseta de cor especial",
-    icone: "🧤",
+    icone: "hand",
     palavra: "goleiro",
     marcado: ehGoleiro(aluno)
   }, aoMudar);
@@ -474,7 +587,7 @@ function criarCheckMarca(aluno, cfg, aoMudar) {
   // (CSS) para a coluna não alargar a tabela, e o ícone continua identificando.
   const icone = document.createElement("span");
   icone.className = cfg.classe + "-icone";
-  icone.textContent = cfg.icone;
+  icone.innerHTML = iconeOu(cfg.icone, "");
   const texto = document.createElement("span");
   texto.className = cfg.classe + "-texto";
 
@@ -509,7 +622,7 @@ function ehProf(aluno) {
 
 function badgeProfHtml(aluno) {
   return ehProf(aluno)
-    ? '<span class="badge prof" title="Camiseta de professor">🎓 Prof</span>'
+    ? '<span class="badge prof" title="Camiseta de professor">' + iconeOu("graduation-cap", "🎓") + ' Prof</span>'
     : "";
 }
 
@@ -517,7 +630,7 @@ function criarCheckProf(aluno, aoMudar) {
   return criarCheckMarca(aluno, {
     classe: "check-prof",
     titulo: "Camiseta de professor (só para organização)",
-    icone: "🎓",
+    icone: "graduation-cap",
     palavra: "prof",
     marcado: ehProf(aluno)
   }, aoMudar);
@@ -849,7 +962,7 @@ function renderizarBarraStatus(container, statusId) {
   if (statusForaDaLinha(statusId)) {
     const etapa = document.createElement("span");
     etapa.className = "status-etapa " + statusId + " atual";
-    etapa.textContent = statusId === "bloqueado" ? "🚫 Pedido bloqueado" : "⏸ Pedido suspenso";
+    etapa.innerHTML = statusId === "bloqueado" ? iconeOu("ban", "") + " Pedido bloqueado" : iconeOu("circle-pause", "") + " Pedido suspenso";
     container.appendChild(etapa);
     return;
   }
@@ -978,6 +1091,11 @@ async function revalidarItens(cfg, lista) {
     })
   );
 
+  // Preços especiais dos times do carrinho (e dos clientes deles).
+  await carregarPrecosEspeciais(cfg, Object.entries(times)
+    .filter(([, t]) => t)
+    .map(([id, t]) => ({ id, clienteId: clienteIdDoTime(t) })));
+
   const validos = [];
   const removidos = [];
   await Promise.all(
@@ -1005,7 +1123,7 @@ async function revalidarItens(cfg, lista) {
         numero: aluno.numero || "",
         nomeCamiseta: aluno.nomeCamiseta || "",
         time: time.nome || item.timeId,
-        valor: Number(precoDoTamanhoNoTime(aluno.tamanho, cfg, item.timeId) || 0)
+        valor: Number(precoDoAluno(cfg, item.timeId, item.alunoId, aluno.tamanho) || 0)
       });
     })
   );

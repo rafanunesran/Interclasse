@@ -90,6 +90,8 @@ async function iniciar() {
   }
   timeAtual = doc.data();
   elNomeTime.textContent = timeAtual.nome;
+  // Preço especial deste time/cliente (só o dele: ninguém lista os outros).
+  await carregarPrecosEspeciais(configGeral, [{ id: timeId, clienteId: clienteIdDoTime(timeAtual) }]);
   await mostrarCliente();
   await aplicarFechamentoAutomatico();
   atualizarBadge();
@@ -135,7 +137,7 @@ async function mostrarCliente() {
     // "Voltar" leva para a loja já filtrada neste cliente.
     if (elLinkVoltarLoja) {
       elLinkVoltarLoja.href = "index.html?cliente=" + encodeURIComponent(clienteId);
-      elLinkVoltarLoja.textContent = "← Times de " + nome;
+      elLinkVoltarLoja.innerHTML = icone("arrow-left") + " " + escapeHtml("Times de " + nome);
     }
   } catch (e) {
     console.warn("Não foi possível carregar o cliente deste time.", e);
@@ -177,10 +179,18 @@ function imagensDaGaleria() {
   // e os mockups (time.previaCliente), com "NOME" e "00" de exemplo.
   const pc = timeAtual && timeAtual.previaCliente;
   if (timeAtual && !timeAtual.imagemUrl && !timeAtual.arteUrl && pc) {
-    [["cena", "Simulação na camiseta"], ["frente", "Simulação — frente"], ["costas", "Simulação — costas"], ["arte", "Arte (sem simulação)"]]
-      .forEach(([chave, legenda]) => {
-        if (pc[chave]) itens.push({ url: pc[chave], legenda, comMarca });
-      });
+    const vistas = [["cena", "Simulação na camiseta"], ["frente", "Simulação — frente"], ["costas", "Simulação — costas"], ["arte", "Arte (sem simulação)"]];
+    vistas.forEach(([chave, legenda]) => {
+      if (pc[chave]) itens.push({ url: pc[chave], legenda, comMarca });
+    });
+    // Camiseta do goleiro (quando o time tem uma diferente).
+    const g = pc.goleiro;
+    if (g) {
+      [["cena", "Goleiro — na camiseta"], ["frente", "Goleiro — frente"], ["costas", "Goleiro — costas"], ["arte", "Goleiro — arte (sem simulação)"]]
+        .forEach(([chave, legenda]) => {
+          if (g[chave]) itens.push({ url: g[chave], legenda, comMarca, goleiro: true });
+        });
+    }
   }
   // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
   GRUPOS_TAMANHO.filter((g) => g.imagemUrl).forEach((g) => {
@@ -199,6 +209,7 @@ let assinaturaGaleria = null; // evita remontar (e perder a posição) sem neces
 // dentro da ampliação dá para passar para a próxima com as setas.
 function renderizarGaleria() {
   if (!elGaleria || !elGaleriaTrilho) return;
+  atualizarBotao3D();
 
   const itens = imagensDaGaleria();
   const comMarcaDagua = timeAtual && timeAtual.marcaDagua === true;
@@ -234,6 +245,13 @@ function renderizarGaleria() {
       wrap.appendChild(marca);
     }
 
+    if (item.goleiro) {
+      const selo = document.createElement("span");
+      selo.className = "selo-goleiro";
+      selo.innerHTML = icone("hand") + " Goleiro";
+      wrap.appendChild(selo);
+    }
+
     const legenda = document.createElement("figcaption");
     legenda.textContent = item.legenda;
 
@@ -243,6 +261,108 @@ function renderizarGaleria() {
   });
 
   atualizarSetasGaleria();
+}
+
+// ---------------- Ver em 3D ----------------
+// Com a prévia montada no admin (time.previaCliente.texturas), o cliente pode
+// girar a camiseta em 3D. O three.js, os modelos e as texturas só são
+// baixados ao tocar no botão (js/mockup3d.js).
+
+const VERSAO_MOCKUP3D = "20261020a";
+let botao3d = null;
+
+function texturas3D(goleiro) {
+  const pc = timeAtual && timeAtual.previaCliente;
+  if (!pc || timeAtual.imagemUrl || timeAtual.arteUrl) return null;
+  const t = goleiro ? pc.goleiro && pc.goleiro.texturas : pc.texturas;
+  return t && (t.frente || t.costas) ? t : null;
+}
+
+function atualizarBotao3D() {
+  const t = texturas3D();
+  if (!botao3d && t && elGaleria) {
+    botao3d = document.createElement("button");
+    botao3d.type = "button";
+    botao3d.className = "secundario botao-3d";
+    botao3d.innerHTML = icone("rotate-3d") + " Ver em 3D";
+    botao3d.onclick = abrirVer3D;
+    elGaleria.insertAdjacentElement("afterend", botao3d);
+  }
+  if (botao3d) botao3d.classList.toggle("oculto", !t);
+}
+
+function imagemDeBytes(bytes, tipo) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type: tipo }));
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(c);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Textura inválida.")); };
+    img.src = url;
+  });
+}
+
+async function abrirVer3D() {
+  if (!texturas3D()) return;
+  const temGoleiro = !!texturas3D(true);
+  const fundo = document.createElement("div");
+  fundo.className = "modal-3d";
+  fundo.innerHTML = `<div class="modal-3d-caixa" role="dialog" aria-label="Camiseta em 3D">
+      <button type="button" class="modal-3d-fechar" aria-label="Fechar">${icone("x")}</button>
+      ${temGoleiro ? `<div class="modal-3d-variantes segmentado" role="tablist" aria-label="Camiseta">
+        <button type="button" data-variante="" class="ativo">Camiseta</button>
+        <button type="button" data-variante="goleiro">${icone("hand")} Goleiro</button></div>` : ""}
+      <span class="selo-goleiro modal-3d-selo oculto">${icone("hand")} Goleiro</span>
+      <div class="modal-3d-palco"></div>
+      ${timeAtual.marcaDagua === true ? '<span class="marca-overlay" aria-hidden="true"></span>' : ""}
+      <p class="modal-3d-aviso">Carregando o 3D…</p>
+    </div>`;
+  document.body.appendChild(fundo);
+  let vivo = null;
+  const fechar = () => { if (vivo) vivo.destruir(); fundo.remove(); document.removeEventListener("keydown", tecla); };
+  const tecla = (ev) => { if (ev.key === "Escape") fechar(); };
+  document.addEventListener("keydown", tecla);
+  fundo.querySelector(".modal-3d-fechar").onclick = fechar;
+  fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(); });
+  const aviso = fundo.querySelector(".modal-3d-aviso");
+  const palco = fundo.querySelector(".modal-3d-palco");
+  let vez = 0;
+  // Monta (ou troca) a camiseta mostrada: a comum ou a do goleiro.
+  const mostrar = async (goleiro) => {
+    const minha = ++vez;
+    const t = texturas3D(goleiro);
+    fundo.querySelector(".modal-3d-selo").classList.toggle("oculto", !goleiro);
+    fundo.querySelectorAll("[data-variante]").forEach((b) => b.classList.toggle("ativo", !!b.dataset.variante === !!goleiro));
+    aviso.textContent = "Carregando o 3D…";
+    try {
+      const [mod, cfg] = await Promise.all([
+        import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href),
+        carregarConfigGeral()
+      ]);
+      const M = mod.default;
+      if (!M.suportado()) throw new Error("Este aparelho não consegue mostrar o 3D.");
+      if (!cfg.driveScriptUrl) throw new Error("As imagens do 3D não estão disponíveis.");
+      const pecas = { gola: { cor: t.gola || "" } };
+      await Promise.all(["frente", "costas", "mangaEsq", "mangaDir"].filter((id) => t[id]).map(async (id) => {
+        const bytes = await baixarArquivoDrive(cfg.driveScriptUrl, t[id]);
+        pecas[id] = { canvas: await imagemDeBytes(bytes, "image/jpeg") };
+      }));
+      if (!fundo.isConnected || minha !== vez) return;
+      if (vivo) { vivo.destruir(); vivo = null; }
+      vivo = await M.visualizador(palco, pecas);
+      aviso.textContent = "Arraste para girar · dois dedos para aproximar";
+    } catch (e) {
+      console.error(e);
+      if (minha === vez) aviso.textContent = e.message || "Não foi possível abrir o 3D.";
+    }
+  };
+  fundo.querySelectorAll("[data-variante]").forEach((b) => (b.onclick = () => mostrar(!!b.dataset.variante)));
+  mostrar(false);
 }
 
 // Rola a galeria uma "página" para o lado.
@@ -287,7 +407,7 @@ function atualizarBadge() {
     if (timeAtual.dataLimite) {
       const d = new Date(timeAtual.dataLimite + "T00:00:00");
       const txt = isNaN(d.getTime()) ? timeAtual.dataLimite : d.toLocaleDateString("pt-BR");
-      elInfoDataLimite.textContent = "📅 Pagamento até " + txt;
+      elInfoDataLimite.innerHTML = icone("calendar") + " Pagamento até " + escapeHtml(txt);
       elInfoDataLimite.classList.remove("oculto");
     } else {
       elInfoDataLimite.classList.add("oculto");
@@ -299,6 +419,10 @@ function atualizarBadge() {
 // preços em vigor aqui: os gerais, com o preço próprio do time por cima.
 function mostrarPrecosDaTime() {
   if (!elInfoPrecos) return;
+  if (precoOculto(timeAtual)) {
+    elInfoPrecos.classList.add("oculto");
+    return;
+  }
   const precos = precosDoTime(configGeral, timeId);
   const partes = GRUPOS_TAMANHO
     .filter((g) => precos[g.grupo] != null)
@@ -325,6 +449,13 @@ function mostrarPrecosDaTime() {
 function renderizarGrupos() {
   if (!elTabelaGrupos) return;
   const precos = precosDoTime(configGeral, timeId);
+  const semPreco = precoOculto(timeAtual);
+  // Com o preço oculto, a aba vira só "Tamanhos".
+  const titulo = semPreco ? "Tamanhos" : "Tamanhos e preços";
+  const abaTamanhos = document.querySelector('[data-aba-pedido="tamanhos"]');
+  if (abaTamanhos) abaTamanhos.innerHTML = icone("ruler") + " " + titulo;
+  const h2 = document.querySelector("#abaPedido-tamanhos h2");
+  if (h2) h2.textContent = titulo;
   elTabelaGrupos.innerHTML = "";
   GRUPOS_TAMANHO.forEach((g) => {
     const bloco = document.createElement("div");
@@ -332,7 +463,7 @@ function renderizarGrupos() {
     bloco.innerHTML = `
       <div class="grupo-pedido-topo">
         <h3>${escapeHtml(g.grupo)}</h3>
-        <span class="grupo-pedido-preco">${precos[g.grupo] != null ? formatarReais(precos[g.grupo]) : "—"}</span>
+        ${semPreco ? "" : `<span class="grupo-pedido-preco">${precos[g.grupo] != null ? formatarReais(precos[g.grupo]) : "—"}</span>`}
       </div>
       <div class="chips-tamanho-pedido">${g.tamanhos.map((t) => `<span>${escapeHtml(t)}</span>`).join("")}</div>`;
     if (g.imagemUrl) {
@@ -392,10 +523,10 @@ function atualizarVisibilidade() {
     const mostrar = pedidoEmProducao(timeAtual) && alunosAtuais.length > 0;
     elMensagemProducao.classList.toggle("oculto", !mostrar);
     if (mostrar) {
-      elMensagemProducao.textContent = pendentes.length === 0
-        ? `🖨️ Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas e entraram na produção.`
-        : `🖨️ Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
-          `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`;
+      elMensagemProducao.innerHTML = icone("printer") + " " + (pendentes.length === 0
+        ? `Produção em andamento: as ${produzir.length} camiseta(s) do time foram pagas e entraram na produção.`
+        : `Produção em andamento: ${produzir.length} camiseta(s) paga(s) entraram na produção. ` +
+          `${pendentes.length} não foi(ram) paga(s) até a impressão, ficou(aram) pendente(s) e não será(ão) produzida(s) nesta leva.`);
     }
   }
 
@@ -547,7 +678,7 @@ function itemDoAluno(aluno) {
     numero: aluno.numero || "",
     nomeCamiseta: aluno.nomeCamiseta || "",
     time: (timeAtual && timeAtual.nome) || timeId,
-    valor: Number(precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId) || 0)
+    valor: Number(precoDoAluno(configGeral, timeId, aluno.id, aluno.tamanho) || 0)
   };
 }
 
@@ -610,12 +741,14 @@ function renderizarCarrinho() {
   document.body.classList.toggle("com-carrinho", carrinho.length > 0);
   if (carrinho.length === 0) return;
 
-  const { total, semPreco } = carrinhoTotal(carrinho);
+  const { total: totalReal, semPreco } = carrinhoTotal(carrinho);
+  // Preço oculto neste time: a barra não mostra valores (só na hora de pagar).
+  const total = precoOculto(timeAtual) ? 0 : totalReal;
   const times = carrinhoTimes(carrinho);
   const valor = total > 0 ? " · " + formatarReais(total) : "";
   // Com filhos em times diferentes, dizer de quantos times é o carrinho ajuda.
   const deQuemE = times.length > 1 ? ` · ${times.length} times` : "";
-  const aviso = semPreco > 0 ? ` (${semPreco} sem preço definido)` : "";
+  const aviso = semPreco > 0 && !precoOculto(timeAtual) ? ` (${semPreco} sem preço definido)` : "";
   elCarrinhoResumo.textContent = `${carrinho.length} camiseta(s)${deQuemE}${valor}${aviso}`;
   elCarrinhoResumo.title = times.join(" · ");
   if (elBtnPagarCarrinho) {
@@ -700,7 +833,7 @@ function renderizarTabela() {
       ? "Nenhuma camiseta na lista ainda."
       : "Nenhum nome da lista combina com a busca.";
   }
-  if (elBuscaLista) elBuscaLista.classList.toggle("oculto", alunosAtuais.length < 8);
+  if (elBuscaLista) elBuscaLista.closest(".campo-busca").classList.toggle("oculto", alunosAtuais.length < 8);
 
   elTabelaCorpo.innerHTML = "";
   visiveis.forEach((aluno) => {
@@ -784,8 +917,8 @@ function renderizarTabela() {
         const btnPagar = document.createElement("button");
         btnPagar.className = "primario";
         // Mostra o valor no botão (o deste time, se ele tiver preço próprio).
-        const valorLinha = precoDoTamanhoNoTime(aluno.tamanho, configGeral, timeId);
-        btnPagar.textContent = valorLinha ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
+        const valorLinha = precoDoAluno(configGeral, timeId, aluno.id, aluno.tamanho);
+        btnPagar.textContent = valorLinha && !precoOculto(timeAtual) ? `Pagar ${formatarReais(valorLinha)}` : "Pagar";
         btnPagar.title = "Pagar só esta camiseta (para juntar várias, use o carrinho)";
         btnPagar.onclick = () => abrirPagamento([itemDoAluno(aluno)]);
         tdAcoes.appendChild(btnPagar);
@@ -910,14 +1043,14 @@ function renderizarResumo() {
   const nGoleiros = alunosAtuais.filter(ehGoleiro).length;
   if (nGoleiros > 0) {
     const span = document.createElement("span");
-    span.innerHTML = `<strong>🧤 Goleiros: ${nGoleiros}</strong>`;
+    span.innerHTML = `<strong>${icone("hand")} Goleiros: ${nGoleiros}</strong>`;
     span.title = "Camiseta de cor especial";
     elResumo.appendChild(span);
   }
   const nProfs = alunosAtuais.filter(ehProf).length;
   if (nProfs > 0) {
     const span = document.createElement("span");
-    span.innerHTML = `<strong>🎓 Prof: ${nProfs}</strong>`;
+    span.innerHTML = `<strong>${icone("graduation-cap")} Prof: ${nProfs}</strong>`;
     span.title = "Camisetas de professor";
     elResumo.appendChild(span);
   }

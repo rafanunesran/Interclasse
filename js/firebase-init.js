@@ -26,16 +26,25 @@ if (typeof firebase.analytics === "function") {
 //
 // A página de administração NÃO usa isto: ela faz login com e-mail/senha
 // pelo Firebase Authentication (ver js/admin.js).
+//
+// Espera o Firebase recuperar o login salvo antes de decidir: logo que a
+// página abre, auth.currentUser ainda é null mesmo com alguém logado, e um
+// login anônimo nessa hora trocaria a sessão do admin (em todas as abas)
+// pela anônima — o Super Admin caía sempre que se abria a loja ou um pedido.
 function entrarAnonimo() {
   return new Promise((resolve, reject) => {
-    auth.onAuthStateChanged((user) => {
-      if (user) resolve(user);
+    const parar = auth.onAuthStateChanged((user) => {
+      parar();
+      if (user) {
+        resolve(user);
+        return;
+      }
+      auth.signInAnonymously()
+        .then((cred) => resolve(cred.user))
+        .catch((erro) => {
+          console.error("Erro no login anônimo do Firebase:", erro);
+          reject(erro);
+        });
     });
-    if (!auth.currentUser) {
-      auth.signInAnonymously().catch((erro) => {
-        console.error("Erro no login anônimo do Firebase:", erro);
-        reject(erro);
-      });
-    }
   });
 }

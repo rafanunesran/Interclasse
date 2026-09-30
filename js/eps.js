@@ -167,12 +167,101 @@ const EPS = (function () {
     });
   }
 
+  // ---------------- Efeitos e transformações ----------------
+  // Tudo em mm, no sistema da caixa (y para baixo). O giro é em graus, no
+  // sentido horário (como na tela), em volta do centro da caixa.
+
+  // Aplica `f(x, y) -> [x, y]` a todos os pontos (inclusive os de controle).
+  function transformarComandos(comandos, f) {
+    return comandos.map((c) => {
+      const n = { type: c.type };
+      ["", "1", "2"].forEach((s) => {
+        if (c["x" + s] == null) return;
+        const [x, y] = f(c["x" + s], c["y" + s]);
+        n["x" + s] = x;
+        n["y" + s] = y;
+      });
+      return n;
+    });
+  }
+
+  // Giro e espelho de um elemento, em volta do centro (cx, cy).
+  function transformacaoDoElemento(el, cx, cy) {
+    const rot = ((Number(el.rotacao) || 0) * Math.PI) / 180;
+    const fh = el.espelharH ? -1 : 1, fv = el.espelharV ? -1 : 1;
+    if (!rot && fh === 1 && fv === 1) return null;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    return (x, y) => {
+      const dx = (x - cx) * fh, dy = (y - cy) * fv;
+      return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+    };
+  }
+
+  // Texto de um elemento pronto para desenhar: layoutTexto + itálico (inclinação),
+  // arco e, se pedido, giro/espelho. Com itálico ou arco o texto é reencaixado
+  // na caixa (continua nunca saindo dela). Devolve { comandos } em mm,
+  // relativos ao canto de cima da caixa.
+  //   opcoes.semGiro — sem o giro/espelho (o editor gira a caixa inteira).
+  function textoDoElemento(font, texto, caixa, el, opcoes) {
+    const l = layoutTexto(font, texto, caixa, el);
+    let cmds = l.comandos;
+    if (!cmds.length) return { comandos: [] };
+    const incl = Math.max(-45, Math.min(45, Number(el.inclinacao) || 0));
+    const arco = Math.max(-300, Math.min(300, Number(el.arco) || 0));
+    if (incl || Math.abs(arco) >= 1) {
+      const bb = caixaDosComandos(cmds);
+      const base = bb.y2;
+      if (incl) {
+        const t = Math.tan((incl * Math.PI) / 180);
+        cmds = transformarComandos(cmds, (x, y) => [x + (base - y) * t, y]);
+      }
+      if (Math.abs(arco) >= 1) {
+        const b2 = caixaDosComandos(cmds);
+        const larg = b2.x2 - b2.x1;
+        const R = larg / ((Math.abs(arco) * Math.PI) / 180);
+        const cx = (b2.x1 + b2.x2) / 2;
+        cmds = transformarComandos(cmds, arco > 0
+          // Arco para cima (∩): centro embaixo do texto.
+          ? (x, y) => { const th = (x - cx) / R, r = R + (base - y); return [cx + r * Math.sin(th), base + R - r * Math.cos(th)]; }
+          // Arco para baixo (∪): centro em cima do texto.
+          : (x, y) => { const th = (x - cx) / R, r = R - (base - y); return [cx + r * Math.sin(th), base - R + r * Math.cos(th)]; });
+      }
+      // Reencaixa na caixa: encolhe se passou e alinha como o texto reto.
+      const b3 = caixaDosComandos(cmds);
+      const w = b3.x2 - b3.x1, h = b3.y2 - b3.y1;
+      const e = Math.min(1, caixa.w / w, caixa.h / h);
+      const W = w * e, H = h * e;
+      let x0 = (caixa.w - W) / 2;
+      if (el.alinhamento === "esquerda") x0 = 0;
+      else if (el.alinhamento === "direita") x0 = caixa.w - W;
+      const y0 = (caixa.h - H) / 2;
+      cmds = transformarComandos(cmds, (x, y) => [x0 + (x - b3.x1) * e, y0 + (y - b3.y1) * e]);
+    }
+    if (!(opcoes && opcoes.semGiro)) {
+      const f = transformacaoDoElemento(el, caixa.w / 2, caixa.h / 2);
+      if (f) cmds = transformarComandos(cmds, f);
+    }
+    return { comandos: cmds };
+  }
+
+  // Sombra do texto ligada? (deslocamento em mm e cor)
+  function sombraDoElemento(el) {
+    if (!el.sombra) return null;
+    return {
+      dx: Number(el.sombraDx == null ? 1.5 : el.sombraDx) || 0,
+      dy: Number(el.sombraDy == null ? 1.5 : el.sombraDy) || 0,
+      cmyk: el.sombraCmyk || [0, 0, 0, 60]
+    };
+  }
+
   // ---------------- Layout: onde cada coisa fica em cada tamanho ----------------
 
   // Valor de texto de um elemento para uma camiseta.
   function textoDoCampo(el, camiseta) {
-    if (el.tipo === "texto") return el.texto || ""; // texto fixo
     if (el.tipo === "numero" || el.campo === "numero") return String(camiseta.numero == null ? "" : camiseta.numero);
+    if (el.campo === "tamanho") return camiseta.tamanho || "";
+    if (el.campo === "time") return camiseta.nomeTime || "";
+    if (el.campo === "fixo") return el.texto || "";
     if (el.campo === "nomeCompleto") return camiseta.nome || "";
     // Nome na camiseta (apelido): sem apelido, usa o nome (se permitido).
     const apelido = camiseta.nomeCamiseta || "";
@@ -529,11 +618,6 @@ const EPS = (function () {
     return pecas[pecaId] ? { arte: pecas[pecaId], chave: "arte:" + pecaId } : null;
   }
 
-  // Chave (em rec.eps / rec.imagens) do arquivo de um elemento de imagem.
-  function chaveDoElemento(el) {
-    return "elem:" + el.id;
-  }
-
   function detalheDaPeca(prod, pecaId) {
     if (!prod) return null;
     if (pecaId === "mangaDir" && prod.detalheDirDiferente && prod.detalheMangaDir) {
@@ -545,9 +629,9 @@ const EPS = (function () {
   // ---------------- Marcador da costureira ----------------
   // Cada peça leva, dentro da área de impressão, "Time-Tamanho-Peça"
   // (ex.: 7B-P-Frente), com 4 mm de altura (a altura das maiúsculas) e a
-  // 1 mm da base da peça, centralizado. Na gola, que é uma faixa, vai na
-  // lateral esquerda, na vertical (lendo de baixo para cima), também a 1 mm
-  // da borda e com 4 mm.
+  // 1 mm da borda de baixo do MOLDE (o contorno; sem contorno, a caixa),
+  // centralizado. Na gola, que é uma faixa, vai na lateral esquerda, na
+  // vertical (lendo de baixo para cima), também a 1 mm da borda e com 4 mm.
   const MARCADOR_ALTURA_MM = 4;
   // Faca (linha de corte) desenhada a partir do contorno: 3 mm de espessura,
   // toda para FORA do molde — não cobre a arte nem o marcador.
@@ -573,19 +657,113 @@ const EPS = (function () {
     return { x1, y1, x2, y2 };
   }
 
-  // Comandos (mm, relativos ao canto de cima da peça) do marcador.
-  function marcadorDaPeca(fonte, texto, pecaW, pecaH, vertical) {
+  // Contorno achatado em polígonos (as curvas viram segmentos).
+  function poligonosDoContorno(cmds) {
+    const polis = [];
+    let atual = null, cx = 0, cy = 0;
+    (cmds || []).forEach((c) => {
+      if (c.type === "M") { atual = [[c.x, c.y]]; polis.push(atual); cx = c.x; cy = c.y; }
+      else if (c.type === "L") { if (atual) atual.push([c.x, c.y]); cx = c.x; cy = c.y; }
+      else if (c.type === "C") {
+        if (!atual) return;
+        for (let k = 1; k <= 12; k++) {
+          const t = k / 12, u = 1 - t;
+          atual.push([
+            u * u * u * cx + 3 * u * u * t * c.x1 + 3 * u * t * t * c.x2 + t * t * t * c.x,
+            u * u * u * cy + 3 * u * u * t * c.y1 + 3 * u * t * t * c.y2 + t * t * t * c.y
+          ]);
+        }
+        cx = c.x; cy = c.y;
+      }
+    });
+    return polis.filter((p) => p.length > 2);
+  }
+
+  // Onde uma reta (x = v, ou y = v com `horizontal`) cruza o contorno.
+  function cortes(polis, v, horizontal) {
+    const out = [];
+    polis.forEach((p) => {
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length];
+        const [a0, a1] = horizontal ? [a[1], a[0]] : [a[0], a[1]];
+        const [b0, b1] = horizontal ? [b[1], b[0]] : [b[0], b[1]];
+        if ((a0 <= v && b0 > v) || (b0 <= v && a0 > v)) out.push(a1 + ((v - a0) * (b1 - a1)) / (b0 - a0));
+      }
+    });
+    return out.sort((x, y) => x - y);
+  }
+
+  // Comandos (mm, relativos ao canto de cima da peça) do marcador. Com o
+  // `contorno` do molde (comandos), o marcador fica a 1 mm da borda REAL da
+  // peça — barra curva, manga que afina... —, sempre dentro da área de
+  // impressão (a faca de 3 mm fica toda por fora do contorno).
+  function marcadorDaPeca(fonte, texto, pecaW, pecaH, vertical, contorno) {
     const A = MARCADOR_ALTURA_MM, M = MARCADOR_MARGEM_MM;
-    const comprimento = (vertical ? pecaH : pecaW) - 2 * M;
-    if (!texto || comprimento <= 0) return [];
+    const polis = poligonosDoContorno(contorno);
+    if (!texto) return [];
+    if (vertical) return marcadorVertical(fonte, texto, pecaW, pecaH, polis);
+
+    let comprimento = pecaW - 2 * M, centro = pecaW / 2;
+    let res = [];
+    for (let tentativa = 0; tentativa < 8 && comprimento > 2; tentativa++) {
+      const l = layoutTexto(fonte, texto, { w: comprimento, h: A }, { maiusculas: false, alinhamento: "centro" });
+      if (!l.comandos.length) return [];
+      const cx = caixaDosComandos(l.comandos);
+      const larg = cx.x2 - cx.x1, alt = cx.y2 - cx.y1;
+      const x0 = centro - larg / 2, x1 = x0 + larg;
+      // Sem contorno: a 1 mm da base da caixa (a tinta, com as pernas do g, p...).
+      let base = pecaH - M;
+      if (polis.length) {
+        // A borda de baixo do contorno em cada x do texto; a mais alta manda.
+        let borda = Infinity;
+        for (let k = 0; k <= 20; k++) {
+          const ys = cortes(polis, x0 + ((x1 - x0) * k) / 20, false);
+          if (ys.length) borda = Math.min(borda, ys[ys.length - 1]);
+        }
+        if (borda < Infinity) base = borda - M;
+      }
+      res = deslocarComandos(l.comandos, x0 - cx.x1, base - cx.y2);
+      if (!polis.length) return res;
+      // Cabe na largura do contorno nessa altura (com 1 mm de cada lado)?
+      let esq = -Infinity, dir = Infinity;
+      for (let k = 0; k <= 6; k++) {
+        const y = base - (alt * k) / 6;
+        const xs = cortes(polis, y, true);
+        let l0 = null, r0 = null;
+        for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i] <= centro && xs[i + 1] >= centro) { l0 = xs[i]; r0 = xs[i + 1]; }
+        if (l0 == null) { l0 = xs[0]; r0 = xs[xs.length - 1]; }
+        if (l0 != null) { esq = Math.max(esq, l0); dir = Math.min(dir, r0); }
+      }
+      if (!(dir > esq) || (esq + M <= x0 + 0.05 && dir - M >= x1 - 0.05)) return res;
+      // Não cabe: centraliza no que há e encolhe.
+      centro = (esq + dir) / 2;
+      comprimento = Math.min(comprimento, dir - esq - 2 * M) - 0.2;
+    }
+    return res;
+  }
+
+  // Gola: na lateral esquerda, na vertical (lendo de baixo para cima), a
+  // 1 mm da borda esquerda do contorno.
+  function marcadorVertical(fonte, texto, pecaW, pecaH, polis) {
+    const A = MARCADOR_ALTURA_MM, M = MARCADOR_MARGEM_MM;
+    const comprimento = pecaH - 2 * M;
+    if (comprimento <= 0) return [];
     const l = layoutTexto(fonte, texto, { w: comprimento, h: A }, { maiusculas: false, alinhamento: "centro" });
     if (!l.comandos.length) return [];
-    // A tinta (incluindo as pernas do g, p, q...) fica a exatamente 1 mm da borda.
     const cx = caixaDosComandos(l.comandos);
-    if (!vertical) return deslocarComandos(l.comandos, M, pecaH - M - cx.y2);
     // Gira 90° (de baixo para cima): o "chão" das letras vira o lado direito.
     const gira = (x, y) => [y, pecaH - M - x];
-    const deslocX = M - cx.y1; // a parte de cima das letras encosta a 1 mm da esquerda
+    let deslocX = M - cx.y1; // a parte de cima das letras a 1 mm da esquerda
+    if (polis.length) {
+      // Faixa de y ocupada pelo texto girado e a borda esquerda do contorno nela.
+      const yA = pecaH - M - cx.x2, yB = pecaH - M - cx.x1;
+      let borda = -Infinity;
+      for (let k = 0; k <= 20; k++) {
+        const xs = cortes(polis, yA + ((yB - yA) * k) / 20, true);
+        if (xs.length) borda = Math.max(borda, xs[0]);
+      }
+      if (borda > -Infinity) deslocX = borda + M - cx.y1;
+    }
     return l.comandos.map((c) => {
       const n = { type: c.type };
       ["", "1", "2"].forEach((s) => {
@@ -615,6 +793,63 @@ const EPS = (function () {
   //   { tipo: "eps", chave, x, y, w, h }
   //   { tipo: "imagem", chave, x, y, w, h }
   //   { tipo: "caminho", comandos, cmyk, contorno: { cmyk, mm } | null }
+  // Elementos de uma peça num time: os do layout geral e, por cima, os que
+  // só esse time tem (producao.elementosExtras[pecaId]).
+  function elementosDaPecaNoTime(layout, prod, pecaId) {
+    const gerais = ((((layout && layout.pecas) || {})[pecaId] || {}).elementos) || [];
+    const extras = ((prod && prod.elementosExtras) || {})[pecaId] || [];
+    return extras.length ? gerais.concat(extras) : gerais;
+  }
+
+  // ---------------- Peças virtuais (sem molde EPS) ----------------
+  // Retângulos que vão na folha junto das peças de cada camiseta:
+  //   • reforcoOmbro — retalho de reforço de ombro, 25 mm de largura e o
+  //     comprimento do tamanho (moldes.reforcoOmbro[tam], aba Tamanhos), em
+  //     cor sólida;
+  //   • etiquetaTam — etiqueta de tamanho, com o tamanho definido na aba
+  //     Etiqueta do editor (layout.pecas.etiquetaTam) e os elementos dela.
+  const REFORCO_LARGURA_MM = 25;
+  const PECAS_VIRTUAIS = { reforcoOmbro: "Reforço de ombro", etiquetaTam: "Etiqueta" };
+
+  function medidasEtiqueta(layout) {
+    const e = ((layout && layout.pecas) || {}).etiquetaTam || {};
+    return { w: Number(e.larguraMm) > 0 ? Number(e.larguraMm) : 50, h: Number(e.alturaMm) > 0 ? Number(e.alturaMm) : 30 };
+  }
+
+  // { bbox (pt), contorno (retângulo, mm), virtual } ou null (sem medida).
+  function moldeVirtual(moldes, layout, pecaId, tam) {
+    let d = null;
+    if (pecaId === "reforcoOmbro") {
+      const c = Number(((moldes && moldes.reforcoOmbro) || {})[tam]);
+      if (c > 0) d = { w: c, h: REFORCO_LARGURA_MM };
+    } else if (pecaId === "etiquetaTam") {
+      d = medidasEtiqueta(layout);
+    }
+    if (!d) return null;
+    const r = (v) => Math.round(v * 100) / 100;
+    return {
+      virtual: true,
+      bbox: { x1: 0, y1: 0, x2: d.w * PT_POR_MM, y2: d.h * PT_POR_MM },
+      contorno: `M 0 0 L ${r(d.w)} 0 L ${r(d.w)} ${r(d.h)} L 0 ${r(d.h)} Z`
+    };
+  }
+
+  // Cor de fundo de uma peça virtual (null = sem fundo).
+  function fundoVirtual(moldes, layout, prod, pecaId) {
+    if (pecaId === "reforcoOmbro") return (prod && prod.reforcoCmyk) || (moldes && moldes.reforcoCmyk) || [0, 0, 0, 0];
+    if (pecaId === "etiquetaTam") return (((layout && layout.pecas) || {}).etiquetaTam || {}).fundoCmyk || [0, 0, 0, 0];
+    return null;
+  }
+
+  // Giro/espelho que vai na op de imagem ou EPS (o escritor aplica).
+  function giroDaOp(el) {
+    const o = {};
+    if (Number(el.rotacao)) o.rot = Number(el.rotacao);
+    if (el.espelharH) o.flipH = true;
+    if (el.espelharV) o.flipV = true;
+    return o;
+  }
+
   function montarBlocos(moldes, layout, time, camisetas, rec, opcoes) {
     const op = opcoes || {};
     const posMolde = op.molde || "frente";
@@ -625,23 +860,34 @@ const EPS = (function () {
     const pecasIds = op.pecas || Object.keys((layout && layout.pecas) || {});
 
     const blocos = [];
-    camisetas.forEach((cam) => {
+    camisetas.forEach((camOrig) => {
+      // O nome do time serve aos textos da etiqueta (campo "time").
+      const cam = { ...camOrig, nomeTime: op.nomeTime || "" };
       pecasIds.forEach((pecaId) => {
+        const virtual = !!PECAS_VIRTUAIS[pecaId];
         const moldesPeca = (moldes.pecas || {})[pecaId] || {};
-        const molde = moldesPeca[cam.tamanho];
-        const ad = arteDaPeca(prod, pecaId);
+        const molde = virtual ? moldeVirtual(moldes, layout, pecaId, cam.tamanho) : moldesPeca[cam.tamanho];
+        const ad = virtual ? null : arteDaPeca(prod, pecaId);
         const arte = ad && ad.arte;
-        const lay = ((layout && layout.pecas) || {})[pecaId] || {};
-        if (!arte && !(lay.elementos || []).length) return; // peça sem nada deste time
+        const elementos = elementosDaPecaNoTime(layout, prod, pecaId);
+        if (!virtual && !arte && !elementos.length) return; // peça sem nada deste time
         if (!molde || !molde.bbox) {
-          avisar(`Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
+          avisar(pecaId === "reforcoOmbro"
+            ? `Sem o comprimento do reforço de ombro para o tamanho ${cam.tamanho || "(vazio)"} (aba Tamanhos) — o reforço ficou de fora.`
+            : `Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
           return;
         }
         const tam = tamanhoMmDoBbox(molde.bbox);
-        const mb = moldesPeca[moldes.tamanhoBase];
+        const mb = virtual ? null : moldesPeca[moldes.tamanhoBase];
         const tamBase = mb && mb.bbox ? tamanhoMmDoBbox(mb.bbox) : tam;
 
         const ops = [];
+        // Peça virtual: fundo de cor sólida (reforço, fundo da etiqueta).
+        const fundo = virtual ? fundoVirtual(moldes, layout, prod, pecaId) : null;
+        if (fundo && fundo.some((v) => Number(v) > 0)) {
+          ops.push({ tipo: "caminho", recortar: true, cmyk: fundo,
+            comandos: [{ type: "M", x: -5, y: -5 }, { type: "L", x: tam.w + 5, y: -5 }, { type: "L", x: tam.w + 5, y: tam.h + 5 }, { type: "L", x: -5, y: tam.h + 5 }, { type: "Z" }] });
+        }
         const opMolde = { tipo: "eps", chave: "molde:" + pecaId + ":" + cam.tamanho, x: 0, y: 0, w: tam.w, h: tam.h };
         // Faca a partir do contorno (3 mm por fora); sem contorno lido, vai o
         // EPS do molde como veio (com a espessura de linha do arquivo).
@@ -660,7 +906,7 @@ const EPS = (function () {
           ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam, op.sangriaMm == null ? 2 : op.sangriaMm) });
         }
 
-        (lay.elementos || []).forEach((elGeral) => {
+        elementos.forEach((elGeral) => {
           const ajTime = (ajustes[pecaId] || {})[elGeral.id];
           const el = elementoDoTime(elGeral, ajTime);
           if (!el) return; // oculto neste time
@@ -670,23 +916,7 @@ const EPS = (function () {
             const img = d && rec.imagens && rec.imagens[d.chave];
             if (!img) { avisar("O time não tem o detalhe da manga (PNG) — a caixa do detalhe ficou vazia."); return; }
             // `livre`: a imagem estica na caixa (largura e altura independentes).
-            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
-            return;
-          }
-          // Imagem acrescentada no layout: PNG (convertido para CMYK) ou EPS.
-          if (el.tipo === "imagem") {
-            const chave = chaveDoElemento(el);
-            const a = el.arquivo || {};
-            if (a.formato === "eps") {
-              const e = rec.eps && rec.eps[chave];
-              if (!e) { avisar(`A imagem "${el.rotulo || a.nomeArquivo || "imagem"}" não carregou — ficou de fora.`); return; }
-              const t = tamanhoMmDoBbox(e.bbox);
-              ops.push({ tipo: "eps", chave, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
-            } else {
-              const img = rec.imagens && rec.imagens[chave];
-              if (!img) { avisar(`A imagem "${el.rotulo || a.nomeArquivo || "imagem"}" não carregou — ficou de fora.`); return; }
-              ops.push({ tipo: "imagem", chave, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
-            }
+            ops.push({ tipo: "imagem", chave: d.chave, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, img.largura, img.altura)) });
             return;
           }
           if (el.tipo === "brasao" || el.tipo === "logo") {
@@ -698,28 +928,41 @@ const EPS = (function () {
               return;
             }
             const t = tamanhoMmDoBbox(e.bbox);
-            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
+            ops.push({ tipo: "eps", chave: el.tipo, recortar, ...giroDaOp(el), ...(imagemLivre(el) ? caixa : encaixarProporcional(caixa, t.w, t.h)) });
             return;
           }
           if (!rec.fonte) { avisar("O time não tem fonte — nome e número ficaram de fora."); return; }
           const valor = textoDoCampo(el, cam);
           if (!String(valor).trim()) return;
-          const l = layoutTexto(rec.fonte, valor, caixa, el);
+          const l = textoDoElemento(rec.fonte, valor, caixa, el);
           if (!l.comandos.length) return;
+          const c1 = Number(el.contornoMm) || 0, c2 = Number(el.contorno2Mm) || 0;
+          const sombra = sombraDoElemento(el);
+          if (sombra) {
+            // A sombra tem o tamanho da letra com os contornos, na cor da sombra.
+            ops.push({
+              tipo: "caminho", recortar,
+              comandos: deslocarComandos(l.comandos, caixa.x + sombra.dx, caixa.y + sombra.dy),
+              cmyk: sombra.cmyk,
+              contorno: c1 + c2 > 0 ? { cmyk: sombra.cmyk, mm: c1 + c2 } : null
+            });
+          }
           ops.push({
             tipo: "caminho",
             recortar,
             comandos: deslocarComandos(l.comandos, caixa.x, caixa.y),
             cmyk: el.corCmyk || [0, 0, 0, 100],
-            contorno: el.contornoMm > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: Number(el.contornoMm) } : null
+            contorno: c1 > 0 ? { cmyk: el.contornoCmyk || [0, 0, 0, 0], mm: c1 } : null,
+            contorno2: c2 > 0 ? { cmyk: el.contorno2Cmyk || [0, 0, 0, 100], mm: c1 + c2 } : null
           });
         });
 
         // Marcador para a costureira, DENTRO da área de impressão:
         // "Time-Tamanho-Peça" (ex.: 7B-P-Frente), ver marcadorDaPeca().
-        if (op.etiqueta !== false && rec.fonteEtiqueta) {
+        if (op.etiqueta !== false && rec.fonteEtiqueta && pecaId !== "etiquetaTam") {
           const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId);
-          const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola");
+          const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola",
+            molde.contorno ? comandosDoContorno(molde.contorno) : null);
           if (cmds.length) {
             ops.push({ tipo: "caminho", recortar, comandos: cmds, cmyk: [0, 0, 0, 100], contorno: { cmyk: [0, 0, 0, 0], mm: 0.25 } });
           }
@@ -909,6 +1152,15 @@ const EPS = (function () {
         return s;
       };
 
+      // Giro/espelho de imagem e EPS em volta do centro da caixa. No
+      // PostScript o y sobe, então o giro horário da tela é negativo.
+      const giro = (op) => {
+        if (!op.rot && !op.flipH && !op.flipV) return ["", ""];
+        const cx = (op.x + op.w / 2) * k, cy = (hb - (op.y + op.h / 2)) * k;
+        return [`gsave ${num(cx)} ${num(cy)} translate ${num(-(op.rot || 0))} rotate ` +
+          `${op.flipH ? -1 : 1} ${op.flipV ? -1 : 1} scale ${num(-cx)} ${num(-cy)} translate\n`, "grestore\n"];
+      };
+
       // Recorte no formato do molde: as ops marcadas `recortar` (arte,
       // brasão, logo, textos) ficam dentro de um clip com o contorno.
       let recortando = false;
@@ -933,6 +1185,11 @@ const EPS = (function () {
             `${num(op.mm * k)} setlinewidth 1 setlinejoin stroke grestore\n`);
         } else if (op.tipo === "caminho") {
           const s = caminho(op.comandos);
+          if (op.contorno2) {
+            // Segundo contorno: por fora do primeiro (mm já é o total).
+            escrever(`gsave newpath\n${s}${cmykPs(op.contorno2.cmyk)} setcmykcolor ` +
+              `${num(op.contorno2.mm * 2 * k)} setlinewidth 1 setlinejoin 1 setlinecap stroke grestore\n`);
+          }
           if (op.contorno) {
             // Contorno por fora: traço com o dobro da espessura por baixo do
             // preenchimento — só a metade de fora fica visível.
@@ -943,6 +1200,8 @@ const EPS = (function () {
         } else if (op.tipo === "imagem") {
           const img = rec.imagens[op.chave];
           if (!img) return;
+          const [giraIni, giraFim] = giro(op);
+          escrever(giraIni);
           const nome = nomeImg[op.chave];
           const w = img.largura, h = img.altura;
           const mat = `[${w} 0 0 ${-h} 0 ${h}]`;
@@ -958,10 +1217,12 @@ const EPS = (function () {
           } else {
             s += `${dados} image\n`;
           }
-          escrever(s + "grestore\n");
+          escrever(s + "grestore\n" + giraFim);
         } else if (op.tipo === "eps") {
           const e = rec.eps[op.chave];
           if (!e) return;
+          const [giraIni, giraFim] = giro(op);
+          escrever(giraIni);
           const bw = e.bbox.x2 - e.bbox.x1, bh = e.bbox.y2 - e.bbox.y1;
           escrever(
             `BeginEPSF\n${X(op.x)} ${Y(op.y + op.h)} translate ` +
@@ -971,7 +1232,7 @@ const EPS = (function () {
             `%%BeginDocument: ${String(op.chave).replace(/[^\w:.-]/g, "_")}.eps\n`
           );
           pedacos.push(e.bytes);
-          escrever("\n%%EndDocument\nEndEPSF\n");
+          escrever("\n%%EndDocument\nEndEPSF\n" + giraFim);
         }
       });
       if (recortando) escrever("grestore\n");
@@ -988,21 +1249,30 @@ const EPS = (function () {
     lerBoundingBox,
     tamanhoMmDoBbox,
     layoutTexto,
+    elementosDaPecaNoTime,
+    textoDoElemento,
+    transformarComandos,
+    transformacaoDoElemento,
+    sombraDoElemento,
     textoDoCampo,
     caixaEfetiva,
     caixaArte,
     encaixarProporcional,
     empacotar,
     elementoDoTime,
-    chaveDoElemento,
     imagemLivre,
     montarBlocos,
+    moldeVirtual,
+    medidasEtiqueta,
+    PECAS_VIRTUAIS,
+    REFORCO_LARGURA_MM,
     arteDaPeca,
     detalheDaPeca,
     textoDoMarcador,
     marcadorDaPeca,
     contornoDePdf,
     comandosDoContorno,
+    poligonosDoContorno,
     contornoComSangria,
     estimarTamanho,
     ascii85,

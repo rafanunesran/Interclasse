@@ -14,6 +14,8 @@ Funciona 100% no navegador (HTML/CSS/JS puro) hospedado no GitHub Pages, usando 
 - **`turma.html`** — endereço antigo da página do pedido, mantido só como redirecionamento para `time.html` (os links já compartilhados com os representantes continuam funcionando).
 - **`superadmin.html`** — **Super Admin**: cadastra os clientes, cria times (com senha própria para cada um e o contato do representante), controla o **status do pedido** (Aberto → Fechado → Pagamento em andamento → Pagamento encerrado → Impressão → Costura → Logística → Entregue ao representante) por um seletor em cada time, edita qualquer time e exporta os CSVs gerais (produção e conferência). Na aba **Produção** dá para montar **levas** — escolher camiseta por camiseta, de times e clientes diferentes, acrescentar unidades avulsas (professores, reposição) e baixar **um CSV por modelo de camiseta** (ver [Aba Produção](#aba-produção-levas-e-um-csv-por-modelo)). Só o Super Admin muda o status (a única exceção é o fechamento automático pela data limite). Também é onde se ajustam os **preços** (geral e o preço próprio de cada time), os **tamanhos de camiseta** e as **configurações gerais** (título do evento, texto do rodapé e um interruptor para abrir/fechar os cadastros de todos os times de uma vez). É uma página protegida: quem não estiver logado como administrador é mandado de volta para o login.
 
+O login do administrador **fica salvo** no navegador e só cai depois de **24h sem nenhum uso** do Super Admin (clique, tecla ou rolagem em qualquer aba); aí o site pede a senha de novo. Abrir a loja ou a página de um pedido no mesmo navegador não derruba mais o login do admin.
+
 O **painel administrativo** é protegido por login de verdade (Firebase Authentication, e-mail/senha), e as regras do Firestore só deixam a conta administradora criar times e alterar tamanhos/configurações. Já a **senha de cada time** é uma proteção simples conferida no site, apenas para evitar edições por engano ou por curiosos — não é um sistema com dados sigilosos.
 
 ## Passo a passo da configuração
@@ -140,6 +142,18 @@ clientes diferentes ficam separados, sem se misturarem em nenhuma tela.
 - **Link do cliente:** `index.html?cliente=ID-DO-CLIENTE` abre a tela inicial já com os
   times daquele cliente — é o link para compartilhar com ele. Sem o parâmetro, a tela
   inicial mostra a lista de clientes para escolher.
+- **Ocultar da loja:** o botão **Ocultar da loja** (aba **Clientes**, no card do cliente,
+  ou time aberto → **Configuração** → *Visibilidade na loja*) tira o cliente — com todos os
+  times dele — ou um time só da loja (`index.html`), inclusive do link
+  `index.html?cliente=...`. Nada é apagado: o painel continua mostrando tudo (com o selo
+  *Oculto na loja*), e o link direto do time (`time.html?id=...`) continua abrindo para
+  quem já o tem. **Mostrar na loja** desfaz.
+- **Ocultar o preço:** time aberto → **Configuração** → *Visibilidade para o cliente* →
+  **Ocultar o preço**. O pedido continua na loja e a página dele abre normalmente (lista,
+  status, tamanhos), mas **sem o valor da camiseta**: some do card da loja, do topo da página
+  do pedido, da aba de tamanhos (que passa a se chamar só *Tamanhos*), dos botões *Pagar* e
+  da barra do carrinho. O pagamento continua funcionando — o valor aparece só na tela do PIX,
+  na hora de pagar. **Mostrar o preço** desfaz.
 - **No Financeiro**, com mais de um cliente na conta, a *Visão geral* ganha o quadro
   **Por cliente** (previsto, recebido, a receber, % e lucro) e a tabela por time ganha a
   coluna do cliente. Os CSVs do Financeiro e o de conferência também trazem o cliente.
@@ -285,7 +299,7 @@ leva das demais.
 
 ## Aba Financeiro (Super Admin)
 
-A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
+A aba **Financeiro** tem sete visões, escolhidas pelas sub-abas no topo. Todas usam o preço em vigor em cada time (a tabela geral da aba **Pagamentos** ou o [preço personalizado do time](#preço-personalizado-por-time)) e os custos de impressão/costureira por grupo (aba **Tamanhos**), e atualizam em tempo real conforme os pagamentos entram.
 
 - **Visão geral** — previsto, recebido e a receber; percentual recebido; custos, taxas do Mercado Pago e lucro (previsto e realizado); quanto entrou hoje e nos últimos 7 dias; e o resumo por time. Os cards **Custos previstos** e **Lucro realizado** abrem um detalhe ao clique: o primeiro quebra o custo em impressão e costureira; o segundo mostra a conta inteira — receita recebida, os **custos realizados** (impressão + costureira das camisetas já pagas) e as taxas do Mercado Pago e o custo das **camisetas internas** (que não têm receita, mas são produzidas). Na tabela por time, a coluna *Custo prev.* também abre o detalhe daquele time.
 - **Extrato diário** — o que entrou em cada dia, com quantidade, PIX, dinheiro, total do dia, taxa do Mercado Pago e acumulado no período. Clique num dia para abrir a lista de pagamentos daquele dia (hora, aluno, time, tamanho, forma, taxa e líquido).
@@ -293,9 +307,15 @@ A aba **Financeiro** tem cinco visões, escolhidas pelas sub-abas no topo. Todas
 - **A receber** — fila de conferência dos alunos que avisaram que pagaram (com botão para confirmar o recebimento), tempo em aberto das pendências por faixa (até 3 dias, 4 a 7, 8 a 15, mais de 15), pendências por time e as maiores pendências individuais.
 - **Resultado (DRE)** — demonstrativo da receita menos os custos (impressão, costureira, as camisetas internas e as taxas do Mercado Pago), lucro previsto e realizado, margem, ticket médio, custo médio unitário e a rentabilidade por time e por grupo de tamanho.
 
+- **Movimentações** — o **caixa**: lance à mão os **saques** (dinheiro que você retira), os **pagamentos** (despesas pagas: impressão, costureira, malha, frete...) e **entradas** avulsas (aporte, ajuste). Cada lançamento tem valor, data, descrição, forma (PIX, transferência, dinheiro...), categoria (nos pagamentos) e, se quiser, o time. O card **Disponível para saque** mostra o *lucro realizado* (o mesmo da Visão geral: recebido − custos das camisetas pagas − taxas do Mercado Pago − internas) menos tudo o que já foi sacado, com os saques do período logo abaixo. O card **Saldo em caixa** mostra *recebido dos pedidos (líquido da taxa do Mercado Pago) + entradas − saques − pagamentos*. Abaixo fica o **histórico**, com filtro de período, time e tipo. Nada é apagado: **Cancelar** tira o lançamento do saldo, mas ele continua no histórico (riscado, com a data e o motivo) — marque *Mostrar canceladas* para vê-los. Um pagamento pode ficar como **A pagar** (conta em aberto): ele aparece no aviso *Contas a pagar*, não sai do saldo e ganha o botão **Marcar como pago** para quando for quitado. Um pagamento também pode ser ligado a um **lote** (ver abaixo); os que não estão num lote não mudam o DRE.
+
 O **Extrato diário** e a **Evolução** têm filtro de período (hoje, 7 dias, 30 dias, tudo ou um intervalo personalizado) e filtro por time; a visão **A receber** tem só o filtro por time, porque mostra sempre a situação de hoje.
 
-O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`) ou o DRE completo (`resultado-interclasse.csv`).
+O botão **Exportar CSV da visão** baixa exatamente a visão aberta: resumo por time (`financeiro-interclasse.csv`), extrato analítico com uma linha por pagamento (`extrato-recebimentos.csv`), consolidado por dia (`recebimentos-por-dia.csv`), pendências (`a-receber-interclasse.csv`), o DRE completo (`resultado-interclasse.csv`), o histórico de movimentações (`movimentacoes-interclasse.csv`) ou os custos por lote (`custos-por-lote-interclasse.csv`).
+
+- **Custos por lote** — cada **lote** é uma leva da aba **Produção**. Lance o que foi gasto nele (ex.: *Lote 1 — impressão R$ 800*, botão **+ Lançar custo**) e o site divide o total pelo número de unidades do lote: esse é o **custo real por unidade** daquelas camisetas, que passa a valer no Financeiro inteiro (Visão geral, DRE, lucro previsto e realizado) no lugar da estimativa. **Impressão** e **Costureira** substituem o custo da aba Tamanhos; as outras categorias (malha, frete, material…) somam como *outros custos*. Se entrar ou sair camiseta do lote, o custo por unidade é recalculado na hora. As camisetas que **ainda não foram para a produção** (fora de lote com custo) passam a usar o **custo projetado** pelo lote mais recente com custo de cada categoria: em Impressão e Costureira, a tabela da aba Tamanhos é corrigida pelo mesmo fator (real ÷ tabela daquele lote), mantendo a diferença entre os tamanhos; em malha, frete e outros, vale o custo por unidade do lote. O quadro *Custo projetado* mostra o que está valendo. A tabela compara o custo real por unidade com o da tabela e mostra a diferença. **Impressão por metro linear:** o botão **📏 Impressão por metro** de cada lote encaixa num rolo só as peças de todas as camisetas do lote — os moldes reais de cada tamanho (aba Tamanhos), reforço de ombro e etiqueta, com a faca de 3 mm — usando a largura útil do rolo, o espaço entre peças e o giro, igual à folha EPS. Ele mostra o comprimento do encaixe, o aproveitamento, a área perdida e o *mínimo teórico* (área das peças ÷ largura, 100% de aproveitamento). O encaixe do site é retangular; se o arquivo final foi reorganizado para aproveitar melhor o espaço, informe os **metros do arquivo final** — o custo usa eles. Com o preço por metro, sai o custo total e o custo de impressão por tamanho, e **Lançar como custo de impressão do lote** grava o pagamento (com os metros, o preço e o aproveitamento guardados). O custo de **impressão** de um lote é sempre rateado pela **área das peças** de cada camiseta — um GG paga mais que um P, e o espaço entre as peças e a sobra do rolo se dividem na mesma proporção; se faltar o molde de algum tamanho, a divisão volta a ser igual por unidade. Costureira e os demais custos continuam iguais por unidade. As unidades **avulsas** do lote (sem pedido) também recebem a sua parte, que aparece como *Custo das avulsas dos lotes* (só com o seletor Cliente em *Todos*). O custo do lote é um pagamento comum: também aparece em Movimentações (e sai do saldo quando estiver pago). O card de cada leva na aba Produção mostra o total e o custo por unidade.
+
+> As movimentações ficam na coleção `movimentacoes` do Firestore, que só a conta administradora lê e grava. Depois de atualizar, **republique o `firestore.rules`** no console do Firebase — sem isso a aba mostra um aviso e não consegue lançar.
 
 ### Taxas do Mercado Pago
 
@@ -490,50 +510,49 @@ comprido **encolhe** (ou é **comprimido** na largura) e nunca sai dela. No text
 **contorno**, alinhamento, maiúsculas. Nos outros tamanhos as caixas acompanham a proporção do
 molde (dá para ajustar um tamanho específico).
 
-O layout **geral** vale para todos os times. Em **Editando**, escolha um **cliente** ou um
-**time** para mexer só nele (ver *Níveis da arte* abaixo). **⬇ EPS de teste** baixa a peça
-aberta com o apelido e o número de teste, usando os arquivos do time da prévia e o nível aberto.
-
-### Níveis da arte: geral → cliente → time → goleiro
-
-A arte de uma camiseta é montada em níveis, do mais geral ao mais específico. O que um nível não
-muda segue o de cima:
-
-| Nível | Onde se edita | Vale para |
-|---|---|---|
-| **Geral** | aba Artes → *Layout geral* | todos os times |
-| **Cliente** | aba Artes → *Cliente: …* (ou aba Clientes → **🎨 Arte do cliente**) | só os times daquele cliente — **os outros clientes nunca veem** |
-| **Time** | time aberto → **Editar arte** | só aquele time |
-| **Goleiro** | time aberto → Editar arte → **🧤 Goleiro** | só a camiseta do goleiro do time |
-
-Em qualquer nível dá para:
-
-- **ajustar** um elemento que veio de cima — posição, tamanho da letra, cores, ocultar ou mostrar
-  de novo (ex.: um cliente **sem o logo**, ou com o **nome em outra cor/fonte**);
-- **acrescentar elementos** que só existem ali: **+ Imagem** (PNG 600 dpi ou EPS — um
-  patrocinador, um selo, um desenho), **+ Texto** (texto fixo, igual em todas as camisetas) e
-  também brasão, logo, detalhe, nome e número;
-- mudar a **ordem das camadas**.
-
-**Camadas:** o painel à direita lista os elementos da peça de cima (frente) para baixo; a arte
-da peça fica sempre no fundo. **👁** mostra/oculta, **↑ ↓** sobem/descem a camada, e cada uma
-pode ganhar um **nome**. Os selos dizem de onde o elemento veio (*cliente*, *time*, *goleiro*) e o
-que o nível aberto mudou nele (*posição*, *estilo*, *oculto*/*mostrado*). **Voltar ao de cima**
-desfaz o ajuste do nível; **Voltar à ordem de cima** esquece a ordem própria. **Duplicar** cria uma
-cópia só no nível aberto; **Excluir** só aparece nos elementos do próprio nível. Mover a caixa
-**no tamanho base** num nível faz os outros tamanhos seguirem proporcionais a ela (menos os que
-aquele nível ajustou um a um).
-
-Onde fica: geral em `config/layout`; cliente em `clientes/{id}.arte`
-(`ajustes`, `elementos`, `ordem`); time em `producao.layoutAjustes`, `producao.elementos` e
-`producao.ordem`; goleiro nos mesmos campos dentro de `producao.goleiro`. A folha EPS, a prévia,
-o mockup e a prévia do cliente já saem com tudo isso.
+O layout **geral** vale para todos os times. Em **Editando**, escolha um time para um **ajuste
+próprio** dele (só a posição; **Voltar ao layout geral** desfaz). **⬇ EPS de teste** baixa a peça
+aberta com o apelido e o número de teste, usando os arquivos do time.
 
 ### Logo da empresa (aba **Configurações**)
 
 O seu logo em **EPS**, o mesmo para todos os times, para usar como detalhe das camisetas. Na
 aba Artes, **+ Logo** coloca uma caixa dele em qualquer peça (proporção mantida, ajuste por time
 como o brasão). O EPS entra intacto na folha.
+
+### Reforço de ombro (aba **Tamanhos**)
+
+Cada camiseta leva na folha um **retalho de reforço de ombro**: uma tira de **25 mm** de largura,
+em cor sólida, com a mesma faca de 3 mm das outras peças e o marcador da costureira
+("TIME-TAM-Reforço de ombro").
+
+- **Comprimento:** coluna **Reforço de ombro** da tabela de moldes, em mm por tamanho. Tamanho sem
+  comprimento fica sem reforço, e a geração avisa.
+- **Cor:** a padrão fica logo abaixo da tabela, em CMYK %. Cada time pode ter a sua em
+  **Arquivos de produção → Cor do reforço de ombro**, com o botão "Usar a padrão" para voltar.
+  Tudo 0 = sem tinta.
+
+### Etiqueta de tamanho (aba **Artes** → **Etiqueta**)
+
+Uma **etiqueta modelo**, montada uma vez só e gerada sozinha para cada camiseta. Sai uma por
+camiseta na folha, com a faca de 3 mm em volta.
+
+- **Medidas e fundo:** sem nada selecionado, o painel mostra a largura e a altura (mm) e a cor de
+  fundo (CMYK).
+- **Elementos:**
+  - **+ Tamanho**: o tamanho da camiseta (P, M, G…).
+  - **+ Nome do time**.
+  - **+ Nome / apelido**.
+  - **+ Texto fixo**: escreva o texto no painel, por exemplo "LAVAR DO AVESSO".
+  - **+ Logo** e **+ Brasão**.
+- **Estilo dos textos:** usam a fonte do time e têm o mesmo painel de cor, contorno e alinhamento.
+  No campo "Texto" dá para trocar o que cada um mostra.
+- **Ver outro tamanho:** o seletor de tamanho do rodapé troca só o tamanho de amostra; a etiqueta
+  tem o mesmo tamanho em todas as camisetas.
+- **Ajuste por time:** como nas outras peças, em **Editar arte** do pedido.
+
+A etiqueta só entra na folha quando tem pelo menos um elemento. A prévia "Arte" do time mostra o
+reforço e a etiqueta do tamanho escolhido.
 
 ### Editar arte (time aberto → aba **Editar arte**)
 
@@ -545,12 +564,12 @@ o resto continua seguindo o layout geral:
   **cor/espessura do contorno** (CMYK), alinhamento, espaço entre letras, maiúsculas e o que
   fazer com texto comprido;
 - nas imagens (brasão, logo, detalhe): **manter proporção** ou esticar (o **detalhe da manga estica por padrão**, na largura e na altura, para a arte se adaptar à caixa);
-- **Ocultar** (ex.: um time sem o logo) — o elemento aparece apagado no editor.
+- **Ocultar neste time** (ex.: um time sem o logo) — o elemento aparece apagado no editor.
 
-Dá também para acrescentar imagens e textos só deste time e mudar a ordem das camadas — ver
-*Níveis da arte* acima. **Voltar ao de cima** desfaz o ajuste daquele elemento; **Voltar só a
-posição** mantém o estilo. Quando o time é de um cliente com arte própria, o aviso do editor tem
-o atalho **Editar a arte do cliente**.
+A lista de elementos mostra os selos *posição do time*, *estilo do time* e *oculto*. **Voltar ao
+layout geral** desfaz tudo daquele elemento; **Voltar só a posição** mantém o estilo. A folha
+EPS, a prévia, o mockup e a prévia do cliente já saem com os ajustes (guardados em
+`producao.layoutAjustes` do time).
 
 ### Prévia do time (time aberto → Arquivos de produção)
 
@@ -561,6 +580,23 @@ o atalho **Editar a arte do cliente**.
   multiplicada pelas sombras do tecido, então as dobras continuam aparecendo; a gola recebe a
   cor da arte da gola. **Baixar PNG** salva a imagem para mandar ao cliente. As fotos base ficam
   em `img/mockup/` e as regiões (corpo, mangas, gola) de cada foto em `js/mockup.js`.
+
+### Mockup 3D
+
+O mockup (prévia do time → **Mockup**, e as imagens da prévia do cliente) é montado em **3D** no
+navegador, com a camiseta **gola V fantasma** gerada no Tripo (`img/mockup3d/camiseta-v.glb`, sem
+manequim). A arte entra por
+projeção (`js/mockup3d.js`): frente e costas de frente/de trás, mangas em volta do braço (o
+detalhe segue a manga, sem espelhar) e a gola com a cor média da arte da gola.
+
+- **Cena**: duas camisetas fantasma (uma de frente e outra de costas); **Frente** e **Costas**:
+  uma camiseta. **🔄 Girar 3D** abre a camiseta para girar com o mouse/dedo.
+- Sem WebGL (ou sem internet para o three.js), cai no mockup em foto (`js/mockup.js`).
+- O three.js vem do jsDelivr (import map no `superadmin.html` e no `time.html`) e só é baixado
+  quando o 3D é usado.
+- **Trocar o modelo**: gere o GLB (camiseta branca lisa, simétrica, de frente), rode
+  `node tools/simplificar-glb.mjs entrada.glb img/mockup3d/camiseta-v.glb 0.02` e ajuste as
+  medidas em `CAL` no topo de `js/mockup3d.js` (altura do molde, eixo das mangas, cava, gola).
 
 ### Prévia para o cliente
 
@@ -576,6 +612,37 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
   layout daquele time (só se o time não tiver imagens postadas). Mudanças no layout geral valem
   para todos os times e não disparam sozinhas: use o botão nos times que quiser atualizar.
 - Imagens postadas à mão sempre têm prioridade.
+- Junto com as imagens vão as **texturas das peças** (`previaCliente.texturas`): a página do pedido
+  mostra o botão **🔄 Ver em 3D**, que abre a camiseta em 3D para o cliente girar (o 3D só é
+  baixado ao tocar no botão; as texturas vêm pelo Apps Script).
+- **Goleiro**: se o time tem a variante do goleiro (arquivos ou ajustes próprios), a prévia também
+  gera as imagens e o 3D da camiseta do goleiro (`previaCliente.goleiro`), com a etiqueta
+  **GOLEIRO** na imagem e a legenda "🧤 Goleiro — …" na galeria; no **Ver em 3D** o cliente troca
+  entre **Camiseta** e **🧤 Goleiro**.
+
+### Ferramentas do editor
+
+- **Desfazer/refazer** (botões no topo, <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), **copiar/colar/duplicar**
+  (<kbd>Ctrl+C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, no layout geral), <kbd>Delete</kbd> apaga (no time: oculta só nele),
+  setas movem 1 mm (<kbd>Shift</kbd>: 10 mm).
+- **Camadas**: a lista mostra o que fica por cima primeiro; cadeado **trava** o elemento (não mexe ao
+  arrastar) e, no time, o olho oculta. **Organizar**: alinhar na peça (esquerda, centro, direita, topo,
+  meio, base) e a ordem das camadas.
+- **Guias magnéticas** ao arrastar (bordas e centro da peça e dos outros elementos; segure <kbd>Alt</kbd>
+  para soltar livre) e **réguas** em mm.
+- **Girar e espelhar** (campo em graus, ±90°, espelho horizontal/vertical ou a bolinha em cima da caixa).
+- **Efeitos no texto**: arco (negativo curva para baixo), itálico, sombra e segundo contorno. Com arco ou
+  itálico o texto é reencaixado e continua sem sair da caixa.
+- **Cores**: o **conta-gotas** pega a cor de um ponto da arte (clique nele e depois no desenho); a amostra
+  abre o seletor de cor. A cor vira CMYK pela conversão simples (K = 1 − máx(R,G,B)).
+
+- **Dentro do pedido** (time aberto → **Editar arte**) valem as mesmas ferramentas. Além de ajustar os
+  elementos do layout geral só para aquele time, dá para **adicionar elementos só dele** (nome, número,
+  brasão, logo, detalhe), duplicar, copiar/colar e reordenar — eles aparecem nas Camadas com o selo
+  **só do time** e não mudam os outros times. Do layout geral, <kbd>Delete</kbd> apenas oculta no time.
+  No goleiro, a primeira mudança nos elementos do time copia a lista da camiseta comum para ele.
+
+Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
 
 ### Gerar (aba **Produção**)
 
@@ -589,7 +656,8 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
 
 Cada peça leva um **marcador para a costureira** dentro da área de impressão:
 **`Time-Tamanho-Peça`** (ex.: `7B-P-Frente`), com **4 mm** de altura, centralizado a **1 mm da
-base** da peça. Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo
+borda de baixo do molde** (seguindo o contorno — barra curva, manga que afina —, sempre dentro da
+área de impressão e fora da faca de 3 mm). Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo
 para cima), também a 1 mm da borda e com 4 mm. Dá para desligar no diálogo.
 
 Sai **um EPS por time** (camisetas avulsas vão para o time do mesmo modelo; os goleiros saem num
@@ -657,7 +725,8 @@ Para configurar, entre no **Super Admin → Pagamento (PIX)** e preencha:
 ### Preço personalizado por time
 
 Dá para cobrar um valor diferente em um time específico (patrocínio, tecido
-diferente, time que fechou em outra data…), sem mexer no preço dos outros.
+diferente, time que fechou em outra data…), sem mexer no preço dos outros. Para um
+cliente inteiro, veja [Preço por cliente](#preço-por-cliente).
 
 1. No **Super Admin → Inicial**, abra o time → **Configuração** → **Tabela especial de preço**.
 2. Preencha só os grupos que devem mudar (ex.: Normal R$ 50) e clique em **Salvar preços do time**.
@@ -676,14 +745,60 @@ Para conferir tudo de uma vez, a aba **Pagamentos** tem a tabela **"Preço em vi
 uma linha por time, uma coluna por grupo, com os preços próprios em destaque e os da tabela
 geral em cinza.
 
-> Onde ficam guardados: em `config/geral`, no campo `precosPorTime` (`{ "id-do-time": { "Normal": 50 } }`).
-> É de propósito: `config/geral` só pode ser gravado pela conta administradora, então o
-> representante do time não consegue alterar o próprio preço — nem no site, nem na cobrança
-> do Mercado Pago, que também calcula o valor a partir desse documento.
->
-> O campo se chamava `precosPorTurma` antes da renomeação. O site continua **lendo** o nome
-> antigo (para não perder o que já foi salvo) e **grava nos dois**, para o backend do
-> Mercado Pago ainda não republicado continuar cobrando o valor certo.
+### Preço por cliente
+
+Para um cliente inteiro (uma escola, uma empresa) pagar um valor diferente, sem configurar
+time por time: **Super Admin → Clientes** → no card do cliente, **Preço da camiseta para este
+cliente**. Preencha os grupos que mudam e clique em **Salvar preços do cliente**.
+
+A ordem é, grupo a grupo: **tabela geral → preço do cliente → preço do time**. Um time com
+tabela especial própria ainda ganha do preço do cliente; os campos em branco usam o nível de
+baixo (cada campo mostra qual: "Cliente: R$ 42,00" ou "Geral: R$ 50,00"). Vale no PIX, no
+Mercado Pago, no carrinho e no Financeiro. A tabela **"Preço em vigor por time"** (aba
+Pagamentos) marca os times com preço *do cliente* e com preço *próprio*.
+
+### Preço especial de uma camiseta
+
+Para vender **uma unidade** por um valor diferente (desconto, irmão, bolsista, combinado
+com alguém): Super Admin → abra o time → aba **Lista** → na coluna **Pagamento** de cada
+camiseta, logo abaixo da forma de pagamento, há o campo **R$**. Preencha o valor e saia do
+campo: aquela camiseta passa a ser vendida por esse valor. Em branco, vale o preço do
+tamanho (o número em cinza no campo). O campo fica roxo quando a camiseta tem preço especial.
+
+O valor vale em tudo:
+
+- no **pagamento** (botão *Pagar* da linha, carrinho, PIX e Mercado Pago);
+- no **Financeiro** inteiro: previsto, recebido, a receber, extrato, **custos e lucros**, o
+  **DRE** (receita, lucro, margem, ticket médio e a rentabilidade por time e por grupo) e as
+  Movimentações. O custo da camiseta continua o do tamanho, então o lucro dela muda junto.
+
+Mudar o valor de uma camiseta **já paga** pede confirmação, porque altera o recebido e o
+lucro. Para uma cortesia (sem receita, só custo), use a forma **Interno (só custo)**. O valor
+fica no documento de preços do time (`precos/time_ID`, campo `porAluno`), com o mesmo
+sigilo dos outros preços especiais.
+
+### Sigilo dos preços especiais
+
+O preço combinado com um cliente **não aparece para os outros**:
+
+- Na **loja** (`index.html`), o card de um time com preço especial (do cliente ou do time)
+  fica **sem preço** na vitrine de todos. O valor só aparece no card quando a loja está
+  filtrada pelo próprio cliente — o link `index.html?cliente=ID` que você manda a ele — e na
+  página do pedido.
+- Os valores ficam na coleção `precos` do Firestore (documentos `cliente_ID` e `time_ID`). As
+  regras deixam ler **um** documento pelo id (a página do pedido precisa do preço dela), mas
+  só a conta administradora consegue **listar** a coleção. Então nem pelas ferramentas do
+  navegador alguém consegue ver os preços de todos os clientes. O cliente e o time guardam só
+  a marca `temPrecoEspecial`, sem o valor.
+- Antes, os preços por time ficavam em `config/geral` (`precosPorTime`), que qualquer um
+  consegue ler. Ao abrir o Super Admin, o painel **move esses preços para a coleção nova
+  sozinho** e apaga o campo antigo.
+
+> Depois de atualizar: **republique o `firestore.rules`** no console do Firebase (sem isso a
+> tabela de preço mostra um aviso e a mudança de lugar dos preços fica para depois). Se você
+> usa o Mercado Pago, confira se a Vercel publicou o backend novo (`mp-backend`) — ele
+> passou a ler a coleção `precos`. Se o projeto da Vercel está ligado ao GitHub, isso
+> acontece sozinho quando o `main` é atualizado.
 
 ### Carrinho: pagar várias camisetas de uma vez
 
