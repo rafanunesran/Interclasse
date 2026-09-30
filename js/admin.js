@@ -28,6 +28,9 @@ let buscaFiltro = "";
 
 // Seção "Arquivados" (pedidos finalizados) da aba Inicial aberta ou recolhida.
 let arquivadosAbertos = false;
+// Times marcados na lista para mudar o status de uma vez (ids).
+const selecaoTimesStatus = new Set();
+let statusEmMassa = ""; // status escolhido na barra de seleção
 
 const elPainel = document.getElementById("painelAdmin");
 const elEmailLogado = document.getElementById("emailLogado");
@@ -867,6 +870,11 @@ function renderizarListaTimes() {
     return;
   }
 
+  // Marcados que sumiram da lista (outro cliente, busca, time excluído) saem
+  // da seleção: a ação em massa só vale para o que está na tela.
+  [...selecaoTimesStatus].forEach((id) => { if (!ids.includes(id)) selecaoTimesStatus.delete(id); });
+  elListaTimesAdmin.appendChild(criarBarraStatusEmMassa(ids));
+
   // Pedidos finalizados vão para o "arquivo": uma seção recolhível no fim.
   const idsAtivos = ids.filter((id) => !pedidoFinalizado(estadoTimes[id].time));
   const idsArquivados = ids.filter((id) => pedidoFinalizado(estadoTimes[id].time));
@@ -917,6 +925,89 @@ function renderizarListaTimes() {
   }
 }
 
+// Barra da seleção em massa: "selecionar todos" e, com algo marcado, o
+// status novo e o botão que aplica em todos os times marcados.
+function criarBarraStatusEmMassa(ids) {
+  const barra = document.createElement("div");
+  const n = selecaoTimesStatus.size;
+  barra.className = "barra-status-massa" + (n > 0 ? " ativa" : "");
+
+  const rotuloTodos = document.createElement("label");
+  rotuloTodos.className = "check-massa";
+  const chkTodos = document.createElement("input");
+  chkTodos.type = "checkbox";
+  chkTodos.checked = n > 0 && n === ids.length;
+  chkTodos.indeterminate = n > 0 && n < ids.length;
+  chkTodos.onchange = () => {
+    if (chkTodos.checked) ids.forEach((id) => selecaoTimesStatus.add(id));
+    else selecaoTimesStatus.clear();
+    renderizarTimesAdmin();
+  };
+  rotuloTodos.appendChild(chkTodos);
+  rotuloTodos.appendChild(document.createTextNode(
+    n > 0 ? ` ${n} time(s) selecionado(s)` : ` Selecionar todos (${ids.length})`));
+  barra.appendChild(rotuloTodos);
+
+  if (n === 0) {
+    const ajuda = document.createElement("span");
+    ajuda.className = "pix-ajuda";
+    ajuda.textContent = "Marque os times para mudar o status de vários de uma vez.";
+    barra.appendChild(ajuda);
+    return barra;
+  }
+
+  const sel = document.createElement("select");
+  sel.className = "select-status";
+  sel.innerHTML = '<option value="">Mudar status para…</option>' +
+    STATUS_PEDIDO.map((s) => `<option value="${s.id}">${escapeHtmlAdmin(s.label)}</option>`).join("");
+  sel.value = statusEmMassa;
+  sel.onchange = () => {
+    statusEmMassa = sel.value;
+    btnAplicar.disabled = !statusEmMassa;
+  };
+  barra.appendChild(sel);
+
+  const btnAplicar = document.createElement("button");
+  btnAplicar.type = "button";
+  btnAplicar.className = "primario";
+  btnAplicar.textContent = "Aplicar";
+  btnAplicar.disabled = !statusEmMassa;
+  btnAplicar.onclick = () => aplicarStatusEmMassa();
+  barra.appendChild(btnAplicar);
+
+  const btnLimpar = document.createElement("button");
+  btnLimpar.type = "button";
+  btnLimpar.className = "secundario";
+  btnLimpar.textContent = "Limpar seleção";
+  btnLimpar.onclick = () => {
+    selecaoTimesStatus.clear();
+    renderizarTimesAdmin();
+  };
+  barra.appendChild(btnLimpar);
+  return barra;
+}
+
+function aplicarStatusEmMassa() {
+  const novo = statusEmMassa;
+  const ids = [...selecaoTimesStatus].filter((id) => estadoTimes[id]);
+  if (!novo || ids.length === 0) return;
+  const mudar = ids.filter((id) => statusPedidoDe(estadoTimes[id].time) !== novo);
+  if (mudar.length === 0) {
+    alert(`Os ${ids.length} time(s) selecionado(s) já estão em "${labelStatus(novo)}".`);
+    return;
+  }
+  const nomes = mudar.map((id) => "• " + estadoTimes[id].time.nome).slice(0, 15).join("\n") +
+    (mudar.length > 15 ? `\n… e mais ${mudar.length - 15}` : "");
+  if (!confirm(
+    `Mudar o status de ${mudar.length} time(s) para "${labelStatus(novo)}"?\n\n${nomes}` +
+    (mudar.length < ids.length ? `\n\n(${ids.length - mudar.length} já estão nesse status.)` : "")
+  )) return;
+  mudar.forEach((id) => atualizarStatusPedido(id, novo));
+  selecaoTimesStatus.clear();
+  statusEmMassa = "";
+  renderizarTimesAdmin();
+}
+
 function criarListaDeLinhas(ids, termosBusca) {
   const lista = document.createElement("div");
   lista.className = "lista-times-admin";
@@ -952,7 +1043,11 @@ function criarLinhaTime(timeId, termosBusca) {
     sinais.push(`<span class="sinal sinal-oculto" title="${time.oculto === true ? "Time oculto na loja" : "Cliente oculto na loja"}">${icone("eye-off")}</span>`);
   }
 
+  if (selecaoTimesStatus.has(timeId)) linha.classList.add("selecionada");
   linha.innerHTML = `
+    <label class="check-linha-time" title="Selecionar para mudar o status em massa">
+      <input type="checkbox" aria-label="Selecionar o time ${escAttr(time.nome)}" ${selecaoTimesStatus.has(timeId) ? "checked" : ""} />
+    </label>
     <span class="linha-time-avatar">${avatar}</span>
     <span class="linha-time-texto">
       <span class="linha-time-nome">${escapeHtmlAdmin(time.nome)}</span>
@@ -966,6 +1061,15 @@ function criarLinhaTime(timeId, termosBusca) {
 
   // O link do WhatsApp abre a conversa, não o time.
   linha.querySelectorAll("a").forEach((a) => a.addEventListener("click", (ev) => ev.stopPropagation()));
+  // A caixa de seleção marca o time para a mudança em massa, sem abri-lo.
+  const rotuloChk = linha.querySelector(".check-linha-time");
+  rotuloChk.addEventListener("click", (ev) => ev.stopPropagation());
+  rotuloChk.addEventListener("keydown", (ev) => ev.stopPropagation());
+  rotuloChk.querySelector("input").addEventListener("change", (ev) => {
+    if (ev.target.checked) selecaoTimesStatus.add(timeId);
+    else selecaoTimesStatus.delete(timeId);
+    renderizarTimesAdmin();
+  });
   const abrir = () => abrirTimeAdmin(timeId);
   linha.addEventListener("click", abrir);
   linha.addEventListener("keydown", (ev) => {

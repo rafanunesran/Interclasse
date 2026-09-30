@@ -211,7 +211,10 @@ o card de cada time (aba **Inicial**) tem o botão **+ Adicionar camiseta**.
 ## Status do pedido
 
 Cada time tem um **status**, mudado pelo Super Admin no card do pedido (aba **Inicial**) ou
-arrastando o card no **Kanban**. A ordem normal é a linha do tempo do pedido:
+arrastando o card no **Kanban**. Para mudar **vários de uma vez**, marque as caixas à esquerda
+dos times na lista da aba **Inicial** (ou **Selecionar todos**, que pega os times da lista
+atual, respeitando o cliente e a busca), escolha o status na barra do topo e clique em
+**Aplicar** — o site confirma antes, mostrando quais times vão mudar. A ordem normal é a linha do tempo do pedido:
 
 **Aberto** → **Pagamento 1º lote** → **Pagamento 1º lote encerrado** → **Pagamento 2º lote** →
 **Pagamento 2º lote encerrado** → **Finalizado**
