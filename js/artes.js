@@ -378,27 +378,138 @@ function timeNaVariante(time, goleiro) {
   return { ...time, producao: producaoDoGoleiro(producaoDoTime(time)) };
 }
 
-// Seletor "Camiseta comum | Goleiro" das abas do pedido.
-function criarSeletorVariante(timeId) {
+// ---------------- Arte de uma camiseta só ----------------
+// Uma camiseta da lista pode ter a arte própria — um logo a mais, um texto
+// diferente, algo oculto… — sem mudar as outras do time:
+// producao.individuais[alunoId] = { layoutAjustes, elementosExtras } (os
+// mesmos campos do time). Vai por cima do time (ou da camiseta do goleiro,
+// se ela for de goleiro); o que não mudar ali segue o time.
+const varianteIndividualTime = {}; // timeId -> alunoId aberto no "Editar arte"
+
+function alunoDoTime(timeId, alunoId) {
+  const e = estadoTimes[timeId];
+  return (e && alunoId && (e.alunos || []).find((a) => a.id === alunoId)) || null;
+}
+
+function editandoIndividual(timeId) {
+  const a = varianteIndividualTime[timeId];
+  return a && alunoDoTime(timeId, a) ? a : "";
+}
+
+function arteIndividual(prod, alunoId) {
+  return (alunoId && ((prod && prod.individuais) || {})[alunoId]) || null;
+}
+
+function temArteIndividual(time, alunoId) {
+  const a = arteIndividual(producaoDoTime(time), alunoId);
+  return !!(a && (Object.keys(a.layoutAjustes || {}).length || Object.keys(a.elementosExtras || {}).length));
+}
+
+// A produção de base de uma camiseta, antes da arte própria dela.
+function producaoBaseDaCamiseta(prod, goleiro) {
+  return goleiro ? producaoDoGoleiro(prod) : prod;
+}
+
+// A produção que vale para uma camiseta: a do time (ou goleiro) e, por
+// cima, a arte própria dela (ajustes mesclados, elementos acrescentados).
+function producaoDaCamiseta(prod, alunoId, goleiro) {
+  const base = producaoBaseDaCamiseta(prod, goleiro);
+  const ind = arteIndividual(prod, alunoId);
+  if (!ind) return base;
+  const extras = { ...(base.elementosExtras || {}) };
+  Object.entries(ind.elementosExtras || {}).forEach(([p, l]) => { extras[p] = (extras[p] || []).concat(l || []); });
+  const ajustes = {};
+  new Set([...Object.keys(base.layoutAjustes || {}), ...Object.keys(ind.layoutAjustes || {})]).forEach((p) => {
+    const c = (base.layoutAjustes || {})[p] || {};
+    const i = (ind.layoutAjustes || {})[p] || {};
+    const porPeca = {};
+    new Set([...Object.keys(c), ...Object.keys(i)]).forEach((id) => { porPeca[id] = mesclarAjusteGoleiro(c[id], i[id]); });
+    ajustes[p] = porPeca;
+  });
+  return { ...base, elementosExtras: extras, layoutAjustes: ajustes };
+}
+
+// O time "vestido" para uma camiseta (prévia, editor e folha EPS).
+function timeDaCamiseta(time, alunoId, goleiro) {
+  if (!time || !arteIndividual(producaoDoTime(time), alunoId)) return timeNaVariante(time, goleiro);
+  return { ...time, producao: producaoDaCamiseta(producaoDoTime(time), alunoId, goleiro) };
+}
+
+// Tira de producao.individuais o que ficou vazio.
+function limparIndividuaisVazios(prod) {
+  const ind = prod.individuais;
+  if (!ind) return;
+  Object.keys(ind).forEach((id) => {
+    const a = ind[id] || {};
+    if (a.layoutAjustes && !Object.keys(a.layoutAjustes).length) delete a.layoutAjustes;
+    if (a.elementosExtras && !Object.keys(a.elementosExtras).length) delete a.elementosExtras;
+    if (!Object.keys(a).length) delete ind[id];
+  });
+  if (!Object.keys(ind).length) delete prod.individuais;
+}
+
+// Nome curto de uma camiseta (apelido ou nome, e o número).
+function rotuloCamiseta(aluno) {
+  if (!aluno) return "";
+  const nome = aluno.nomeCamiseta || aluno.nome || "(sem nome)";
+  return aluno.numero ? `${nome} · ${aluno.numero}` : nome;
+}
+
+// "Arte" de uma camiseta na lista do time: abre o Editar arte nela.
+function abrirArteDaCamiseta(timeId, alunoId) {
+  varianteIndividualTime[timeId] = alunoId;
+  varianteGoleiroTime[timeId] = false;
+  layoutElSel = "";
+  const a = alunoDoTime(timeId, alunoId);
+  if (a) Object.assign(amostraLayout, { nomeCamiseta: a.nomeCamiseta || "", nome: a.nome || "", numero: a.numero || "" });
+  if (typeof abrirTimeAdmin === "function") abrirTimeAdmin(timeId, "editarArte");
+  // Já na aba (o endereço não muda): redesenha com a camiseta escolhida.
+  if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+}
+
+// Seletor "Camiseta comum | Goleiro" das abas do pedido. No Editar arte
+// (`comCamiseta`), também "Uma camiseta": a arte própria de uma só.
+function criarSeletorVariante(timeId, comCamiseta) {
   const time = estadoTimes[timeId] && estadoTimes[timeId].time;
-  const gol = editandoGoleiro(timeId);
+  const ind = comCamiseta ? editandoIndividual(timeId) : "";
+  const gol = !ind && editandoGoleiro(timeId);
+  const alunos = comCamiseta ? ((estadoTimes[timeId] && estadoTimes[timeId].alunos) || []).slice()
+    .sort((a, b) => rotuloCamiseta(a).localeCompare(rotuloCamiseta(b), "pt-BR")) : [];
+  const alunoInd = ind ? alunoDoTime(timeId, ind) : null;
   const wrap = document.createElement("div");
   wrap.className = "seletor-variante";
   wrap.innerHTML = `
     <div class="segmentado" role="tablist" aria-label="Variante da camiseta">
-      <button type="button" data-variante="" class="${gol ? "" : "ativo"}" aria-selected="${!gol}">Camiseta comum</button>
+      <button type="button" data-variante="" class="${gol || ind ? "" : "ativo"}" aria-selected="${!gol && !ind}">Camiseta comum</button>
       <button type="button" data-variante="goleiro" class="${gol ? "ativo" : ""}" aria-selected="${gol}">${icone("hand")} Goleiro${temVarianteGoleiro(time) ? " ●" : ""}</button>
     </div>
-    <span class="pix-ajuda">${gol
+    ${comCamiseta ? `<label class="campo-inline seletor-camiseta${ind ? " ativo" : ""}">${icone("shirt")} Uma camiseta
+      <select data-camiseta aria-label="Arte própria de uma camiseta"><option value="">— escolha —</option>${alunos.map((a) =>
+        `<option value="${escAttr(a.id)}"${a.id === ind ? " selected" : ""}>${escapeHtmlAdmin(rotuloCamiseta(a))}${temArteIndividual(time, a.id) ? " ●" : ""}${ehGoleiro(a) ? " (goleiro)" : ""}</option>`).join("")}</select></label>` : ""}
+    <span class="pix-ajuda">${ind
+      ? `Arte só da camiseta de <strong>${escapeHtmlAdmin(rotuloCamiseta(alunoInd))}</strong>: um logo a mais, um texto diferente, algo oculto… O que não mudar aqui segue ${ehGoleiro(alunoInd) ? "a camiseta do goleiro" : "o time"}. As outras camisetas não mudam.`
+      : gol
       ? "Arquivos e ajustes só da camiseta do goleiro. O que não for enviado ou mudado aqui usa o da camiseta comum."
-      : "Arquivos e ajustes da camiseta de todos. Troque para “Goleiro” para enviar artes diferentes para ele."}</span>`;
+      : `Arquivos e ajustes da camiseta de todos. Troque para “Goleiro” para enviar artes diferentes para ele${comCamiseta ? ", ou escolha “Uma camiseta” para mudar só a de uma pessoa" : ""}.`}</span>`;
   wrap.querySelectorAll("[data-variante]").forEach((b) => {
     b.onclick = () => {
       varianteGoleiroTime[timeId] = !!b.dataset.variante;
+      delete varianteIndividualTime[timeId];
       layoutElSel = "";
       if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
     };
   });
+  const sel = wrap.querySelector("[data-camiseta]");
+  if (sel) {
+    sel.onchange = () => {
+      if (sel.value) abrirArteDaCamiseta(timeId, sel.value);
+      else {
+        delete varianteIndividualTime[timeId];
+        layoutElSel = "";
+        if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+      }
+    };
+  }
   return wrap;
 }
 
@@ -1472,6 +1583,7 @@ let editorTravado = false;  // desenhando no pedido?
 let layoutModoArtes = "";   // o que a aba Artes estava editando
 let layoutModo = "";        // "" = layout geral; timeId = ajuste daquele time
 let layoutGoleiro = false;  // no pedido: editando a variante do goleiro?
+let layoutAluno = "";       // no pedido: editando a arte de uma camiseta só (alunoId)
 let layoutTimePrevia = "";  // time cuja arte/fonte aparece na prévia (modo geral)
 let layoutPeca = "costas";
 let layoutTam = "";
@@ -1525,10 +1637,12 @@ function escolherAlvoDoEditor() {
     if (!editorTravado) layoutModoArtes = layoutModo;
     layoutModo = editorPedido.timeId;
     layoutTimePrevia = editorPedido.timeId;
-    layoutGoleiro = editandoGoleiro(editorPedido.timeId);
+    layoutAluno = editandoIndividual(editorPedido.timeId);
+    layoutGoleiro = !layoutAluno && editandoGoleiro(editorPedido.timeId);
   } else {
     if (editorTravado) layoutModo = layoutModoArtes;
     layoutGoleiro = false;
+    layoutAluno = "";
   }
   editorTravado = noPedido;
 }
@@ -1566,6 +1680,7 @@ function nomeClienteArte(clienteId) {
 // "neste time", "no goleiro", "neste cliente" (textos do painel).
 function ondeNoEditor() {
   if (modoCliente()) return "neste cliente";
+  if (layoutAluno) return "nesta camiseta";
   return layoutGoleiro ? "no goleiro" : "neste time";
 }
 
@@ -1584,7 +1699,14 @@ function abrirArteDoCliente(clienteId) {
 function timeDaPrevia() {
   const t = modoTime();
   const id = t || layoutTimePrevia;
-  return id && estadoTimes[id] ? timeNaVariante(estadoTimes[id].time, !!t && layoutGoleiro) : null;
+  if (!id || !estadoTimes[id]) return null;
+  if (t && layoutAluno) return timeDaCamiseta(estadoTimes[id].time, layoutAluno, alunoGoleiroNoEditor());
+  return timeNaVariante(estadoTimes[id].time, !!t && layoutGoleiro);
+}
+
+// A camiseta aberta no editor é de goleiro? (a base dela é a do goleiro)
+function alunoGoleiroNoEditor() {
+  return !!layoutAluno && ehGoleiro(alunoDoTime(modoTime(), layoutAluno));
 }
 
 // Elementos "de cima" da peça no editor (fora os extras do nível aberto):
@@ -1594,7 +1716,10 @@ function elementosBaseNoEditor(pecaId) {
   const p = pecaId || layoutPeca;
   const t = modoTime();
   if (t && estadoTimes[t]) {
-    const lay = layoutDoTime(estadoTimes[t].time);
+    const time = estadoTimes[t].time;
+    const lay = layoutDoTime(time);
+    // Numa camiseta só, os elementos do time (ou do goleiro) também vêm de cima.
+    if (layoutAluno) return EPS.elementosDaPecaNoTime(lay, producaoBaseDaCamiseta(producaoDoTime(time), alunoGoleiroNoEditor()), p);
     return (lay.pecas[p] && lay.pecas[p].elementos) || [];
   }
   return elementosDaPeca(p);
@@ -1628,14 +1753,21 @@ function abrirNivelEditor() {
   if (!time) return null;
   const antes = JSON.stringify(producaoDoTime(time));
   const prod = limparParaFirestore(producaoDoTime(time));
-  const alvo = layoutGoleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+  let alvo = prod;
+  if (layoutAluno) {
+    prod.individuais = prod.individuais || {};
+    alvo = prod.individuais[layoutAluno] = prod.individuais[layoutAluno] || {};
+  } else if (layoutGoleiro) {
+    alvo = prod.goleiro = prod.goleiro || {};
+  }
   return {
     prod, alvo,
     gravar: () => {
       if (layoutGoleiro) limparGoleiroVazio(prod);
+      if (layoutAluno) limparIndividuaisVazios(prod);
       registrarHistorico({ tipo: "time", timeId, antes, depois: JSON.stringify(prod) });
       return gravarProducaoTime(timeId, prod)
-        .then(() => estadoSalvarLayout(layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time")).catch(erro);
+        .then(() => estadoSalvarLayout(layoutAluno ? "✓ Salvo nesta camiseta" : layoutGoleiro ? "✓ Salvo no goleiro" : "✓ Salvo no time")).catch(erro);
     }
   };
 }
@@ -1728,7 +1860,9 @@ function renderizarEditorLayout() {
         <span id="layoutEstadoSalvar" class="estudio-salvo" aria-live="polite"></span>
         <button type="button" class="botao-acento" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">${icone("download")} EPS de teste</button>
       </header>
-      ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutGoleiro
+      ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutAluno
+        ? `${icone("shirt")} Editando só a camiseta de <strong>${escapeHtmlAdmin(rotuloCamiseta(alunoDoTime(modoTime(), layoutAluno)))}</strong> (${nomeTime}). O que mudar ou adicionar aqui vale só para ela; o resto segue ${alunoGoleiroNoEditor() ? "a camiseta do goleiro" : "o time"}.`
+        : layoutGoleiro
         ? `${icone("hand")} Editando a camiseta do <strong>goleiro</strong> de <strong>${nomeTime}</strong>. O que não mudar aqui segue a camiseta comum do time.`
         : cid
         ? `${icone("pencil")} Editando a arte do cliente <strong>${escapeHtmlAdmin(nomeClienteArte(cid))}</strong>: o que mudar ou adicionar aqui vale só para os times deste cliente — os outros clientes não veem nada disto. Cada time ainda pode ter o ajuste próprio por cima.`
@@ -1878,7 +2012,14 @@ function ajusteDoTime(timeId, pecaId, elId, goleiro) {
 function ajusteNoEditor(pecaId, elId) {
   const cid = modoCliente();
   if (cid) return ajusteDaProducao(arteDoCliente(cid), pecaId, elId);
+  if (layoutAluno) return ajusteDaProducao(producaoDoTime(timeDaPrevia()), pecaId, elId);
   return ajusteDoTime(layoutModo, pecaId, elId, layoutGoleiro);
+}
+
+// Só o ajuste próprio da camiseta aberta (sem o do time), no editor.
+function ajusteProprioIndividual(pecaId, elId) {
+  const t = modoTime() && estadoTimes[modoTime()] && estadoTimes[modoTime()].time;
+  return layoutAluno && t ? ajusteDaProducao(arteIndividual(producaoDoTime(t), layoutAluno), pecaId, elId) : undefined;
 }
 
 // Só o ajuste próprio do goleiro (sem o da comum), no editor.
@@ -2120,6 +2261,10 @@ function extrasNoEditor(pecaId) {
   if (!layoutModo) return [];
   const cid = modoCliente();
   if (cid) return ((arteDoCliente(cid) || {}).elementosExtras || {})[pecaId || layoutPeca] || [];
+  if (layoutAluno) {
+    const tc = estadoTimes[modoTime()] && estadoTimes[modoTime()].time;
+    return ((arteIndividual(producaoDoTime(tc), layoutAluno) || {}).elementosExtras || {})[pecaId || layoutPeca] || [];
+  }
   const t = timeDaPrevia();
   return ((producaoDoTime(t).elementosExtras) || {})[pecaId || layoutPeca] || [];
 }
@@ -2562,8 +2707,8 @@ function gravarCaixaLayout(el, m, caixa) {
     const aj = porPeca[el.id] = porPeca[el.id] || {};
     // Primeira mudança de posição do goleiro: parte da posição da comum (a
     // posição vale inteira de um ou do outro — ver mesclarAjusteGoleiro).
-    if (layoutGoleiro && !aj.base && !aj.tamanhos) {
-      const daComum = ajusteDaProducao(prod, layoutPeca, el.id) || {};
+    if ((layoutGoleiro || layoutAluno) && !aj.base && !aj.tamanhos) {
+      const daComum = ajusteDaProducao(layoutAluno ? producaoBaseDaCamiseta(prod, alunoGoleiroNoEditor()) : prod, layoutPeca, el.id) || {};
       if (daComum.base) aj.base = limparParaFirestore(daComum.base);
       if (daComum.tamanhos) aj.tamanhos = limparParaFirestore(daComum.tamanhos);
     }
@@ -2766,10 +2911,12 @@ function renderizarPainelLayout() {
         return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ocE ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
           `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
           `${seloAjusteTime(ajE)}` +
-          (doTime ? (modoCliente() ? ' <span class="badge selo-do-time" title="Elemento só deste cliente">só do cliente</span>'
+          (doTime ? (layoutAluno ? ' <span class="badge selo-do-time" title="Elemento só desta camiseta">só desta camiseta</span>'
+            : modoCliente() ? ' <span class="badge selo-do-time" title="Elemento só deste cliente">só do cliente</span>'
             : ' <span class="badge selo-do-time" title="Elemento só deste time">só do time</span>') : "") +
           (modoTime() && e.clienteArte ? ' <span class="badge selo-do-time" title="Elemento da arte do cliente">do cliente</span>' : "") +
           `${ajusteProprioGoleiro(layoutPeca, e.id) ? ' <span class="badge goleiro">' + icone("hand") + '</span>' : ""}` +
+          `${ajusteProprioIndividual(layoutPeca, e.id) ? ' <span class="badge selo-do-time" title="Ajuste só desta camiseta">' + icone("shirt") + '</span>' : ""}` +
           `<span class="camada-acoes">` +
           (layoutModo && !doTime ? `<button type="button" class="camada-botao" data-camada-olho="${escAttr(e.id)}" title="${ocE ? "Mostrar" : "Ocultar"} ${ondeNoEditor()}">${icone(ocE ? "eye-off" : "eye")}</button>` : "") +
           `<button type="button" class="camada-botao${eT.travado ? " ligado" : ""}" data-camada-trava="${escAttr(e.id)}" title="${eT.travado ? "Destravar" : "Travar (não deixa mover sem querer)"}">${icone(eT.travado ? "lock" : "lock-open")}</button>` +
@@ -2805,7 +2952,8 @@ function renderizarPainelLayout() {
   if (!el || !m) return;
   const aj = ajusteNoEditor(layoutPeca, el.id);
   // No goleiro, os botões de "voltar" desfazem só o ajuste dele.
-  const ajProprio = layoutGoleiro ? ajusteProprioGoleiro(layoutPeca, el.id) : aj;
+  const ajProprio = layoutAluno ? ajusteProprioIndividual(layoutPeca, el.id)
+    : layoutGoleiro ? ajusteProprioGoleiro(layoutPeca, el.id) : aj;
   const posProprio = !!(ajProprio && (ajProprio.base || ajProprio.tamanhos));
   const estiloProprio = !!(ajProprio && ajProprio.estilo && Object.keys(ajProprio.estilo).length);
   // Valores que valem para o que está sendo editado: no time, o estilo
@@ -2819,10 +2967,14 @@ function renderizarPainelLayout() {
 
   // "Voltar" desfaz o ajuste do nível aberto: volta ao que vem de cima.
   const cimaEhCliente = modoTime() && !!arteDoCliente(clienteIdDoTime(estadoTimes[modoTime()].time));
-  const rotuloVoltar = layoutGoleiro ? "Voltar à camiseta comum" : cimaEhCliente ? "Voltar à arte do cliente" : "Voltar ao layout geral";
+  const rotuloVoltar = layoutAluno ? "Voltar ao time" : layoutGoleiro ? "Voltar à camiseta comum" : cimaEhCliente ? "Voltar à arte do cliente" : "Voltar ao layout geral";
   const estado = extra
-    ? modoCliente() ? "Elemento só deste cliente — não aparece para os outros clientes."
+    ? layoutAluno ? "Elemento só desta camiseta — as outras do time não têm."
+    : modoCliente() ? "Elemento só deste cliente — não aparece para os outros clientes."
       : `Elemento só ${layoutGoleiro ? "da camiseta do goleiro" : "deste time"} — não aparece nos outros times.`
+    : layoutAluno
+    ? ajProprio ? `Esta camiseta tem ajuste próprio${posProprio ? " de posição" : ""}${posProprio && estiloProprio ? " e" : ""}${estiloProprio ? " de estilo" : ""}${"oculto" in ajProprio ? (ajProprio.oculto ? " (oculto)" : " (mostrado)") : ""}.`
+      : "Igual ao time — mudar qualquer coisa aqui cria um ajuste só para esta camiseta."
     : modoCliente()
     ? aj ? `Ajustado neste cliente${temPosicao ? " (posição)" : ""}${temEstilo ? " (estilo)" : ""}${aj.oculto ? " (oculto)" : ""} — só para os times dele.`
       : "Igual ao layout geral — mudar qualquer coisa aqui cria um ajuste só para os times deste cliente."
@@ -3092,8 +3244,9 @@ function gravarAjusteTime(elId, mudar) {
   // "Mostrar" (oculto: false) só precisa ficar gravado quando o de cima
   // esconde o elemento: a arte do cliente ou, no goleiro, a camiseta comum.
   const base = elementosBaseNoEditor(layoutPeca).find((e) => e.id === elId);
-  const deCimaOculto = !!(base && base.oculto) ||
-    (layoutGoleiro && !!(ajusteDaProducao(prod, layoutPeca, elId) || {}).oculto);
+  const deCimaOculto = layoutAluno
+    ? ocultoNoEditor(base || {}, ajusteDaProducao(producaoBaseDaCamiseta(prod, alunoGoleiroNoEditor()), layoutPeca, elId))
+    : !!(base && base.oculto) || (layoutGoleiro && !!(ajusteDaProducao(prod, layoutPeca, elId) || {}).oculto);
   if (!aj.oculto && !(deCimaOculto && aj.oculto === false)) delete aj.oculto;
   if (!Object.keys(aj).length) delete porPeca[elId];
   if (!Object.keys(porPeca).length) delete alvo.layoutAjustes[layoutPeca];
@@ -3106,11 +3259,13 @@ function gravarAjusteTime(elId, mudar) {
 
 // Carrega o que o time usa: fonte, brasão, moldes dos tamanhos pedidos e as
 // artes (convertidas para CMYK na resolução de saída).
-async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso) {
+// `recBase`: recursos já carregados (outra parte do mesmo arquivo) — o que
+// já está nele não é baixado de novo.
+async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso, recBase) {
   const pako = await carregarLib("pako");
   const prod = producaoDoTime(time);
-  const rec = { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
-  if (prod.fonte && prod.fonte.partes) {
+  const rec = recBase || { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
+  if (prod.fonte && prod.fonte.partes && !rec.fonte) {
     aviso("Carregando a fonte…");
     rec.fonte = rec.fonteEtiqueta = await obterFonte(prod.fonte.partes);
   }
@@ -3119,18 +3274,18 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso)
     return { bytes: EPS.extrairPostScript(bytes), bbox: bbox || EPS.lerBoundingBox(bytes) };
   };
   const usaLogo = usaNoTime(time, (e) => e.tipo === "logo");
-  if (usaLogo && logoEmpresa) {
+  if (usaLogo && logoEmpresa && !rec.eps.logo) {
     aviso("Carregando o logo da empresa…");
     rec.eps.logo = await lerEps(logoEmpresa.partes || logoEmpresa.epsId, logoEmpresa.bbox);
   }
-  if (prod.brasao) {
+  if (prod.brasao && !rec.eps.brasao) {
     aviso("Carregando o brasão…");
     rec.eps.brasao = await lerEps(prod.brasao.partes || prod.brasao.epsId, prod.brasao.bbox);
   }
   for (const pecaId of pecasIds) {
     for (const t of tamanhos) {
       const m = moldeDe(pecaId, t);
-      if (!m) continue;
+      if (!m || rec.eps[`molde:${pecaId}:${t}`]) continue;
       aviso(`Carregando o molde ${nomePecaProducao(pecaId)} ${t}…`);
       rec.eps[`molde:${pecaId}:${t}`] = await lerEps(m.partes || m.epsId, m.bbox);
     }
@@ -3289,7 +3444,8 @@ async function gerarFolhasEps(linhas, nomeBase) {
     }
     const chave = timeId + (atual.goleiro ? "|goleiro" : "");
     if (!grupos.has(chave)) grupos.set(chave, { timeId, goleiro: !!atual.goleiro, camisetas: [] });
-    grupos.get(chave).camisetas.push(atual);
+    // `_alunoId`: para a camiseta com arte própria (producao.individuais).
+    grupos.get(chave).camisetas.push({ ...atual, _alunoId: item.origem !== "avulso" ? item.alunoId || "" : "" });
   });
   if (!grupos.size) {
     alert("Nada para gerar.\n\n" + avisos.join("\n"));
@@ -3318,15 +3474,31 @@ async function gerarFolhasEps(linhas, nomeBase) {
       if (g.goleiro && !temVarianteGoleiro(timeComum)) {
         avisos.push(`${rotuloTime}: os goleiros saíram num arquivo à parte, com a mesma arte do time — envie as artes do goleiro em Arquivos de produção → 🧤 Goleiro.`);
       }
-      const pecasIds = pecasDoTime(time);
-      const tamanhos = [...new Set(g.camisetas.map((c) => c.tamanho))];
-      const rec = await carregarRecursosDoTime(time, tamanhos, pecasIds, op.dpi,
-        (t) => avisoProducao(`${rotuloTime}: ${t}`));
-      avisoProducao(`${rotuloTime}: montando a folha…`);
-      await esperarTela();
-      const { blocos, avisos: avB } = EPS.montarBlocos(moldesConfig, layoutDoTime(time), time, g.camisetas, rec,
-        { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
-      avB.forEach((a) => avisos.push(`${rotuloTime}: ${a}`));
+      // Camisetas com arte própria saem no mesmo arquivo, cada uma com a
+      // sua versão; as outras, com a do time.
+      const partes = new Map();
+      g.camisetas.forEach((c) => {
+        const k = c._alunoId && temArteIndividual(timeComum, c._alunoId) ? c._alunoId : "";
+        if (!partes.has(k)) partes.set(k, []);
+        partes.get(k).push(c);
+      });
+      const nInd = [...partes.keys()].filter(Boolean).length;
+      if (nInd) avisos.push(`${rotuloTime}: ${nInd} camiseta(s) com arte própria.`);
+      let rec = null;
+      const blocos = [];
+      for (const [alunoId, camisetas] of partes) {
+        const timeParte = alunoId ? timeDaCamiseta(timeComum, alunoId, g.goleiro) : time;
+        const pecasIds = pecasDoTime(timeParte);
+        const tamanhos = [...new Set(camisetas.map((c) => c.tamanho))];
+        rec = await carregarRecursosDoTime(timeParte, tamanhos, pecasIds, op.dpi,
+          (t) => avisoProducao(`${rotuloTime}: ${t}`), rec);
+        avisoProducao(`${rotuloTime}: montando a folha…`);
+        await esperarTela();
+        const r = EPS.montarBlocos(moldesConfig, layoutDoTime(timeParte), timeParte, camisetas, rec,
+          { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
+        blocos.push(...r.blocos);
+        r.avisos.forEach((a) => avisos.push(`${rotuloTime}${alunoId ? ` (${rotuloCamiseta(alunoDoTime(g.timeId, alunoId))})` : ""}: ${a}`));
+      }
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
         larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: op.alturaMaxCm * 10
       });

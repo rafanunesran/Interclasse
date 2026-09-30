@@ -1067,7 +1067,8 @@ function renderizarTimeAberto(timeId) {
     editarArte: (() => {
       const prod = time.producao || {};
       const contar = (aj) => Object.values(aj || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-      const n = contar(prod.layoutAjustes) + contar(prod.goleiro && prod.goleiro.layoutAjustes);
+      const n = contar(prod.layoutAjustes) + contar(prod.goleiro && prod.goleiro.layoutAjustes) +
+        Object.keys(prod.individuais || {}).length;
       return n ? `<span class="subaba-qtd" title="Ajustes próprios deste time (comum e goleiro)">${n}</span>` : "";
     })()
   };
@@ -1224,7 +1225,8 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
     : "";
 
   tr.innerHTML = `
-    <td data-label="Nome">${marca}${escapeHtmlAdmin(aluno.nome)}${proposta}${motivo}${historicoAjusteHtml(aluno)}</td>
+    <td data-label="Nome">${marca}${escapeHtmlAdmin(aluno.nome)}${typeof temArteIndividual === "function" && temArteIndividual(time, aluno.id)
+      ? ' <span class="badge selo-do-time" title="Esta camiseta tem arte própria (aba Editar arte → Uma camiseta)">arte própria</span>' : ""}${proposta}${motivo}${historicoAjusteHtml(aluno)}</td>
     <td data-label="Tamanho">${escapeHtmlAdmin(aluno.tamanho)}</td>
     <td data-label="Número">${escapeHtmlAdmin(aluno.numero || "-")}</td>
     <td data-label="Nome na camiseta">${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
@@ -1313,6 +1315,16 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
   btnEditar.textContent = "Editar";
   btnEditar.onclick = () => editarAlunoAdmin(tr, timeId, aluno);
   tdAcoes.appendChild(btnEditar);
+
+  // Arte só desta camiseta (um logo a mais, um elemento diferente…).
+  if (typeof abrirArteDaCamiseta === "function") {
+    const btnArte = document.createElement("button");
+    btnArte.className = "secundario";
+    btnArte.textContent = "Arte";
+    btnArte.title = "Arte só desta camiseta: um logo a mais, um elemento diferente…";
+    btnArte.onclick = () => abrirArteDaCamiseta(timeId, aluno.id);
+    tdAcoes.appendChild(btnArte);
+  }
 
   if (aluno.ajusteSolicitado) {
     // Aplicar: grava a correção sugerida e resolve (só o "OK" do usuário).
@@ -1623,7 +1635,7 @@ function renderizarEditarArteTime(timeId) {
     '<p class="pix-ajuda">Clique num elemento (no desenho ou na lista) para mudar a posição, a letra, as cores ou ocultá-lo — só neste time. ' +
     'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
   // Camiseta comum ou a do goleiro (o mesmo seletor da aba Arquivos).
-  if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
+  if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId, true));
   const host = document.createElement("div");
   host.className = "editor-layout-pedido";
   card.appendChild(host);

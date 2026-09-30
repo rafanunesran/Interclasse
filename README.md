@@ -520,6 +520,18 @@ time.
 (proporção mantida, ou esticada). **Trocar imagem** no painel troca o arquivo; num cliente ou num
 time, a troca vale só ali. O PNG sai convertido para CMYK na folha e o EPS entra intacto.
 
+### Arte de uma camiseta só (time aberto → **Editar arte** → **Uma camiseta**)
+
+Para quando **uma** camiseta da lista precisa ser diferente das outras do time — um logo a mais,
+um elemento diferente, algo oculto. Na aba **Lista** do time, o botão **Arte** da linha abre o
+editor já nela (ou escolha em **Uma camiseta** no Editar arte). O que mudar ou adicionar ali vale
+**só para aquela camiseta**; o resto segue o time (ou a camiseta do goleiro, se ela for de
+goleiro). O nome e o número dela aparecem de amostra no editor.
+
+Na lista, a camiseta ganha o selo **arte própria**. Na **folha EPS** ela sai no mesmo arquivo do
+time, com a sua versão (o aviso da geração diz quantas saíram assim). Fica em
+`producao.individuais[id da camiseta]` do time (`layoutAjustes` e `elementosExtras`).
+
 ### Arte do cliente (aba **Artes** → Editando: **Cliente: …**)
 
 Uma versão da arte que vale **só para os times daquele cliente** — os outros clientes nunca
