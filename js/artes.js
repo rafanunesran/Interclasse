@@ -645,7 +645,8 @@ function criarBlocoProducaoTime(timeId, time) {
   const infoPng = (a) => a ? {
     previa: a.previaUrl,
     nome: a.nomeArquivo || "",
-    info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi`
+    info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi · ` +
+      (a.tipoArquivo === "tiff" ? (a.cmyk ? "TIFF CMYK (cor exata)" : "TIFF RGB → CMYK") : "PNG (RGB → CMYK)")
   } : null;
   const infoBrasao = (b) => b ? { previa: b.previaUrl, nome: b.nomeArquivo || "", info: "EPS vetorial" } : null;
   const infoFonte = (f) => f ? { nome: f.nome, info: "Fonte do nome e do número", fonte: true } : null;
@@ -667,22 +668,22 @@ function criarBlocoProducaoTime(timeId, time) {
     grade.appendChild(criarSlotProducao(timeId, id, titulo, proprio, formato, herdado));
   };
 
-  const gradePecas = grupo("Peças da camiseta", "PNG 600 dpi, feito para o molde do tamanho base. Nos outros tamanhos a arte acompanha o molde.");
+  const gradePecas = grupo("Peças da camiseta", "TIFF CMYK 600 dpi (cor exata; compressão LZW) ou PNG 600 dpi (RGB, convertido para CMYK de forma simples), feito para o molde do tamanho base. Nos outros tamanhos a arte acompanha o molde.");
   // Uma arte serve para as duas mangas; a da direita só aparece quando o
   // time ativa "manga direita com arte diferente".
   PECAS_PRODUCAO.forEach((peca) => {
     if (peca.id === "mangaDir" && !comum.mangaDirDiferente) return;
     const titulo = peca.id === "mangaEsq" && !comum.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
     slot(gradePecas, `arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
-      infoPng(comum.pecas && comum.pecas[peca.id]), "PNG 600 dpi");
+      infoPng(comum.pecas && comum.pecas[peca.id]), "TIFF CMYK ou PNG, 600 dpi");
   });
 
   const gradeExtras = grupo("Brasão, detalhe e fonte", "");
   slot(gradeExtras, "brasao", "Brasão", infoBrasao(propria.brasao), infoBrasao(comum.brasao), "EPS");
   slot(gradeExtras, "detalhe", comum.detalheDirDiferente ? "Detalhe da manga esquerda" : "Detalhe da manga",
-    infoPng(propria.detalheManga), infoPng(comum.detalheManga), "PNG 600 dpi");
+    infoPng(propria.detalheManga), infoPng(comum.detalheManga), "TIFF CMYK ou PNG, 600 dpi");
   if (comum.detalheDirDiferente) {
-    slot(gradeExtras, "detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "PNG 600 dpi");
+    slot(gradeExtras, "detalhe:dir", "Detalhe da manga direita", infoPng(propria.detalheMangaDir), infoPng(comum.detalheMangaDir), "TIFF CMYK ou PNG, 600 dpi");
   }
   slot(gradeExtras, "fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
 
@@ -854,12 +855,18 @@ function marcarEnvio(timeId, slot, texto, goleiro) {
   if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
 }
 
+// Leitor do bitmap de produção pelos primeiros bytes: TIFF (CMYK com a cor
+// exata, js/tiff-stream.js) ou PNG (RGB → CMYK pela fórmula simples).
+function leitorDeBitmap(bytes) {
+  return typeof TiffStream !== "undefined" && TiffStream.ehTiff(bytes) ? TiffStream : PngStream;
+}
+
 // Miniatura (PNG pequeno) de uma arte enorme, sem abrir no <canvas>: lê o
-// PNG em fluxo pulando pixels e desfaz a conversão CMYK para mostrar na tela.
+// arquivo em fluxo pulando pixels e desfaz o CMYK para mostrar na tela.
 async function miniaturaDaArte(bytes, info) {
   const pako = await carregarLib("pako");
   const passo = Math.max(1, Math.ceil(Math.max(info.largura, info.altura) / 700));
-  const r = await PngStream.converterParaCmyk(bytes, { pako, passo, nivel: 1, pausa: esperarTela });
+  const r = await leitorDeBitmap(bytes).converterParaCmyk(bytes, { pako, passo, nivel: 1, pausa: esperarTela });
   const juntar = (lista) => {
     const tot = lista.reduce((s, p) => s + p.length, 0);
     const out = new Uint8Array(tot);
@@ -893,11 +900,17 @@ async function miniaturaDaArte(bytes, info) {
 // Envia um PNG de produção (600 dpi) ao Drive, com a miniatura para a tela.
 // Devolve os dados a gravar, ou null se cancelado. `marcar(texto)` mostra o
 // andamento.
+// Aceita TIFF (de preferência CMYK: a cor sai exata) ou PNG.
 async function enviarPngProducao(file, pref, marcar) {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const info = PngStream.lerCabecalho(bytes); // valida (8 bits, sem entrelaçamento)
+  const leitor = leitorDeBitmap(bytes);
+  const tiff = leitor !== PngStream;
+  const info = leitor.lerCabecalho(bytes); // valida (formato aceito)
+  const tipo = tiff ? "TIFF" : "PNG";
+  if (tiff && !info.cmyk &&
+      !confirm("Este TIFF não está em CMYK: as cores serão convertidas pela fórmula simples (como no PNG). Para a cor exata, exporte o TIFF em CMYK. Enviar mesmo assim?")) return null;
   if (info.dpi && info.dpi !== 600 &&
-      !confirm(`Este PNG está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return null;
+      !confirm(`Este ${tipo} está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return null;
   marcar("enviando 0%…");
   const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
     (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
@@ -906,25 +919,26 @@ async function enviarPngProducao(file, pref, marcar) {
   try {
     const mini = await miniaturaDaArte(bytes, info);
     previaUrl = (await enviarArquivoDrive(driveScriptUrl,
-      new File([mini], file.name.replace(/\.png$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
+      new File([mini], file.name.replace(/\.(png|tiff?)$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
   } catch (e) {
     console.warn("Miniatura não gerada:", e);
   }
   return {
     partes: env.partes, nomeArquivo: file.name,
-    larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600, previaUrl
+    larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600, previaUrl,
+    ...(tiff ? { tipoArquivo: "tiff", cmyk: !!info.cmyk } : { tipoArquivo: "png" })
   };
 }
 
 async function enviarArquivoProducao(timeId, slot, goleiro, arquivo) {
   if (!exigirDriveProducao()) return;
   const accept = slot === "brasao" ? ".eps,.ps,application/postscript"
-    : slot === "fonte" ? ".ttf,.otf,font/ttf,font/otf" : "image/png";
+    : slot === "fonte" ? ".ttf,.otf,font/ttf,font/otf" : ".png,.tif,.tiff,image/png,image/tiff";
   const file = arquivo || await escolherArquivos(accept);
   if (!file) return;
   // Arquivo solto do tipo errado: avisa antes de tentar enviar.
   const ext = (file.name.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
-  const esperado = slot === "brasao" ? ["eps", "ps"] : slot === "fonte" ? ["ttf", "otf"] : ["png"];
+  const esperado = slot === "brasao" ? ["eps", "ps"] : slot === "fonte" ? ["ttf", "otf"] : ["tif", "tiff", "png"];
   if (!esperado.includes(ext.toLowerCase())) {
     alert(`Este espaço aceita ${esperado.map((e) => "." + e).join(" ou ")} — o arquivo "${file.name}" não é desse tipo.`);
     return;
@@ -1896,7 +1910,7 @@ function renderizarEditorLayout() {
             ${ferramenta("brasao", "shield", "Adicionar brasão do time")}
             ${ferramenta("logo", "tag", "Adicionar logo da empresa")}
             ${ferramenta("detalhe", "waves", "Adicionar detalhe da manga")}
-            ${ferramenta("imagem", "image", "Adicionar imagem própria (PNG 600 dpi ou EPS): patrocinador, selo, desenho…")}`}
+            ${ferramenta("imagem", "image", "Adicionar imagem própria (TIFF CMYK, PNG 600 dpi ou EPS): patrocinador, selo, desenho…")}`}
           </div>`}
           <p class="estudio-peca-rotulo">${escapeHtmlAdmin(nomePecaProducao(layoutPeca))}${tam ? ` · ${escapeHtmlAdmin(tam)}${tam === moldesConfig.tamanhoBase ? " (base)" : ""}` : ""}</p>
           <div class="arte-palco-wrap estudio-palco-fundo"><div class="palco-reguas"><svg class="regua regua-h" aria-hidden="true"></svg><svg class="regua regua-v" aria-hidden="true"></svg><div id="layoutPalco" class="arte-palco"></div></div></div>
@@ -2745,7 +2759,7 @@ function gravarCaixaLayout(el, m, caixa) {
 // Imagem própria de um elemento: PNG (600 dpi) ou EPS, enviado ao Drive.
 async function escolherImagemDeElemento() {
   if (!exigirDriveProducao()) return null;
-  const file = await escolherArquivos(".png,image/png,.eps,.ps,application/postscript");
+  const file = await escolherArquivos(".png,image/png,.tif,.tiff,image/tiff,.eps,.ps,application/postscript");
   if (!file) return null;
   const pref = "elemento-" + (slugify(file.name.replace(/\.[^.]+$/, "")) || "imagem");
   try {
@@ -3279,6 +3293,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
   const pako = await carregarLib("pako");
   const prod = producaoDoTime(time);
   const rec = recBase || { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
+  rec.inflar = pako.inflate; // recorte das imagens com transparência (EPS para o Corel)
   if (prod.fonte && prod.fonte.partes && !rec.fonte) {
     aviso("Carregando a fonte…");
     rec.fonte = rec.fonteEtiqueta = await obterFonte(prod.fonte.partes);
@@ -3342,7 +3357,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
     aviso(`Baixando a arte ${nome}…`, fracao(0));
     const bytes = await baixarArquivoDrive(driveScriptUrl, img.partes);
     const passo = Math.max(1, Math.round((img.dpi || 600) / (dpiSaida || 600)));
-    rec.imagens[chave] = await PngStream.converterParaCmyk(bytes, {
+    rec.imagens[chave] = await leitorDeBitmap(bytes).converterParaCmyk(bytes, {
       pako, passo, pausa: esperarTela,
       aoProgresso: (f) => aviso(`Convertendo a arte ${nome} para CMYK… ${Math.round(f * 100)}%`, fracao(f * 0.98))
     });
@@ -3418,6 +3433,7 @@ function perguntarOpcoesEps(resumo) {
             <select name="molde"><option value="frente">Por cima da arte (faca de 3 mm por fora)</option><option value="fundo">Por baixo da arte</option><option value="nenhum">Não incluir</option></select></label>
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
           <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
+          <label class="checkbox-inline"><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
           <button type="submit" class="primario">Gerar</button>
         </form>
       </div>`;
@@ -3438,7 +3454,8 @@ function perguntarOpcoesEps(resumo) {
         dpi: Number(form.dpi.value) || 600,
         molde: form.molde.value,
         alturaMaxCm: Math.max(0, Number(form.alturaMaxCm.value) || 0),
-        etiqueta: form.etiqueta.checked
+        etiqueta: form.etiqueta.checked,
+        corel: form.corel.checked
       });
     };
     document.body.appendChild(fundo);
@@ -3562,9 +3579,9 @@ async function gerarFolhasEps(linhas, nomeBase) {
         const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${sufixo}.eps`;
         etapa(`escrevendo o arquivo${folhas.length > 1 ? ` (folha ${i + 1} de ${folhas.length})` : ""}…`, 0.85 + 0.15 * (i / folhas.length));
         await esperarTela();
-        const mb = EPS.estimarTamanho(f, rec) / 1e6;
-        if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi.`);
-        arquivos.push({ nome, blob: new Blob(EPS.escreverEps(f, rec, `${rotuloTime}${sufixo}`), { type: "application/postscript" }) });
+        const mb = EPS.estimarTamanho(f, rec, { corel: op.corel }) / 1e6;
+        if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi${op.corel ? " ou desligue \"Compatível com o Corel\" (a arte repetida entra uma vez só)" : ""}.`);
+        arquivos.push({ nome, blob: new Blob(EPS.escreverEps(f, rec, `${rotuloTime}${sufixo}`, { corel: op.corel }), { type: "application/postscript" }) });
       }
       // Várias folhas do mesmo time: um .zip só dele.
       let saida = arquivos[0];
@@ -3975,7 +3992,7 @@ async function baixarEpsDeTesteLayout() {
     avisoProducao("");
     if (!folhas.length) { alert(avisos.join("\n") || "Nada para gerar."); return; }
     baixarBlob(slugify(`teste-${time.nome}-${nomePecaProducao(layoutPeca)}-${m.tam}`) + ".eps",
-      new Blob(EPS.escreverEps(folhas[0], rec, "Teste"), { type: "application/postscript" }));
+      new Blob(EPS.escreverEps(folhas[0], rec, "Teste", { corel: (layoutConfig.folha || {}).corel !== false }), { type: "application/postscript" }));
     if (avisos.length) alert(avisos.join("\n"));
   } catch (e) {
     console.error(e);

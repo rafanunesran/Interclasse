@@ -910,7 +910,7 @@ const EPS = (function () {
           avisar(`O molde de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" ${cam.tamanho} está sem contorno — a arte dessa peça saiu retangular (aba Tamanhos → Ler contornos).`);
         }
         if (arte && arte.larguraPx) {
-          ops.push({ tipo: "imagem", chave: ad.chave, recortar, ...caixaArte(arte, tamBase, tam, op.sangriaMm == null ? 2 : op.sangriaMm) });
+          ops.push({ tipo: "imagem", chave: ad.chave, recortar, arteDaPeca: true, ...caixaArte(arte, tamBase, tam, op.sangriaMm == null ? 2 : op.sangriaMm) });
         }
 
         elementos.forEach((elGeral) => {
@@ -1076,11 +1076,13 @@ const EPS = (function () {
   ].join("\n");
 
   // Estimativa do tamanho do arquivo (bytes), para avisar antes de gerar.
-  function estimarTamanho(folha, rec) {
+  // `op.corel`: cada uso da imagem entra no arquivo (ver escreverEps).
+  function estimarTamanho(folha, rec, opcoes) {
     let t = 4096;
-    const imgs = new Set();
+    const corel = !!(opcoes && opcoes.corel);
+    const imgs = corel ? [] : new Set();
     folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((op) => {
-      if (op.tipo === "imagem") imgs.add(op.chave);
+      if (op.tipo === "imagem") { if (corel) imgs.push(op.chave); else imgs.add(op.chave); }
       else if (op.tipo === "eps" && rec.eps[op.chave]) t += rec.eps[op.chave].bytes.length + 300;
       else if (op.tipo === "caminho") t += op.comandos.length * 40;
     }));
@@ -1099,7 +1101,48 @@ const EPS = (function () {
   // folha: { larguraMm, alturaMm, blocos: [{ bloco: { w, h, ops }, x, y, w, h, rot }] }
   // rec:   { eps: { chave: { bytes, bbox } },
   //          imagens: { chave: { largura, altura, cmykZ: [..], mascaraZ: [..] | null } } }
-  function escreverEps(folha, rec, titulo) {
+  // Máscara de transparência (bits, 1 = transparente) → retângulos das
+  // partes opacas, em coordenadas da imagem (0–1, y para cima), para usar
+  // como recorte no lugar da imagem com máscara (ImageType 3), que o
+  // importador do Corel não aceita bem. Calculada numa grade de até ~1500 px.
+  function recorteDaMascara(img, inflar) {
+    const juntar = (l) => { const n = l.reduce((a, p) => a + p.length, 0); const o = new Uint8Array(n); let i = 0; l.forEach((p) => { o.set(p, i); i += p.length; }); return o; };
+    const m = inflar(juntar(img.mascaraZ));
+    const w = img.largura, h = img.altura, bl = Math.ceil(w / 8);
+    const f = Math.max(1, Math.ceil(Math.max(w, h) / 1500));
+    const wr = Math.ceil(w / f), hr = Math.ceil(h / f);
+    const opaco = (x, y) => !((m[y * bl + (x >> 3)] >> (7 - (x & 7))) & 1);
+    const faixas = []; // { y0, y1, runs: "x0-x1,..." }
+    for (let yr = 0; yr < hr; yr++) {
+      const y = Math.min(h - 1, yr * f + (f >> 1));
+      const runs = [];
+      let ini = -1;
+      for (let xr = 0; xr <= wr; xr++) {
+        const op = xr < wr && opaco(Math.min(w - 1, xr * f + (f >> 1)), y);
+        if (op && ini < 0) ini = xr;
+        if (!op && ini >= 0) { runs.push([ini, xr]); ini = -1; }
+      }
+      const chave = runs.map((r) => r.join("-")).join(",");
+      const ult = faixas[faixas.length - 1];
+      if (ult && ult.chave === chave) ult.y1 = yr + 1;
+      else faixas.push({ y0: yr, y1: yr + 1, runs, chave });
+    }
+    const n = (v) => Math.round(v * 1e5) / 1e5;
+    let s = "";
+    faixas.forEach((fx) => fx.runs.forEach(([x0, x1]) => {
+      const X0 = n(Math.min(1, (x0 * f) / w)), X1 = n(Math.min(1, (x1 * f) / w));
+      const Ytopo = n(1 - Math.min(1, (fx.y0 * f) / h)), Ybase = n(1 - Math.min(1, (fx.y1 * f) / h));
+      s += `${X0} ${Ybase} m ${X1} ${Ybase} l ${X1} ${Ytopo} l ${X0} ${Ytopo} l h\n`;
+    }));
+    return s || "0 0 m 0 0 l h\n";
+  }
+
+  // opcoes.corel: EPS "simples" para o importador do Corel — cada imagem vai
+  // inteira no ponto em que é desenhada (sem fluxo reaproveitável nem
+  // resetfile) e a transparência vira recorte vetorial (sem ImageType 3).
+  // O arquivo fica maior quando a mesma arte se repete.
+  function escreverEps(folha, rec, titulo, opcoes) {
+    const corel = !!(opcoes && opcoes.corel);
     const HS = folha.alturaMm * PT_POR_MM;
     const WS = folha.larguraMm * PT_POR_MM;
     const k = PT_POR_MM;
@@ -1127,6 +1170,8 @@ const EPS = (function () {
       if (op.tipo === "imagem" && rec.imagens[op.chave] && !chavesImg.includes(op.chave)) chavesImg.push(op.chave);
     }));
     const nomeImg = {};
+    const a85 = {}, recortes = {};
+    if (corel) chavesImg.length = 0; // nada no setup: tudo vai junto de cada imagem
     chavesImg.forEach((chave, i) => {
       const img = rec.imagens[chave];
       const nome = "Img" + i;
@@ -1230,6 +1275,23 @@ const EPS = (function () {
           const nome = nomeImg[op.chave];
           const w = img.largura, h = img.altura;
           const mat = `[${w} 0 0 ${-h} 0 ${h}]`;
+          if (corel) {
+            let s = `gsave ${X(op.x)} ${Y(op.y + op.h)} translate ` +
+              `${num(op.w * k)} ${num(op.h * k)} scale /DeviceCMYK setcolorspace\n`;
+            // A arte da peça já é recortada no molde: a máscara dela não faz
+            // falta. No detalhe/imagem própria, a transparência vira recorte.
+            if (img.mascaraZ && !op.arteDaPeca && rec.inflar) {
+              if (!recortes[op.chave]) recortes[op.chave] = recorteDaMascara(img, rec.inflar);
+              s += `newpath\n${recortes[op.chave]}clip newpath\n`;
+            }
+            s += `<< /ImageType 1 /Width ${w} /Height ${h} /BitsPerComponent 8 /Decode [0 1 0 1 0 1 0 1] ` +
+              `/ImageMatrix ${mat} /DataSource currentfile /ASCII85Decode filter /FlateDecode filter >> image\n`;
+            escrever(s);
+            if (!a85[op.chave]) a85[op.chave] = ascii85(img.cmykZ);
+            a85[op.chave].forEach((p) => pedacos.push(p));
+            escrever("grestore\n" + giraFim);
+            return;
+          }
           let s = `gsave ${X(op.x)} ${Y(op.y + op.h)} translate ` +
             `${num(op.w * k)} ${num(op.h * k)} scale /DeviceCMYK setcolorspace\n` +
             `${nome}D resetfile\n`;

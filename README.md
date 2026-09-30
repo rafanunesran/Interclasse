@@ -507,13 +507,22 @@ retangular (a geração avisa).
 
 ### 2. Arquivos do time (time aberto → **Arquivos de produção**)
 
-- A **arte de cada peça em PNG 600 dpi**. Em cada tamanho ela é **esticada para cobrir o molde
-  inteiro** (largura e altura, cada uma no seu, mais a sangria), então não sobra nenhuma fresta
-  branca; quem dá o formato é o recorte no contorno do molde. PNG 8 bits (RGB/RGBA, com
-  transparência), sem entrelaçamento.
+- A **arte de cada peça em 600 dpi**, de preferência em **TIFF CMYK**. Em cada tamanho ela é
+  **esticada para cobrir o molde inteiro** (largura e altura, cada uma no seu, mais a sangria),
+  então não sobra nenhuma fresta branca; quem dá o formato é o recorte no contorno do molde.
+  - **TIFF CMYK (recomendado, cor exata):** os valores de tinta do arquivo vão para a folha sem
+    nenhuma conversão. No Corel, use Arquivo → Exportar → TIFF, com modo de cor **CMYK (32 bits)**,
+    compressão **LZW** e 600 dpi. São aceitos 8 ou 16 bits por canal, canal alfa, faixas ou
+    ladrilhos e compressão LZW, ZIP/Deflate, PackBits ou nenhuma. JPEG dentro do TIFF e BigTIFF
+    não são aceitos.
+  - **PNG** (8 bits, RGB/RGBA, sem entrelaçamento): o **PNG não guarda CMYK** — o Corel e o
+    Photoshop sempre exportam PNG em RGB. O site converte esse RGB para CMYK por uma fórmula simples,
+    sem perfil de cor, e **a cor pode sair diferente** da arte original. Use PNG só quando a
+    cor não for crítica.
+  - O espaço do arquivo mostra o que foi enviado: "TIFF CMYK (cor exata)" ou "PNG (RGB → CMYK)".
 - **Mangas**: uma arte só serve para **as duas** (menos arquivo no Drive). Se a manga direita
   for diferente, marque **"Manga direita com arte diferente"** e envie a dela.
-- **Detalhe da manga** (PNG): um elemento posicionado na manga, como o brasão (bandeira,
+- **Detalhe da manga** (TIFF CMYK ou PNG, com transparência): um elemento posicionado na manga, como o brasão (bandeira,
   símbolo da turma...). Também um só para as duas mangas; **"Detalhe diferente na manga
   direita"** libera um segundo arquivo.
 - O **brasão em EPS** (entra intacto, vetorial).
@@ -709,6 +718,15 @@ Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
 - se o fornecedor deixa **girar** as peças (90° quando aproveitar melhor) ou não;
 - a **resolução** das artes (600 dpi original, 300 ou 150 para prova);
 - contorno do molde por cima/por baixo/fora, altura máxima por folha e o marcador da costureira.
+- **Compatível com o Corel** (vem ligado). O EPS sai mais simples, porque o importador do Corel
+  não aceita bem alguns recursos de PostScript nível 3:
+  - cada arte entra no arquivo no ponto em que é desenhada, sem fluxo reaproveitável nem
+    `resetfile`;
+  - a transparência do detalhe e das imagens próprias vira um recorte vetorial, sem imagem com
+    máscara (`ImageType 3`).
+
+  Por isso o arquivo fica maior quando a mesma arte se repete muitas vezes. Desligado, a arte
+  repetida entra uma vez só e o arquivo fica menor, o que funciona bem no Illustrator e nos RIPs.
 
 Cada peça leva um **marcador para a costureira** dentro da área de impressão:
 **`Time-Tamanho-Peça`** (ex.: `7B-P-Frente`), com **4 mm** de altura, centralizado a **1 mm da
