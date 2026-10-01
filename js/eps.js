@@ -686,6 +686,59 @@ const EPS = (function () {
     return polis.filter((p) => p.length > 2);
   }
 
+  // Contorno deslocado `d` mm para FORA (cada polígono do contorno, com as
+  // curvas achatadas). A faca é um traço de 3 mm sobre o contorno deslocado
+  // 1,5 mm: fica inteira por fora do molde sem depender de recorte (o
+  // importador do Corel ignora o recorte de traços).
+  function deslocarContorno(cmds, d) {
+    const dentroPoli = (p, x, y) => {
+      let c = false;
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        const [xi, yi] = p[i], [xj, yj] = p[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+    const saida = [];
+    poligonosDoContorno(cmds).forEach((orig) => {
+      // Sem pontos repetidos (nem o último igual ao primeiro).
+      const p = [];
+      orig.forEach((q) => {
+        const u = p[p.length - 1];
+        if (!u || Math.hypot(q[0] - u[0], q[1] - u[1]) > 1e-6) p.push(q);
+      });
+      while (p.length > 2 && Math.hypot(p[0][0] - p[p.length - 1][0], p[0][1] - p[p.length - 1][1]) < 1e-6) p.pop();
+      if (p.length < 3) return;
+      const n = p.length;
+      const normal = (i) => {
+        const a = p[i], b = p[(i + 1) % n];
+        const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+        return [dy / l, -dx / l];
+      };
+      // Lado de fora: testa a maior aresta.
+      let maior = 0, lmax = 0;
+      for (let i = 0; i < n; i++) {
+        const a = p[i], b = p[(i + 1) % n], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (l > lmax) { lmax = l; maior = i; }
+      }
+      const nm = normal(maior), a = p[maior], b = p[(maior + 1) % n];
+      const mx = (a[0] + b[0]) / 2 + nm[0] * 0.01, my = (a[1] + b[1]) / 2 + nm[1] * 0.01;
+      const sinal = dentroPoli(p, mx, my) ? -1 : 1;
+      const pts = p.map((q, i) => {
+        const n1 = normal((i - 1 + n) % n), n2 = normal(i);
+        let bx = n1[0] + n2[0], by = n1[1] + n2[1];
+        const lb = Math.hypot(bx, by);
+        if (lb < 1e-9) { bx = n2[0]; by = n2[1]; } else { bx /= lb; by /= lb; }
+        const cos = bx * n2[0] + by * n2[1];
+        const k = Math.min(3 * d, d / Math.max(cos, 1e-3));
+        return [q[0] + sinal * bx * k, q[1] + sinal * by * k];
+      });
+      pts.forEach((q, i) => saida.push({ type: i ? "L" : "M", x: q[0], y: q[1] }));
+      saida.push({ type: "Z" });
+    });
+    return saida;
+  }
+
   // Onde uma reta (x = v, ou y = v com `horizontal`) cruza o contorno.
   function cortes(polis, v, horizontal) {
     const out = [];
@@ -951,7 +1004,7 @@ const EPS = (function () {
         // Faca a partir do contorno (3 mm por fora); sem contorno lido, vai o
         // EPS do molde como veio (com a espessura de linha do arquivo).
         const faca = molde.contorno
-          ? { tipo: "linha", comandos: comandosDoContorno(molde.contorno), cmyk: [0, 0, 0, 100], mm: LINHA_CORTE_MM, fora: true }
+          ? { tipo: "linha", comandos: deslocarContorno(comandosDoContorno(molde.contorno), LINHA_CORTE_MM / 2), cmyk: [0, 0, 0, 100], mm: LINHA_CORTE_MM }
           : opMolde;
         if (posMolde === "fundo") ops.push(faca);
 
@@ -1739,6 +1792,7 @@ const EPS = (function () {
     escreverEps,
     escreverPdf,
     pdfComoForm,
+    deslocarContorno,
     comprimentoReforco,
     bordaDeOmbroAOmbro,
     REFORCO_FOLGA_MM,

@@ -1303,17 +1303,13 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
     : partes.join("");
   // Linha de corte por cima: do contorno (a prévia do EPS pode ter fundo
   // branco e taparia a arte); sem contorno, a prévia do molde.
-  // A faca tem 3 mm, toda por fora do contorno (como na folha EPS): traço
-  // com o dobro da espessura e máscara que esconde a metade de dentro.
+  // A faca tem 3 mm, toda por fora do contorno (como na folha): traço de
+  // 3 mm sobre o contorno deslocado 1,5 mm para fora.
   let margem = 0;
   if (comMolde && molde && molde.contorno) {
-    margem = FACA_MM;
-    const idMasc = "fm" + Math.random().toString(36).slice(2, 8);
-    svg += `<mask id="${idMasc}" maskUnits="userSpaceOnUse" x="${-margem - 1}" y="${-margem - 1}" ` +
-      `width="${n(dim.w + 2 * margem + 2)}" height="${n(dim.h + 2 * margem + 2)}">` +
-      `<rect x="${-margem - 1}" y="${-margem - 1}" width="${n(dim.w + 2 * margem + 2)}" height="${n(dim.h + 2 * margem + 2)}" fill="#fff" />` +
-      `<path d="${escAttr(molde.contorno)}" fill="#000" /></mask>` +
-      `<path d="${escAttr(molde.contorno)}" fill="none" stroke="#111" stroke-width="${2 * FACA_MM}" stroke-linejoin="round" mask="url(#${idMasc})" />`;
+    margem = FACA_MM + 1; // os cantos da faca passam um pouco dos 3 mm
+    const faca = EPS.deslocarContorno(EPS.comandosDoContorno(molde.contorno), FACA_MM / 2);
+    svg += `<path d="${caminhoSvg(faca, 1)}" fill="none" stroke="#111" stroke-width="${FACA_MM}" stroke-linejoin="round" />`;
   } else if (comMolde && molde && molde.previaUrl) {
     svg += `<image href="${escAttr(urlPreviaGrande(molde.previaUrl))}" x="0" y="0" ` +
       `width="${n(dim.w)}" height="${n(dim.h)}" preserveAspectRatio="none" />`;
