@@ -150,7 +150,29 @@ const CorIcc = (function () {
     return out;
   }
 
-  return { carregar, descreverPerfil, criarLut, rgbParaCmyk, perfilDoJpeg };
+  // CMYK → sRGB (para mostrar na tela), com o perfil CMYK do arquivo ou o
+  // das Configurações. `cmyk`: Uint8Array (4 por pixel). Devolve RGB (3 por
+  // pixel). Colorimétrica relativa: como uma prova de cor na tela.
+  function cmykParaRgb(lib, bytesPerfil, cmyk) {
+    const { m, lcms } = lib;
+    const origem = lcms.cmsOpenProfileFromMem(bytesPerfil, bytesPerfil.byteLength);
+    if (!origem) throw new Error("Perfil CMYK inválido.");
+    const destino = lcms.cmsCreate_sRGBProfile();
+    try {
+      if (lcms.cmsGetColorSpaceASCII(origem) !== "CMYK") throw new Error("O perfil não é CMYK.");
+      const t = lcms.cmsCreateTransform(origem, m.TYPE_CMYK_8, destino, m.TYPE_RGB_8, m.INTENT_RELATIVE_COLORIMETRIC, m.cmsFLAGS_BLACKPOINTCOMPENSATION);
+      if (!t) throw new Error("Não foi possível converter com este perfil.");
+      const n = cmyk.length / 4;
+      const out = new Uint8Array(lcms.cmsDoTransform(t, cmyk, n));
+      lcms.cmsDeleteTransform(t);
+      return out;
+    } finally {
+      lcms.cmsCloseProfile(origem);
+      lcms.cmsCloseProfile(destino);
+    }
+  }
+
+  return { carregar, descreverPerfil, criarLut, rgbParaCmyk, perfilDoJpeg, cmykParaRgb };
 })();
 
 if (typeof module !== "undefined") module.exports = CorIcc;

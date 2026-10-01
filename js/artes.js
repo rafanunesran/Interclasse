@@ -782,6 +782,7 @@ function criarBlocoProducaoTime(timeId, time) {
 
   const infoPng = (a, pecaId) => a ? {
     ppi: pecaId ? resumoPpi(a, pecaId) : null,
+    tiffCmyk: a.tipoArquivo === "tiff" && !!a.cmyk,
     previa: a.previaUrl,
     nome: a.nomeArquivo || "",
     info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi · ` +
@@ -928,6 +929,17 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
   env.disabled = !!andamento;
   env.onclick = (ev) => { ev.stopPropagation(); enviarArquivoProducao(timeId, slot, gol); };
   acoes.appendChild(env);
+  if (atual && atual.tiffCmyk && !andamento) {
+    // Miniaturas antigas de TIFF CMYK saíam com a conta simples (roxo
+    // azulado); refaz com o perfil de cor sem precisar enviar o TIFF de novo.
+    const ref = document.createElement("button");
+    ref.type = "button";
+    ref.className = "secundario";
+    ref.textContent = "Refazer miniatura";
+    ref.title = "Gera de novo a imagem da tela com o perfil de cor (a impressão não muda)";
+    ref.onclick = (ev) => { ev.stopPropagation(); refazerMiniatura(timeId, slot, gol); };
+    acoes.appendChild(ref);
+  }
   if (atual) {
     const rem = document.createElement("button");
     rem.type = "button";
@@ -975,6 +987,36 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
   return div;
 }
 
+// Baixa a arte do Drive e gera a miniatura de novo (perfil de cor atual).
+async function refazerMiniatura(timeId, slot, goleiro) {
+  const marcar = (t) => marcarEnvio(timeId, slot, t, goleiro);
+  try {
+    const prodAtual = producaoDoTime(estadoTimes[timeId].time);
+    const fonte = goleiro ? prodAtual.goleiro || {} : prodAtual;
+    const dados = slot === "detalhe" ? fonte.detalheManga : slot === "detalhe:dir" ? fonte.detalheMangaDir : (fonte.pecas || {})[slot.slice(5)];
+    if (!dados || !dados.partes) return;
+    marcar("baixando a arte…");
+    const bytes = await baixarArquivoDrive(driveScriptUrl, dados.partes);
+    marcar("gerando miniatura…");
+    const info = leitorDeBitmap(bytes).lerCabecalho(bytes);
+    const mini = await miniaturaDaArte(bytes, info);
+    delete cacheArquivosDrive[chaveArquivoDrive(dados.partes)];
+    const pref = `${slugify(estadoTimes[timeId].time.nome) || timeId}${goleiro ? "-goleiro" : ""}-${slot.replace(":", "-")}`;
+    const url = (await enviarArquivoDrive(driveScriptUrl,
+      new File([mini], (dados.nomeArquivo || "arte").replace(/\.(png|tiff?)$/i, "") + "-mini.png", { type: "image/png" }), pref + "-mini")).url;
+    const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
+    const alvo = goleiro ? (prod.goleiro = prod.goleiro || {}) : prod;
+    const d = slot === "detalhe" ? alvo.detalheManga : slot === "detalhe:dir" ? alvo.detalheMangaDir : (alvo.pecas || {})[slot.slice(5)];
+    if (d) d.previaUrl = url;
+    await gravarProducaoTime(timeId, prod);
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Não foi possível refazer a miniatura.");
+  } finally {
+    marcar("");
+  }
+}
+
 function chaveEnvio(timeId, slot, goleiro) {
   return `${timeId}|${goleiro ? "goleiro:" : ""}${slot}`;
 }
@@ -1016,6 +1058,19 @@ async function miniaturaDaArte(bytes, info) {
   };
   const cmyk = pako.inflate(juntar(r.cmykZ));
   const masc = r.mascaraZ ? pako.inflate(juntar(r.mascaraZ)) : null;
+  // TIFF CMYK: tinta → tela pelo perfil (o embutido no arquivo ou o das
+  // Configurações), como o Corel mostra. Sem perfil, a conta simples (que
+  // deixa roxos azulados demais).
+  let rgb = null;
+  if (leitorDeBitmap(bytes) !== PngStream && info.cmyk) {
+    try {
+      let perfil = TiffStream.perfilEmbutido(bytes);
+      if (!perfil && perfilCmyk && perfilCmyk.partes) perfil = await baixarArquivoDrive(driveScriptUrl, perfilCmyk.partes);
+      if (perfil) rgb = CorIcc.cmykParaRgb(await CorIcc.carregar(), new Uint8Array(perfil), cmyk);
+    } catch (e) {
+      console.warn("Miniatura sem perfil de cor:", e);
+    }
+  }
   const canvas = document.createElement("canvas");
   canvas.width = r.largura;
   canvas.height = r.altura;
@@ -1025,10 +1080,14 @@ async function miniaturaDaArte(bytes, info) {
   for (let y = 0; y < r.altura; y++) {
     for (let x = 0; x < r.largura; x++) {
       const i = y * r.largura + x;
-      const max = 255 - cmyk[i * 4 + 3];
-      img.data[i * 4] = max - (cmyk[i * 4] * max) / 255;
-      img.data[i * 4 + 1] = max - (cmyk[i * 4 + 1] * max) / 255;
-      img.data[i * 4 + 2] = max - (cmyk[i * 4 + 2] * max) / 255;
+      if (rgb) {
+        img.data[i * 4] = rgb[i * 3]; img.data[i * 4 + 1] = rgb[i * 3 + 1]; img.data[i * 4 + 2] = rgb[i * 3 + 2];
+      } else {
+        const max = 255 - cmyk[i * 4 + 3];
+        img.data[i * 4] = max - (cmyk[i * 4] * max) / 255;
+        img.data[i * 4 + 1] = max - (cmyk[i * 4 + 1] * max) / 255;
+        img.data[i * 4 + 2] = max - (cmyk[i * 4 + 2] * max) / 255;
+      }
       img.data[i * 4 + 3] = masc && (masc[y * bl + (x >> 3)] >> (7 - (x & 7))) & 1 ? 0 : 255;
     }
   }
@@ -3723,8 +3782,13 @@ async function gerarFolhasEps(linhas, nomeBase) {
       }
       etapa("encaixando as peças na folha…", 0.82);
       await esperarTela();
+      // PDF: página de no máximo ~5 m (limite do formato — acima disso o
+      // Corel diz que o arquivo está corrompido); as folhas viram páginas.
+      const pdfFmt = op.formato !== "eps";
+      const altMax = op.alturaMaxCm * 10;
       const { folhas, avisos: avE } = EPS.empacotar(blocos, {
-        larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: op.alturaMaxCm * 10
+        larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao,
+        alturaMaxMm: pdfFmt ? Math.min(altMax > 0 ? altMax : Infinity, EPS.PDF_ALTURA_MAX_MM) : altMax
       });
       avE.forEach((a) => prog.aviso(`${rotuloTime}: ${a}`));
       if (!folhas.length) {
@@ -3732,17 +3796,26 @@ async function gerarFolhasEps(linhas, nomeBase) {
         continue;
       }
       const arquivos = [];
-      for (let i = 0; i < folhas.length; i++) {
+      if (pdfFmt) {
+        // Um PDF só por time, com uma página por folha.
+        const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${g.goleiro ? "-goleiros" : ""}.pdf`;
+        etapa(`escrevendo o PDF${folhas.length > 1 ? ` (${folhas.length} páginas)` : ""}…`, 0.86);
+        await esperarTela();
+        const mb = folhas.reduce((t, f) => t + EPS.estimarTamanho(f, rec, {}), 0) / 1e6;
+        if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi.`);
+        if (folhas.length > 1) prog.aviso(`${rotuloTime}: ${folhas.length} páginas no PDF (cada página tem no máximo ${Math.round(Math.min(altMax > 0 ? altMax : Infinity, EPS.PDF_ALTURA_MAX_MM) / 10)} cm de altura).`);
+        arquivos.push({ nome, blob: await arquivoDaFolha(folhas, rec, rotuloTime, "pdf", {}, (t) => etapa(t)) });
+      }
+      for (let i = 0; !pdfFmt && i < folhas.length; i++) {
         const f = folhas[i];
         const sufixo = (g.goleiro ? "-goleiros" : "") + (folhas.length > 1 ? `-folha${i + 1}` : "");
-        const pdf = op.formato !== "eps";
-        const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${sufixo}.${pdf ? "pdf" : "eps"}`;
+        const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${sufixo}.eps`;
         etapa(`escrevendo o arquivo${folhas.length > 1 ? ` (folha ${i + 1} de ${folhas.length})` : ""}…`, 0.85 + 0.15 * (i / folhas.length));
         await esperarTela();
-        const corel = !pdf && op.corel;
+        const corel = op.corel;
         const mb = EPS.estimarTamanho(f, rec, { corel }) / 1e6;
         if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi${corel ? " ou desligue \"Compatível com o Corel\" (a arte repetida entra uma vez só)" : ""}.`);
-        arquivos.push({ nome, blob: await arquivoDaFolha(f, rec, `${rotuloTime}${sufixo}`, pdf ? "pdf" : "eps", { corel }, (t) => etapa(t)) });
+        arquivos.push({ nome, blob: await arquivoDaFolha(f, rec, `${rotuloTime}${sufixo}`, "eps", { corel }, (t) => etapa(t)) });
       }
       // Várias folhas do mesmo time: um .zip só dele.
       let saida = arquivos[0];
@@ -3753,7 +3826,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
         arquivos.forEach((a) => zip.file(a.nome, a.blob));
         // STORE: o EPS já vem comprimido por dentro; recomprimir só gasta tempo.
         saida = {
-          nome: `${slugify(nomeBase + "-" + time.nome) || "folhas"}${g.goleiro ? "-goleiros" : ""}-${op.formato !== "eps" ? "pdf" : "eps"}.zip`,
+          nome: `${slugify(nomeBase + "-" + time.nome) || "folhas"}${g.goleiro ? "-goleiros" : ""}-eps.zip`,
           blob: await zip.generateAsync({ type: "blob", compression: "STORE" })
         };
       }
@@ -4144,7 +4217,9 @@ async function arquivoDaFolha(folha, rec, titulo, formato, opEps, aviso) {
   rec.deflar = (u) => pako.deflate(u);
   rec.pdfs = rec.pdfs || {};
   const usados = new Set();
-  folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((o) => { if (o.tipo === "eps" && rec.eps[o.chave]) usados.add(o.chave); }));
+  (Array.isArray(folha) ? folha : [folha]).forEach((fl) => fl.blocos.forEach(({ bloco }) => bloco.ops.forEach((o) => {
+    if (o.tipo === "eps" && rec.eps[o.chave]) usados.add(o.chave);
+  })));
   for (const chave of usados) {
     if (rec.pdfs[chave]) continue;
     if (aviso) aviso(`convertendo ${chave.startsWith("molde:") ? "o molde" : chave === "logo" ? "o logo" : chave === "brasao" ? "o brasão" : "uma imagem EPS"} para PDF…`);

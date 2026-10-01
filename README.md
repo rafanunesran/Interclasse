@@ -522,6 +522,11 @@ retangular (a geração avisa).
       que o Corel usa. Se o PNG tiver perfil embutido, a conversão parte dele; senão, do sRGB;
     - **sem perfil**, por uma fórmula simples, e aí a cor sai diferente da arte original.
   - O espaço do arquivo mostra o que foi enviado: "TIFF CMYK (cor exata)" ou "PNG (RGB → CMYK)".
+  - **Miniatura do TIFF CMYK:** a imagem da tela (prévia e mockup) é convertida de CMYK para RGB
+    **com o perfil de cor**: o que vem embutido no TIFF ou, se não houver, o das Configurações. Sem
+    perfil, a conta simples deixa roxos e lilases azulados demais. Só a tela muda; a impressão usa
+    os valores CMYK do arquivo. Para as artes enviadas antes desta correção, use **"Refazer
+    miniatura"** no espaço da arte: ele refaz a imagem sem precisar subir o TIFF de novo.
   - **Resolução real por tamanho:** a arte é feita para o molde base e esticada nos outros tamanhos,
     então perde resolução nos maiores. O espaço mostra os dois extremos, por exemplo "302 ppi no M ·
     216 ppi no G4".
@@ -757,6 +762,9 @@ Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
     e entram como vetor.
 
   O arquivo costuma ficar menor que o EPS.
+  - O PDF limita cada página a **200 polegadas (~5 m)**. Folhas mais altas que isso o Corel acusa
+    como "arquivo corrompido". Por isso, no PDF, a folha de cada time é quebrada em **páginas de no
+    máximo 5 m**, todas **no mesmo arquivo**.
 - **Compatível com o Corel** (só no EPS, vem ligado). O EPS sai mais simples, porque o importador do Corel
   não aceita bem alguns recursos de PostScript nível 3:
   - cada arte entra no arquivo no ponto em que é desenhada, sem fluxo reaproveitável nem

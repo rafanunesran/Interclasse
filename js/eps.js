@@ -1338,6 +1338,9 @@ const EPS = (function () {
   // (brasão, logo, molde) entram como forma vetorial: o site os converte para
   // PDF (Ghostscript, rec.pdfs[chave]) e a página vira um Form XObject.
 
+  // Página de PDF: no máximo 200 polegadas (limite do formato, ~5,08 m).
+  const PDF_ALTURA_MAX_MM = 5000;
+
   const latin1 = (u8, a, b) => {
     let s = "";
     for (let i = a; i < b; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, Math.min(b, i + 8192)));
@@ -1495,17 +1498,19 @@ const EPS = (function () {
   // Escreve a folha como PDF. Mesmo contrato do escreverEps (lista de
   // pedaços). rec.pdfs[chave]: o PDF de cada EPS (brasão, logo, molde);
   // rec.inflar/rec.deflar: pako (opcionais).
-  function escreverPdf(folha, rec, titulo) {
-    const HS = folha.alturaMm * PT_POR_MM;
-    const WS = folha.larguraMm * PT_POR_MM;
+  // `folhas`: uma folha ou uma lista — cada folha vira uma PÁGINA do mesmo
+  // arquivo (o PDF limita a página a 200 pol ≈ 5,08 m; folhas mais altas que
+  // isso o Corel acusa como arquivo corrompido — ver PDF_ALTURA_MAX_MM).
+  function escreverPdf(folhas, rec, titulo) {
+    const lista = Array.isArray(folhas) ? folhas : [folhas];
     const k = PT_POR_MM;
-    let ultimo = 3; // 1 catálogo, 2 páginas, 3 página
+    let ultimo = 3; // 1 catálogo, 2 páginas, 3 info
     const novoNum = () => ++ultimo;
-    const conteudoNum = novoNum();
+    const paginas = lista.map(() => ({ num: novoNum(), conteudo: novoNum() }));
 
-    // Imagens e formas usadas na folha.
+    // Imagens e formas usadas nas folhas (cada uma entra uma vez no arquivo).
     const imgs = {}, forms = {};
-    folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((op) => {
+    lista.forEach((folha) => folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((op) => {
       if (op.tipo === "imagem" && rec.imagens[op.chave] && !imgs[op.chave]) {
         const img = rec.imagens[op.chave];
         imgs[op.chave] = { nome: "Im" + Object.keys(imgs).length, num: novoNum(), mascara: img.mascaraZ ? novoNum() : 0 };
@@ -1514,8 +1519,10 @@ const EPS = (function () {
         const f = pdfComoForm(rec.pdfs[op.chave], novoNum, rec.inflar, rec.deflar);
         forms[op.chave] = { nome: "Fm" + Object.keys(forms).length, ...f };
       }
-    }));
+    })));
 
+    const conteudoDaFolha = (folha) => {
+    const HS = folha.alturaMm * PT_POR_MM;
     const c = []; // conteúdo da página (texto)
     const w = (s) => c.push(s);
     const cmykPdf = (v) => cmykPs(v);
@@ -1587,6 +1594,8 @@ const EPS = (function () {
       if (recortando) w("Q\n");
       w("Q\n");
     });
+    return c.join("");
+    };
 
     // Monta o arquivo, contando os bytes de cada objeto para a xref.
     const pedacos = [];
@@ -1603,14 +1612,19 @@ const EPS = (function () {
 
     const recursosXo = Object.values(imgs).map((im) => `/${im.nome} ${im.num} 0 R`)
       .concat(Object.values(forms).map((f) => `/${f.nome} ${f.num} 0 R`)).join(" ");
+    const tituloPdf = String(titulo || "Folha").replace(/[^\x20-\x7e]/g, "_").replace(/[()\\]/g, " ");
     objeto(1, ["1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"]);
-    objeto(2, ["2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"]);
-    objeto(3, [`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(WS)} ${num(HS)}] ` +
-      `/Resources << /XObject << ${recursosXo} >> >> /Contents ${conteudoNum} 0 R >>\nendobj\n`]);
-    let dadosC = L1(c.join(""));
-    let filtroC = "";
-    if (rec.deflar) { dadosC = rec.deflar(dadosC); filtroC = "/Filter /FlateDecode "; }
-    objeto(conteudoNum, [`${conteudoNum} 0 obj\n<< ${filtroC}/Length ${tam(dadosC)} >>\nstream\n`, dadosC, "\nendstream\nendobj\n"]);
+    objeto(2, [`2 0 obj\n<< /Type /Pages /Kids [${paginas.map((p) => p.num + " 0 R").join(" ")}] /Count ${paginas.length} >>\nendobj\n`]);
+    objeto(3, [`3 0 obj\n<< /Title (${tituloPdf}) /Producer (Interclasse) /Creator (Interclasse - folha de producao) >>\nendobj\n`]);
+    lista.forEach((folha, i) => {
+      const pg = paginas[i];
+      objeto(pg.num, [`${pg.num} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(folha.larguraMm * k)} ${num(folha.alturaMm * k)}] ` +
+        `/Resources << /XObject << ${recursosXo} >> >> /Contents ${pg.conteudo} 0 R >>\nendobj\n`]);
+      let dadosC = L1(conteudoDaFolha(folha));
+      let filtroC = "";
+      if (rec.deflar) { dadosC = rec.deflar(dadosC); filtroC = "/Filter /FlateDecode "; }
+      objeto(pg.conteudo, [`${pg.conteudo} 0 obj\n<< ${filtroC}/Length ${tam(dadosC)} >>\nstream\n`, dadosC, "\nendstream\nendobj\n"]);
+    });
 
     const somaZ = (l) => (l || []).reduce((s, x) => s + x.length, 0);
     Object.keys(imgs).forEach((chave) => {
@@ -1632,8 +1646,7 @@ const EPS = (function () {
     for (let n = 1; n <= ultimo; n++) {
       x += offsets[n] != null ? String(offsets[n]).padStart(10, "0") + " 00000 n \n" : "0000000000 65535 f \n";
     }
-    const tituloPdf = String(titulo || "Folha").replace(/[^\x20-\x7e]/g, "_").replace(/[()\\]/g, " ");
-    por(x + `trailer\n<< /Size ${ultimo + 1} /Root 1 0 R /Info << /Title (${tituloPdf}) /Producer (Interclasse) >> >>\nstartxref\n${xref}\n%%EOF\n`);
+    por(x + `trailer\n<< /Size ${ultimo + 1} /Root 1 0 R /Info 3 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
     return pedacos;
   }
 
@@ -1673,7 +1686,8 @@ const EPS = (function () {
     ascii85,
     escreverEps,
     escreverPdf,
-    pdfComoForm
+    pdfComoForm,
+    PDF_ALTURA_MAX_MM
   };
 })();
 
