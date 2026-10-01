@@ -330,10 +330,11 @@ function renderizarPerfilCmyk() {
         <p class="pix-ajuda">Use o mesmo <strong>Perfil CMYK</strong> e a mesma <strong>Finalidade de renderização</strong> do Corel (Ferramentas → Gerenciamento de cores → aba Padrão). Com o mecanismo "Microsoft ICM CMM", deixe a compensação de ponto preto desligada.</p>`
         : '<p class="pix-ajuda">Nenhum perfil: as artes em PNG usam a fórmula simples.</p>'}
       <p>
-        <button type="button" class="secundario" data-perfil="enviar">${p ? "Trocar perfil" : "Enviar perfil (.icc / .icm)"}</button>
+        <button type="button" class="secundario" data-perfil="enviar">${p ? "Trocar perfil" : "Enviar perfil (.icc, .icm ou TIFF/JPG do Corel)"}</button>
         ${p ? '<button type="button" class="perigo" data-perfil="remover">Remover</button>' : ""}
       </p>
       <p class="pix-ajuda">Onde achar: no Corel, <em>Ferramentas → Gerenciamento de cores → Configurações padrão</em> mostra o perfil CMYK em uso (ex.: "Coated FOGRA39", "U.S. Web Coated (SWOP) v2", "Japan Color 2001 Coated"). O arquivo fica em <code>C:\Windows\System32\spool\drivers\color</code>.</p>
+      <p class="pix-ajuda"><strong>Não achou o .icc?</strong> No Corel, exporte qualquer desenho em <strong>TIFF</strong> (ou JPG) com modo de cor <strong>CMYK</strong> e <strong>"Incorporar perfil de cor"</strong> marcado, e envie esse arquivo aqui: o site tira de dentro dele o perfil exato que o Corel usa.</p>
     </div>`;
   el.querySelector('[data-perfil="enviar"]').onclick = enviarPerfilCmyk;
   const rem = el.querySelector('[data-perfil="remover"]');
@@ -349,20 +350,30 @@ function renderizarPerfilCmyk() {
 
 async function enviarPerfilCmyk() {
   if (!exigirDriveProducao()) return;
-  const file = await escolherArquivos(".icc,.icm,application/vnd.iccprofile");
+  const file = await escolherArquivos(".icc,.icm,.tif,.tiff,.jpg,.jpeg,application/vnd.iccprofile,image/tiff,image/jpeg");
   if (!file) return;
   try {
     avisoProducao("Conferindo o perfil…");
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    let bytes = new Uint8Array(await file.arrayBuffer());
+    // TIFF/JPG exportado pelo Corel: o perfil vem de dentro dele.
+    let arquivo = file, nome = file.name;
+    const tiff = TiffStream.ehTiff(bytes), jpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    if (tiff || jpeg) {
+      const p = tiff ? TiffStream.perfilEmbutido(bytes) : CorIcc.perfilDoJpeg(bytes);
+      if (!p) throw new Error("Este arquivo não tem perfil de cor embutido. No Corel, exporte de novo em modo CMYK com \"Incorporar perfil de cor\" marcado.");
+      bytes = new Uint8Array(p);
+      nome = "perfil de " + file.name;
+      arquivo = new File([bytes], file.name.replace(/\.[^.]+$/, "") + "-perfil.icc", { type: "application/vnd.iccprofile" });
+    }
     const lib = await CorIcc.carregar();
     const info = CorIcc.descreverPerfil(lib, bytes);
     if (info.espaco !== "CMYK") throw new Error(`Este perfil é ${info.espaco || "de outro tipo"}, não CMYK. Envie o perfil CMYK que o Corel usa.`);
     CorIcc.criarLut(lib, bytes, {}); // confere se a conversão funciona
     avisoProducao("Enviando o perfil…");
-    const env = await enviarArquivoDrive(driveScriptUrl, file, "perfil-cmyk");
+    const env = await enviarArquivoDrive(driveScriptUrl, arquivo, "perfil-cmyk");
     guardarArquivoDriveNoCache(env.partes, bytes);
     await db.collection("config").doc("geral").set({
-      perfilCmyk: { partes: env.partes, nome: file.name, descricao: info.descricao, intencao: (perfilCmyk && perfilCmyk.intencao) || "perceptual", bpc: perfilCmyk ? bpcDoPerfil(perfilCmyk) : false }
+      perfilCmyk: { partes: env.partes, nome, descricao: info.descricao, intencao: (perfilCmyk && perfilCmyk.intencao) || "perceptual", bpc: perfilCmyk ? bpcDoPerfil(perfilCmyk) : false }
     }, { merge: true });
   } catch (e) {
     console.warn(e);

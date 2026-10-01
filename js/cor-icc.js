@@ -121,7 +121,36 @@ const CorIcc = (function () {
     }
   }
 
-  return { carregar, descreverPerfil, criarLut, rgbParaCmyk };
+  // Perfil embutido num JPEG (segmentos APP2 "ICC_PROFILE\0", em pedaços
+  // numerados), ou null.
+  function perfilDoJpeg(bytes) {
+    if (!bytes || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+    const pedacos = [];
+    let p = 2;
+    while (p + 4 <= bytes.length && bytes[p] === 0xff) {
+      const marca = bytes[p + 1];
+      if (marca === 0xd8 || (marca >= 0xd0 && marca <= 0xd7) || marca === 0x01) { p += 2; continue; }
+      if (marca === 0xda || marca === 0xd9) break; // começo da imagem: acabaram os cabeçalhos
+      const tam = (bytes[p + 2] << 8) | bytes[p + 3];
+      if (marca === 0xe2 && tam > 16) {
+        const ini = p + 4;
+        let ok = true;
+        const id = "ICC_PROFILE";
+        for (let i = 0; i < id.length; i++) if (bytes[ini + i] !== id.charCodeAt(i)) { ok = false; break; }
+        if (ok && bytes[ini + 11] === 0) pedacos.push({ seq: bytes[ini + 12], dados: bytes.subarray(ini + 14, p + 2 + tam) });
+      }
+      p += 2 + tam;
+    }
+    if (!pedacos.length) return null;
+    pedacos.sort((a, b) => a.seq - b.seq);
+    const total = pedacos.reduce((s, x) => s + x.dados.length, 0);
+    const out = new Uint8Array(total);
+    let o = 0;
+    pedacos.forEach((x) => { out.set(x.dados, o); o += x.dados.length; });
+    return out;
+  }
+
+  return { carregar, descreverPerfil, criarLut, rgbParaCmyk, perfilDoJpeg };
 })();
 
 if (typeof module !== "undefined") module.exports = CorIcc;

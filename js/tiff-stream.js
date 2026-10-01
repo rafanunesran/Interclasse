@@ -339,7 +339,27 @@ const TiffStream = (function () {
     };
   }
 
-  return { ehTiff, lerCabecalho, converterParaCmyk };
+  // Perfil de cor embutido (tag 34675, ICC Profile) do primeiro IFD, ou null.
+  // O Corel grava ali o perfil CMYK que usou ("Incorporar perfil de cor").
+  function perfilEmbutido(bytes) {
+    if (!ehTiff(bytes)) return null;
+    const le = bytes[0] === 0x49;
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const ifd = dv.getUint32(4, le);
+    if (ifd + 2 > bytes.length) return null;
+    const n = dv.getUint16(ifd, le);
+    for (let i = 0; i < n; i++) {
+      const e = ifd + 2 + i * 12;
+      if (e + 12 > bytes.length) break;
+      if (dv.getUint16(e, le) !== 34675) continue;
+      const cont = dv.getUint32(e + 4, le);
+      const off = cont <= 4 ? e + 8 : dv.getUint32(e + 8, le);
+      return off + cont <= bytes.length ? bytes.subarray(off, off + cont) : null;
+    }
+    return null;
+  }
+
+  return { ehTiff, lerCabecalho, converterParaCmyk, perfilEmbutido };
 })();
 
 if (typeof module !== "undefined") module.exports = TiffStream;

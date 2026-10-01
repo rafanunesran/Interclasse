@@ -533,7 +533,13 @@ Use o mesmo **perfil CMYK** e a mesma **finalidade de renderização** que apare
 (*Ferramentas → Gerenciamento de cores*, aba Padrão): *Perceptual* ou *Colorimétrica relativa*. A
 **compensação de ponto preto** é uma opção à parte; com o mecanismo "Microsoft ICM CMM" do Corel,
 deixe-a desligada. Exemplo: Corel com "U.S. Web Coated (SWOP) v2" e "Colorimétrico relativo" →
-envie o `USWebCoatedSWOP.icc` e escolha *Colorimétrica relativa*, sem compensação. O conversor (lcms-wasm, ~360 KB) é carregado só na hora de gerar a
+envie o `USWebCoatedSWOP.icc` e escolha *Colorimétrica relativa*, sem compensação.
+
+**Não achou o `.icc`?** O perfil "(Padrão)" do Corel fica dentro da instalação dele. Exporte
+qualquer desenho do Corel em **TIFF** (ou JPG) com modo de cor **CMYK** e **"Incorporar perfil de
+cor"** marcado e envie esse arquivo no lugar do `.icc`. O site tira de dentro dele o perfil exato
+(tag ICC do TIFF ou segmentos `ICC_PROFILE` do JPG) e guarda só o perfil. O nome em negrito no
+bloco deve mostrar o mesmo do Corel, por exemplo "U.S. Web Coated (SWOP) v2". O conversor (lcms-wasm, ~360 KB) é carregado só na hora de gerar a
 folha.
 - **Mangas**: uma arte só serve para **as duas** (menos arquivo no Drive). Se a manga direita
   for diferente, marque **"Manga direita com arte diferente"** e envie a dela.
