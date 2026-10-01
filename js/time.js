@@ -268,7 +268,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261102a";
+const VERSAO_MOCKUP3D = "20261103a";
 let botao3d = null;
 
 function texturas3D(goleiro) {
