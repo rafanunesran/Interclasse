@@ -198,6 +198,11 @@ function abrirCalculadoraMetro(levaId) {
     </div>`;
   const form = fundo.querySelector("form");
   form.rotacao.value = f.rotacao || "0";
+  // Metragem das folhas já geradas (aba Produção) como "metros do arquivo final".
+  if (typeof metragemTotalDaLeva === "function" && typeof agruparPorModelo === "function") {
+    const r = metragemTotalDaLeva(e.leva, agruparPorModelo(e.itens));
+    if (r.total > 0 && !r.faltam) form.metrosReais.value = (Math.round(r.total * 100) / 100).toFixed(2);
+  }
   const elRes = fundo.querySelector(".ci-resultado");
   const elCusto = fundo.querySelector(".ci-custo");
   const fechar = () => fundo.remove();

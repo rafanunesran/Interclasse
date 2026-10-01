@@ -845,7 +845,7 @@ function criarBlocoProducaoTime(timeId, time) {
   bloco.appendChild(opcoes);
 
   // Cor do reforço de ombro deste time (vazio = a cor padrão da aba Tamanhos).
-  if (Object.values(moldesConfig.reforcoOmbro || {}).some((v) => Number(v) > 0)) {
+  if (temReforcoOmbro()) {
     const cor = comum.reforcoCmyk || moldesConfig.reforcoCmyk || [0, 0, 0, 0];
     const ref = document.createElement("div");
     ref.className = "producao-opcoes producao-reforco";
@@ -3585,12 +3585,18 @@ function pecasDoTime(time) {
     .concat(pecasVirtuaisDoTime(time));
 }
 
+// Há reforço em algum tamanho? (valor da aba Tamanhos ou automático pelo
+// molde das costas)
+function temReforcoOmbro() {
+  return TODOS_TAMANHOS.some((t) => EPS.comprimentoReforco(moldesConfig, t));
+}
+
 // Reforço de ombro (quando há a tabela de comprimentos na aba Tamanhos) e
 // etiqueta de tamanho (quando ela tem elementos): um de cada por camiseta.
 function pecasVirtuaisDoTime(time) {
   const prod = producaoDoTime(time);
   const ids = [];
-  if (Object.values(moldesConfig.reforcoOmbro || {}).some((v) => Number(v) > 0)) ids.push("reforcoOmbro");
+  if (temReforcoOmbro()) ids.push("reforcoOmbro");
   if (EPS.elementosDaPecaNoTime(layoutDoTime(time), prod, "etiquetaTam").length) ids.push("etiquetaTam");
   return ids;
 }
@@ -3697,14 +3703,35 @@ function agruparLinhasPorTime(linhas) {
       return;
     }
     const chave = timeId + (atual.goleiro ? "|goleiro" : "");
-    if (!grupos.has(chave)) grupos.set(chave, { timeId, goleiro: !!atual.goleiro, camisetas: [] });
+    if (!grupos.has(chave)) grupos.set(chave, { timeId, goleiro: !!atual.goleiro, camisetas: [], modelos: {} });
+    // Modelo como a aba Produção agrupa (para guardar a metragem nele).
+    const mod = typeof modeloComGoleiro === "function" ? modeloComGoleiro(item.modelo, atual.goleiro) : item.modelo || "";
+    grupos.get(chave).modelos[mod] = (grupos.get(chave).modelos[mod] || 0) + 1;
     // `_alunoId`: para a camiseta com arte própria (producao.individuais).
     grupos.get(chave).camisetas.push({ ...atual, _alunoId: item.origem !== "avulso" ? item.alunoId || "" : "" });
   });
   return { grupos, avisos };
 }
 
-async function gerarFolhasEps(linhas, nomeBase) {
+// Guarda na leva o comprimento das folhas geradas (metros lineares do
+// rolo), por modelo — a aba Produção mostra por modelo e o total do lote.
+// `porModelo`: { modelo: metros }.
+async function gravarMetragemDaLeva(levaId, porModelo, larguraCm) {
+  if (!levaId || typeof COL_PRODUCAO === "undefined" || !Object.keys(porModelo).length) return;
+  const ref = db.collection(COL_PRODUCAO).doc(levaId);
+  const args = [];
+  Object.entries(porModelo).forEach(([modelo, m]) => {
+    args.push(new firebase.firestore.FieldPath("metragem", modelo),
+      { m: Math.round(m * 100) / 100, larguraCm, em: Date.now() });
+  });
+  try {
+    await ref.update(...args);
+  } catch (e) {
+    console.warn("Metragem não gravada:", e);
+  }
+}
+
+async function gerarFolhasEps(linhas, nomeBase, levaId) {
   if (!driveScriptUrl) {
     alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm os arquivos).");
     return;
@@ -3728,6 +3755,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
   const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })));
   avisos.forEach((a) => prog.aviso(a));
   let gerados = 0;
+  const metragem = {}; // modelo → metros lineares das folhas geradas
   for (let idx = 0; idx < lista.length; idx++) {
     if (prog.cancelado) {
       for (let k = idx; k < lista.length; k++) prog.time(k, "cancelado");
@@ -3795,6 +3823,11 @@ async function gerarFolhasEps(linhas, nomeBase) {
         prog.time(idx, "fora", "nenhuma peça para imprimir");
         continue;
       }
+      // Metros lineares deste time (soma da altura das folhas), repartidos
+      // entre os modelos do grupo pelo nº de camisetas.
+      const metros = folhas.reduce((t, f) => t + f.alturaMm, 0) / 1000;
+      const nMods = Object.values(g.modelos).reduce((a, b) => a + b, 0) || 1;
+      Object.entries(g.modelos).forEach(([mod, n]) => { metragem[mod] = (metragem[mod] || 0) + metros * (n / nMods); });
       const arquivos = [];
       if (pdfFmt) {
         // Um PDF só por time, com uma página por folha.
@@ -3838,6 +3871,12 @@ async function gerarFolhasEps(linhas, nomeBase) {
       prog.aviso(`${rotuloTime}: erro — ${e.message || e}`);
       prog.time(idx, "erro", e.message || String(e));
     }
+  }
+  Object.keys(metragem).forEach((k) => (metragem[k] = Math.round(metragem[k] * 100) / 100));
+  const totalM = Object.values(metragem).reduce((a, b) => a + b, 0);
+  if (totalM > 0) {
+    prog.aviso(`Metragem: ${totalM.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m lineares no rolo de ${op.larguraCm} cm.`);
+    await gravarMetragemDaLeva(levaId, metragem, op.larguraCm);
   }
   prog.fim(gerados);
 }
@@ -3892,8 +3931,8 @@ function observacoesDeMontagem(timeComum, time, g) {
   if (virt.includes("reforcoOmbro")) {
     const tams = contarPorTamanho(g.camisetas).map(([t]) => t);
     const comp = tams.map((t) => {
-      const v = Number((moldesConfig.reforcoOmbro || {})[t]);
-      return v > 0 ? `${t} ${v} mm` : `${t} (sem medida)`;
+      const c = EPS.comprimentoReforco(moldesConfig, t);
+      return c ? `${t} ${c.mm} mm` : `${t} (sem medida)`;
     }).join(" · ");
     obs.push(`Reforço de ombro: 1 tira de ${EPS.REFORCO_LARGURA_MM} mm por camiseta — comprimento: ${comp}.`);
   }

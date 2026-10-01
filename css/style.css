@@ -3033,3 +3033,7 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .producao-slot-ppi { display: block; font-size: 0.78rem; color: #15803d; }
 .producao-slot-ppi.baixo { color: #b45309; font-weight: 600; }
 .producao-slot-ppi.ruim { color: #b91c1c; font-weight: 700; }
+
+/* Metragem das folhas geradas (aba Produção) */
+.metragem-leva { margin: 4px 0; color: #0f766e; }
+.metragem-modelo { font-size: 0.8rem; font-weight: 600; color: #0f766e; }

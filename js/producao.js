@@ -348,6 +348,7 @@ function renderizarListaLevas() {
       ${leva.observacao ? `<p class="pix-ajuda">${escapeHtmlAdmin(leva.observacao)}</p>` : ""}
       <p><strong>${itens.length} camiseta(s)</strong> em <strong>${grupos.length} modelo(s)</strong>
          &middot; ${nPagos} paga(s), ${itens.length - nPagos} não paga(s)</p>
+      ${htmlMetragemDaLeva(leva, grupos)}
       <p class="pix-ajuda">Modelos: ${resumoModelos}</p>
       ${htmlCustosDaLeva(leva.id, itens.length)}
       ${nRemovidos > 0
@@ -404,7 +405,7 @@ function renderizarListaLevas() {
       btnEps.textContent = "Folhas de impressão (CMYK)";
       btnEps.title = "Folha de impressão de cada time da leva, já personalizada (moldes da aba Tamanhos, layout da aba Artes e arquivos do time)";
       btnEps.disabled = itens.length === 0;
-      btnEps.onclick = () => gerarFolhasEps(grupos.flatMap((g) => g.linhas), leva.nome || "leva");
+      btnEps.onclick = () => gerarFolhasEps(grupos.flatMap((g) => g.linhas), leva.nome || "leva", leva.id);
       botoes.appendChild(btnEps);
     }
 
@@ -470,6 +471,28 @@ function htmlCustosDaLeva(levaId, unidades) {
     "</p>";
 }
 
+function fmtMetros(m) {
+  return m.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " m";
+}
+
+// Metragem do lote (metros lineares do rolo), gravada ao gerar as folhas de
+// impressão: soma dos modelos da leva que já têm folha gerada.
+function metragemTotalDaLeva(leva, grupos) {
+  const met = leva.metragem || {};
+  const com = grupos.filter((g) => met[g.modelo] && met[g.modelo].m > 0);
+  const total = com.reduce((t, g) => t + met[g.modelo].m, 0);
+  const larguras = [...new Set(com.map((g) => met[g.modelo].larguraCm))];
+  return { total, faltam: grupos.length - com.length, larguras };
+}
+
+function htmlMetragemDaLeva(leva, grupos) {
+  const r = metragemTotalDaLeva(leva, grupos);
+  if (!(r.total > 0)) return "";
+  return `<p class="metragem-leva">📏 <strong>Metragem do lote: ${fmtMetros(r.total)}</strong>` +
+    ` no rolo de ${r.larguras.map((l) => l + " cm").join(" / ")}` +
+    (r.faltam ? ` <span class="pix-ajuda">(sem folha gerada em ${r.faltam} modelo(s))</span>` : "") + "</p>";
+}
+
 // Bloco de um modelo dentro da leva: é exatamente o que sai num CSV.
 function criarBlocoModelo(leva, grupo) {
   const bloco = document.createElement("div");
@@ -479,6 +502,15 @@ function criarBlocoModelo(leva, grupo) {
   cabecalho.className = "modelo-leva-cabecalho";
   const titulo = document.createElement("h4");
   titulo.textContent = `Modelo: ${grupo.modelo} — ${grupo.linhas.length} camiseta(s)`;
+  const met = (leva.metragem || {})[grupo.modelo];
+  if (met && met.m > 0) {
+    const sub = document.createElement("span");
+    sub.className = "metragem-modelo";
+    sub.textContent = `📏 ${fmtMetros(met.m)} no rolo de ${met.larguraCm} cm`;
+    sub.title = `Comprimento das folhas geradas em ${new Date(met.em).toLocaleString("pt-BR")}`;
+    titulo.appendChild(document.createElement("br"));
+    titulo.appendChild(sub);
+  }
   cabecalho.appendChild(titulo);
 
   const btn = document.createElement("button");
@@ -494,7 +526,7 @@ function criarBlocoModelo(leva, grupo) {
     btnEps.className = "secundario";
     btnEps.textContent = "Folha EPS";
     btnEps.title = "Folha de impressão deste modelo em EPS CMYK, com nome e número de cada camiseta";
-    btnEps.onclick = () => gerarFolhasEps(grupo.linhas, `${leva.nome || "leva"}-${grupo.modelo}`);
+    btnEps.onclick = () => gerarFolhasEps(grupo.linhas, `${leva.nome || "leva"}-${grupo.modelo}`, leva.id);
     cabecalho.appendChild(btnEps);
   }
   bloco.appendChild(cabecalho);

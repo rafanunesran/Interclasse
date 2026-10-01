@@ -823,12 +823,64 @@ const EPS = (function () {
     return { w: Number(e.larguraMm) > 0 ? Number(e.larguraMm) : 50, h: Number(e.alturaMm) > 0 ? Number(e.alturaMm) : 30 };
   }
 
+  // Comprimento automático do reforço (mm): a borda de cima do molde das
+  // COSTAS, de uma cava à outra (ombro, gola, ombro), + folga de costura.
+  // A borda é seguida do meio para fora pela parte mais alta do contorno;
+  // termina onde a linha começa a descer forte (a cava, inclinação > 45°).
+  const REFORCO_FOLGA_MM = 20;
+  const cacheReforco = {};
+  function bordaDeOmbroAOmbro(contorno) {
+    if (!contorno) return 0;
+    if (cacheReforco[contorno] != null) return cacheReforco[contorno];
+    const polis = poligonosDoContorno(comandosDoContorno(contorno));
+    if (!polis.length) return (cacheReforco[contorno] = 0);
+    const p = polis.reduce((a, b) => (b.length > a.length ? b : a));
+    let x0 = Infinity, x1 = -Infinity;
+    p.forEach((q) => { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; });
+    const topo = (x) => {
+      let m = null;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length];
+        if ((a[0] <= x && b[0] > x) || (b[0] <= x && a[0] > x)) {
+          const y = a[1] + ((x - a[0]) * (b[1] - a[1])) / (b[0] - a[0]);
+          if (m == null || y < m) m = y;
+        }
+      }
+      return m;
+    };
+    const xc = (x0 + x1) / 2, passo = 1;
+    const lado = (dir) => {
+      let x = xc, y = topo(x), L = 0;
+      if (y == null) return 0;
+      for (;;) {
+        const nx = x + dir * passo;
+        if (nx <= x0 || nx >= x1) break;
+        const ny = topo(nx);
+        if (ny == null || (ny - y) / passo > 1) break; // começou a cava
+        L += Math.hypot(passo, ny - y);
+        x = nx; y = ny;
+      }
+      return L;
+    };
+    return (cacheReforco[contorno] = Math.round(lado(-1) + lado(1)));
+  }
+
+  // Comprimento do reforço num tamanho: o da aba Tamanhos ou, sem ele, o
+  // automático pelo molde das costas. { mm, auto } ou null.
+  function comprimentoReforco(moldes, tam) {
+    const manual = Number(((moldes && moldes.reforcoOmbro) || {})[tam]);
+    if (manual > 0) return { mm: manual, auto: false };
+    const m = (((moldes && moldes.pecas) || {}).costas || {})[tam];
+    const b = m && m.contorno ? bordaDeOmbroAOmbro(m.contorno) : 0;
+    return b > 0 ? { mm: b + REFORCO_FOLGA_MM, auto: true } : null;
+  }
+
   // { bbox (pt), contorno (retângulo, mm), virtual } ou null (sem medida).
   function moldeVirtual(moldes, layout, pecaId, tam) {
     let d = null;
     if (pecaId === "reforcoOmbro") {
-      const c = Number(((moldes && moldes.reforcoOmbro) || {})[tam]);
-      if (c > 0) d = { w: c, h: REFORCO_LARGURA_MM };
+      const c = comprimentoReforco(moldes, tam);
+      if (c) d = { w: c.mm, h: REFORCO_LARGURA_MM };
     } else if (pecaId === "etiquetaTam") {
       d = medidasEtiqueta(layout);
     }
@@ -880,7 +932,7 @@ const EPS = (function () {
         if (!virtual && !arte && !elementos.length) return; // peça sem nada deste time
         if (!molde || !molde.bbox) {
           avisar(pecaId === "reforcoOmbro"
-            ? `Sem o comprimento do reforço de ombro para o tamanho ${cam.tamanho || "(vazio)"} (aba Tamanhos) — o reforço ficou de fora.`
+            ? `Sem o comprimento do reforço de ombro para o tamanho ${cam.tamanho || "(vazio)"} (sem molde das costas com contorno nesse tamanho e sem valor na aba Tamanhos) — o reforço ficou de fora.`
             : `Sem molde de corte de "${op.nomePeca ? op.nomePeca(pecaId) : pecaId}" no tamanho ${cam.tamanho || "(vazio)"} — essa peça ficou de fora.`);
           return;
         }
@@ -1687,6 +1739,9 @@ const EPS = (function () {
     escreverEps,
     escreverPdf,
     pdfComoForm,
+    comprimentoReforco,
+    bordaDeOmbroAOmbro,
+    REFORCO_FOLGA_MM,
     PDF_ALTURA_MAX_MM
   };
 })();

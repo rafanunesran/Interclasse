@@ -180,10 +180,10 @@ function renderizarMoldes() {
     <div class="moldes-tabela-wrap"><table class="moldes-tabela">
       <thead><tr><th>Tamanho</th>${PECAS_PRODUCAO.map((p) => `<th>${escapeHtmlAdmin(p.nome)}</th>`).join("")}<th>Reforço de ombro<br><span class="pix-ajuda">comprimento (mm)</span></th></tr></thead>
       <tbody>${tamanhos.map((t) => `<tr><th>${escapeHtmlAdmin(t)}</th>${PECAS_PRODUCAO.map((p) => celulaMolde(p.id, t)).join("")}` +
-        `<td class="molde-celula"><input type="number" min="0" step="1" class="input-curto" data-reforco="${escAttr(t)}" value="${escAttr((moldesConfig.reforcoOmbro || {})[t] || "")}" placeholder="mm" /></td></tr>`).join("")}</tbody>
+        `<td class="molde-celula"><input type="number" min="0" step="1" class="input-curto" data-reforco="${escAttr(t)}" value="${escAttr((moldesConfig.reforcoOmbro || {})[t] || "")}" placeholder="${escAttr(reforcoAutoTexto(t))}" title="Vazio = automático pelo molde das costas (ombro a ombro pela gola + ${EPS.REFORCO_FOLGA_MM} mm)" /></td></tr>`).join("")}</tbody>
     </table></div>
     <div class="reforco-config">
-      <p><strong>Reforço de ombro</strong>: um retalho de ${EPS.REFORCO_LARGURA_MM} mm de largura por camiseta, com o comprimento da tabela acima, sai na folha junto das peças (tamanho sem comprimento = sem reforço). Cor padrão (CMYK %; o time pode ter a sua nos Arquivos de produção; tudo 0 = sem tinta):</p>
+      <p><strong>Reforço de ombro</strong>: um retalho de ${EPS.REFORCO_LARGURA_MM} mm de largura por camiseta sai na folha junto das peças. O comprimento é <strong>automático</strong>: a borda de cima do molde das <strong>costas</strong>, de uma cava à outra (ombro, gola e ombro), + ${EPS.REFORCO_FOLGA_MM} mm de folga — o valor aparece apagado em cada campo ("auto …"). Digite um número para usar outro comprimento naquele tamanho. Cor padrão (CMYK %; o time pode ter a sua nos Arquivos de produção; tudo 0 = sem tinta):</p>
       <div class="arte-cmyk" data-reforco-cor>${["C", "M", "Y", "K"].map((l, i) =>
         `<label>${l}<input type="number" min="0" max="100" step="1" data-i="${i}" value="${Number(((moldesConfig.reforcoCmyk) || [])[i]) || 0}" /></label>`).join("")}</div>
     </div>`;
@@ -217,6 +217,13 @@ function renderizarMoldes() {
       await gravarMoldes();
     };
   });
+}
+
+// Comprimento automático do reforço (molde das costas) para mostrar no campo.
+function reforcoAutoTexto(tam) {
+  const m = (moldesConfig.pecas.costas || {})[tam];
+  const b = m && m.contorno ? EPS.bordaDeOmbroAOmbro(m.contorno) : 0;
+  return b > 0 ? `auto ${b + EPS.REFORCO_FOLGA_MM}` : "mm";
 }
 
 function celulaMolde(pecaId, tam) {

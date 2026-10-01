@@ -627,8 +627,12 @@ Cada camiseta leva na folha um **retalho de reforço de ombro**: uma tira de **2
 em cor sólida, com a mesma faca de 3 mm das outras peças e o marcador da costureira
 ("TIME-TAM-Reforço de ombro").
 
-- **Comprimento:** coluna **Reforço de ombro** da tabela de moldes, em mm por tamanho. Tamanho sem
-  comprimento fica sem reforço, e a geração avisa.
+- **Comprimento automático:** é a borda de cima do molde das **costas**, de uma cava à outra
+  (ombro, gola e ombro), **+ 20 mm** de folga. O site segue o contorno do meio para fora e para onde
+  a linha começa a descer forte, que é a cava. Cada campo da coluna **Reforço de ombro** mostra o
+  valor calculado, apagado ("auto 437"). Para usar outra medida num tamanho, é só digitar o número.
+  O reforço só fica de fora num tamanho que não tem molde das costas com contorno nem valor digitado
+  (a geração avisa).
 - **Cor:** a padrão fica logo abaixo da tabela, em CMYK %. Cada time pode ter a sua em
   **Arquivos de produção → Cor do reforço de ombro**, com o botão "Usar a padrão" para voltar.
   Tudo 0 = sem tinta.
@@ -780,6 +784,15 @@ Cada peça leva um **marcador para a costureira** dentro da área de impressão:
 borda de baixo do molde** (seguindo o contorno — barra curva, manga que afina —, sempre dentro da
 área de impressão e fora da faca de 3 mm). Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo
 para cima), também a 1 mm da borda e com 4 mm. Dá para desligar no diálogo.
+
+**Metragem.** Ao gerar as folhas, o site guarda na leva o comprimento das folhas (metros lineares
+do rolo) e mostra na aba Produção:
+- **embaixo das quantidades do lote:** "📏 Metragem do lote: 12,40 m no rolo de 150 cm";
+- **embaixo de cada "Modelo: … — N camiseta(s)":** a metragem só daquele modelo.
+
+Gerar a folha de um modelo só atualiza só a metragem dele. Quando todos os modelos do lote já têm
+folha gerada, a calculadora "📏 Impressão por metro" (Financeiro → Custos por lote) já vem com esse
+total em "Metros do arquivo final".
 
 Sai **um EPS por time** (camisetas avulsas vão para o time do mesmo modelo; os goleiros saem num
 arquivo à parte). **Cada time é baixado separado, assim que fica pronto**, para o download ser mais
