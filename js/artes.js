@@ -303,11 +303,17 @@ function renderizarLogoEmpresa() {
 // ============================================================
 // PERFIL DE COR CMYK (Configurações) — PNG → CMYK como o Corel (js/cor-icc.js)
 // ============================================================
-// config/geral.perfilCmyk = { partes, nome, descricao, intencao }. As artes
+// config/geral.perfilCmyk = { partes, nome, descricao, intencao, bpc }. As artes
 // em PNG (e TIFF RGB) são convertidas com ele na folha EPS; o TIFF CMYK não.
 
 let perfilCmyk = null;
 const NOME_INTENCAO = { perceptual: "Perceptual", relativa: "Colorimétrica relativa" };
+
+// Compensação de ponto preto: a gravada; nos perfis antigos (sem o campo),
+// ligada na relativa, como era.
+function bpcDoPerfil(p) {
+  return p && p.bpc != null ? !!p.bpc : !!(p && p.intencao === "relativa");
+}
 
 function renderizarPerfilCmyk() {
   const el = document.getElementById("perfilCmykBloco");
@@ -319,7 +325,9 @@ function renderizarPerfilCmyk() {
         <span class="pix-ajuda">(${escapeHtmlAdmin(p.nome || "")})</span></p>
         <label class="campo-inline">Intenção de renderização
           <select data-perfil="intencao">${Object.entries(NOME_INTENCAO).map(([v, t]) =>
-            `<option value="${v}"${(p.intencao || "perceptual") === v ? " selected" : ""}>${t}${v === "perceptual" ? " (padrão do Corel)" : " + compensação de preto"}</option>`).join("")}</select></label>`
+            `<option value="${v}"${(p.intencao || "perceptual") === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label class="interruptor"><input type="checkbox" data-perfil="bpc" ${bpcDoPerfil(p) ? "checked" : ""} /> <span>Compensação de ponto preto</span></label>
+        <p class="pix-ajuda">Use o mesmo <strong>Perfil CMYK</strong> e a mesma <strong>Finalidade de renderização</strong> do Corel (Ferramentas → Gerenciamento de cores → aba Padrão). Com o mecanismo "Microsoft ICM CMM", deixe a compensação de ponto preto desligada.</p>`
         : '<p class="pix-ajuda">Nenhum perfil: as artes em PNG usam a fórmula simples.</p>'}
       <p>
         <button type="button" class="secundario" data-perfil="enviar">${p ? "Trocar perfil" : "Enviar perfil (.icc / .icm)"}</button>
@@ -334,7 +342,9 @@ function renderizarPerfilCmyk() {
     await db.collection("config").doc("geral").update({ perfilCmyk: firebase.firestore.FieldValue.delete() });
   };
   const sel = el.querySelector('[data-perfil="intencao"]');
-  if (sel) sel.onchange = () => db.collection("config").doc("geral").set({ perfilCmyk: { ...perfilCmyk, intencao: sel.value } }, { merge: true });
+  if (sel) sel.onchange = () => db.collection("config").doc("geral").set({ perfilCmyk: { ...perfilCmyk, intencao: sel.value, bpc: bpcDoPerfil(perfilCmyk) } }, { merge: true });
+  const chkBpc = el.querySelector('[data-perfil="bpc"]');
+  if (chkBpc) chkBpc.onchange = () => db.collection("config").doc("geral").set({ perfilCmyk: { ...perfilCmyk, bpc: chkBpc.checked } }, { merge: true });
 }
 
 async function enviarPerfilCmyk() {
@@ -352,7 +362,7 @@ async function enviarPerfilCmyk() {
     const env = await enviarArquivoDrive(driveScriptUrl, file, "perfil-cmyk");
     guardarArquivoDriveNoCache(env.partes, bytes);
     await db.collection("config").doc("geral").set({
-      perfilCmyk: { partes: env.partes, nome: file.name, descricao: info.descricao, intencao: (perfilCmyk && perfilCmyk.intencao) || "perceptual" }
+      perfilCmyk: { partes: env.partes, nome: file.name, descricao: info.descricao, intencao: (perfilCmyk && perfilCmyk.intencao) || "perceptual", bpc: perfilCmyk ? bpcDoPerfil(perfilCmyk) : false }
     }, { merge: true });
   } catch (e) {
     console.warn(e);
@@ -371,7 +381,7 @@ async function lutDoPerfil(bytesImagem, aviso) {
     const perfil = await baixarArquivoDrive(driveScriptUrl, perfilCmyk.partes);
     const pako = await carregarLib("pako");
     const origem = bytesImagem && PngStream.perfilEmbutido(bytesImagem, pako);
-    return CorIcc.criarLut(lib, perfil, { intencao: perfilCmyk.intencao, origem: origem || undefined });
+    return CorIcc.criarLut(lib, perfil, { intencao: perfilCmyk.intencao, bpc: bpcDoPerfil(perfilCmyk), origem: origem || undefined });
   } catch (e) {
     console.warn(e);
     if (aviso) aviso(`Perfil CMYK indisponível (${e.message || e}) — usando a fórmula simples.`);
@@ -381,7 +391,7 @@ async function lutDoPerfil(bytesImagem, aviso) {
 
 function resumoConversaoCor() {
   return perfilCmyk
-    ? `Artes em PNG: convertidas com o perfil ${perfilCmyk.descricao || perfilCmyk.nome} (${NOME_INTENCAO[perfilCmyk.intencao] || "Perceptual"}). TIFF CMYK: sem conversão.`
+    ? `Artes em PNG: convertidas com o perfil ${perfilCmyk.descricao || perfilCmyk.nome} (${NOME_INTENCAO[perfilCmyk.intencao] || "Perceptual"}${bpcDoPerfil(perfilCmyk) ? ", com compensação de ponto preto" : ""}). TIFF CMYK: sem conversão.`
     : "Artes em PNG: fórmula simples (cor aproximada) — envie o perfil CMYK em Configurações ou use TIFF CMYK. TIFF CMYK: sem conversão.";
 }
 

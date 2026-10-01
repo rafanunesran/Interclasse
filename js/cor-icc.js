@@ -56,11 +56,13 @@ const CorIcc = (function () {
   }
 
   // LUT RGB → CMYK. opcoes: { intencao: "perceptual" | "relativa",
+  // bpc: compensação de ponto preto (padrão: ligada só na relativa),
   // origem: bytes de um perfil RGB (o iCCP do PNG) ou nada (sRGB) }.
   function criarLut(lib, bytesCmyk, opcoes) {
     const o = opcoes || {};
     const intencao = o.intencao === "relativa" ? "relativa" : "perceptual";
-    const chave = chaveDe(bytesCmyk) + "|" + intencao + "|" + (o.origem ? chaveDe(o.origem) : "srgb");
+    const bpc = o.bpc == null ? intencao === "relativa" : !!o.bpc;
+    const chave = chaveDe(bytesCmyk) + "|" + intencao + "|" + bpc + "|" + (o.origem ? chaveDe(o.origem) : "srgb");
     if (cacheLut.has(chave)) return cacheLut.get(chave);
     const { m, lcms } = lib;
     const destino = lcms.cmsOpenProfileFromMem(bytesCmyk, bytesCmyk.byteLength);
@@ -75,7 +77,7 @@ const CorIcc = (function () {
       if (lcms.cmsGetColorSpaceASCII(destino) !== "CMYK") throw new Error("O perfil enviado não é CMYK.");
       const rel = intencao === "relativa";
       const t = lcms.cmsCreateTransform(origem, m.TYPE_RGB_8, destino, m.TYPE_CMYK_8,
-        rel ? m.INTENT_RELATIVE_COLORIMETRIC : m.INTENT_PERCEPTUAL, rel ? m.cmsFLAGS_BLACKPOINTCOMPENSATION : 0);
+        rel ? m.INTENT_RELATIVE_COLORIMETRIC : m.INTENT_PERCEPTUAL, bpc ? m.cmsFLAGS_BLACKPOINTCOMPENSATION : 0);
       if (!t) throw new Error("Não foi possível montar a conversão com este perfil.");
       const ent = new Uint8Array(N * N * N * 3);
       let i = 0;

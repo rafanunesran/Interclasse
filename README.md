@@ -529,8 +529,11 @@ retangular (a geração avisa).
 nome aparece em *Ferramentas → Gerenciamento de cores → Configurações padrão* (ex.: Coated
 FOGRA39, U.S. Web Coated (SWOP) v2, Japan Color 2001 Coated). O arquivo fica em
 `C:\Windows\System32\spool\drivers\color`. O site confere se o perfil é CMYK antes de gravar.
-A **intenção de renderização** pode ser *Perceptual* (padrão do Corel) ou *Colorimétrica relativa*
-com compensação de preto. O conversor (lcms-wasm, ~360 KB) é carregado só na hora de gerar a
+Use o mesmo **perfil CMYK** e a mesma **finalidade de renderização** que aparecem no Corel
+(*Ferramentas → Gerenciamento de cores*, aba Padrão): *Perceptual* ou *Colorimétrica relativa*. A
+**compensação de ponto preto** é uma opção à parte; com o mecanismo "Microsoft ICM CMM" do Corel,
+deixe-a desligada. Exemplo: Corel com "U.S. Web Coated (SWOP) v2" e "Colorimétrico relativo" →
+envie o `USWebCoatedSWOP.icc` e escolha *Colorimétrica relativa*, sem compensação. O conversor (lcms-wasm, ~360 KB) é carregado só na hora de gerar a
 folha.
 - **Mangas**: uma arte só serve para **as duas** (menos arquivo no Drive). Se a manga direita
   for diferente, marque **"Manga direita com arte diferente"** e envie a dela.
