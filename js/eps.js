@@ -1330,6 +1330,313 @@ const EPS = (function () {
     return pedacos;
   }
 
+  // ---------------- Folha em PDF ----------------
+  // O Corel abre PDF muito melhor que EPS (e de lá se salva em CDR). Mesmos
+  // blocos e a mesma ordem de desenho do escreverEps, em operadores de PDF.
+  // Cada imagem entra UMA vez (XObject) e é usada quantas vezes aparecer; os
+  // dados CMYK já comprimidos (zlib) vão direto para o arquivo. Os EPS
+  // (brasão, logo, molde) entram como forma vetorial: o site os converte para
+  // PDF (Ghostscript, rec.pdfs[chave]) e a página vira um Form XObject.
+
+  const latin1 = (u8, a, b) => {
+    let s = "";
+    for (let i = a; i < b; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, Math.min(b, i + 8192)));
+    return s;
+  };
+
+  // Lê o PDF (simples, de uma página, como o que o Ghostscript gera): os
+  // objetos pela tabela xref. Devolve { obj(n) → { dict, stream } , pagina }.
+  function lerPdfSimples(bytes) {
+    const fim = latin1(bytes, Math.max(0, bytes.length - 2048), bytes.length);
+    const sx = fim.lastIndexOf("startxref");
+    if (sx < 0) throw new Error("PDF sem startxref.");
+    const xrefPos = parseInt(fim.slice(sx + 9).trim(), 10);
+    const cab = latin1(bytes, xrefPos, Math.min(bytes.length, xrefPos + 64));
+    if (!/^xref/.test(cab)) throw new Error("PDF com xref compactada (não suportado).");
+    const offs = {};
+    let p = xrefPos + 4;
+    const linha = () => {
+      while (p < bytes.length && (bytes[p] === 10 || bytes[p] === 13 || bytes[p] === 32)) p++;
+      let q = p;
+      while (q < bytes.length && bytes[q] !== 10 && bytes[q] !== 13) q++;
+      const t = latin1(bytes, p, q);
+      p = q;
+      return t.trim();
+    };
+    let t;
+    while ((t = linha()) && !/^trailer/.test(t)) {
+      const [ini, n] = t.split(/\s+/).map(Number);
+      for (let i = 0; i < n; i++) {
+        const e = linha().split(/\s+/);
+        if (e[2] === "n") offs[ini + i] = Number(e[0]);
+      }
+    }
+    const trailer = latin1(bytes, p, Math.min(bytes.length, p + 2048));
+    const cache = {};
+    // Fim de um dicionário << … >> a partir de i (aninhado).
+    const fimDict = (s, i) => {
+      let nivel = 0;
+      for (let j = i; j < s.length - 1; j++) {
+        if (s[j] === "<" && s[j + 1] === "<") { nivel++; j++; }
+        else if (s[j] === ">" && s[j + 1] === ">") { nivel--; j++; if (nivel === 0) return j + 1; }
+        else if (s[j] === "(") { // string literal: pula
+          let d = 1; j++;
+          for (; j < s.length && d > 0; j++) { if (s[j] === "\\") j++; else if (s[j] === "(") d++; else if (s[j] === ")") d--; }
+          j--;
+        }
+      }
+      return -1;
+    };
+    const obj = (n) => {
+      if (cache[n]) return cache[n];
+      const o = offs[n];
+      if (o == null) throw new Error("PDF: objeto " + n + " não encontrado.");
+      const cabeca = latin1(bytes, o, Math.min(bytes.length, o + 65536));
+      const m = /^\s*\d+\s+\d+\s+obj\s*/.exec(cabeca);
+      let corpo = cabeca.slice(m[0].length);
+      let r;
+      if (corpo.startsWith("<<")) {
+        const f = fimDict(corpo, 0);
+        const dict = corpo.slice(0, f);
+        const resto = corpo.slice(f);
+        const ms = /^\s*stream\r?\n/.exec(resto);
+        if (ms) {
+          let len = /\/Length\s+(\d+)\s+(\d+)\s+R/.exec(dict);
+          len = len ? Number(obj(Number(len[1])).valor) : Number(/\/Length\s+(\d+)/.exec(dict)[1]);
+          const ini = o + m[0].length + f + ms[0].length;
+          r = { dict, stream: bytes.subarray(ini, ini + len) };
+        } else r = { dict };
+      } else {
+        r = { valor: corpo.slice(0, corpo.indexOf("endobj")).trim() };
+      }
+      cache[n] = r;
+      return r;
+    };
+    const raiz = Number(/\/Root\s+(\d+)\s+\d+\s+R/.exec(trailer)[1]);
+    const pags = Number(/\/Pages\s+(\d+)\s+\d+\s+R/.exec(obj(raiz).dict)[1]);
+    let pagina = obj(pags).dict;
+    // Desce na árvore de páginas até a primeira página.
+    for (let i = 0; i < 10 && /\/Kids/.test(pagina); i++) {
+      pagina = obj(Number(/\/Kids\s*\[\s*(\d+)\s+\d+\s+R/.exec(pagina)[1])).dict;
+    }
+    return { obj, pagina, fimDict };
+  }
+
+  // Valor de uma chave num dicionário (texto): número, nome, array, dict ou ref.
+  function valorDaChave(dict, chave, fimDict) {
+    const m = new RegExp("/" + chave + "(?=[\\s/<\\[(])\\s*").exec(dict);
+    if (!m) return null;
+    const i = m.index + m[0].length;
+    const s = dict.slice(i);
+    if (s.startsWith("<<")) return s.slice(0, fimDict(s, 0));
+    if (s.startsWith("[")) return s.slice(0, s.indexOf("]") + 1);
+    const ref = /^(\d+)\s+(\d+)\s+R/.exec(s);
+    if (ref) return ref[0];
+    return /^[^\s/<>\[\]]+|^\/[^\s/<>\[\]()]+/.exec(s)[0];
+  }
+
+  // A primeira página do PDF como Form XObject. `novoNum()` dá os números
+  // dos objetos no arquivo final. Devolve { num, objetos: [{ num, partes }],
+  // largura, altura } (pt).
+  function pdfComoForm(bytes, novoNum, inflar, deflar) {
+    const { obj, pagina, fimDict } = lerPdfSimples(bytes);
+    const mb = valorDaChave(pagina, "MediaBox", fimDict);
+    const [x1, y1, x2, y2] = mb.replace(/[\[\]]/g, " ").trim().split(/\s+/).map(Number);
+    let recursos = valorDaChave(pagina, "Resources", fimDict) || "<<>>";
+    const mapa = {};
+    const fila = [];
+    const renum = (texto) => texto.replace(/(\d+)\s+(\d+)\s+R\b/g, (_, n) => {
+      if (!mapa[n]) { mapa[n] = novoNum(); fila.push(Number(n)); }
+      return mapa[n] + " 0 R";
+    });
+    // Conteúdo da página: um stream ou uma lista deles.
+    const cont = valorDaChave(pagina, "Contents", fimDict);
+    const refs = [...cont.matchAll(/(\d+)\s+\d+\s+R/g)].map((x) => Number(x[1]));
+    let dados, filtro = "";
+    if (refs.length === 1) {
+      const c = obj(refs[0]);
+      dados = c.stream;
+      const f = valorDaChave(c.dict, "Filter", fimDict);
+      if (f && f !== "/FlateDecode") throw new Error("Conteúdo do PDF com filtro não suportado: " + f);
+      filtro = f ? "/Filter /FlateDecode " : "";
+    } else {
+      const partes = refs.map((n) => {
+        const c = obj(n);
+        return /FlateDecode/.test(c.dict) ? inflar(c.stream) : c.stream;
+      });
+      const tot = partes.reduce((s, x) => s + x.length + 1, 0);
+      dados = new Uint8Array(tot);
+      let o = 0;
+      partes.forEach((x) => { dados.set(x, o); o += x.length; dados[o++] = 10; });
+      if (deflar) { dados = deflar(dados); filtro = "/Filter /FlateDecode "; }
+    }
+    const num = novoNum();
+    recursos = renum(recursos);
+    const objetos = [{
+      num,
+      partes: [`${num} 0 obj\n<< /Type /XObject /Subtype /Form /BBox [${x1} ${y1} ${x2} ${y2}] /Resources ${recursos} ${filtro}/Length ${dados.length} >>\nstream\n`,
+        dados, "\nendstream\nendobj\n"]
+    }];
+    // Copia os objetos referenciados (fontes, imagens, gráficos…).
+    while (fila.length) {
+      const n = fila.shift();
+      const o = obj(n);
+      const novo = mapa[n];
+      if (o.stream) {
+        const dict = renum(o.dict.replace(/\/Length\s+\d+\s+\d+\s+R/, "/Length " + o.stream.length));
+        objetos.push({ num: novo, partes: [`${novo} 0 obj\n${dict}\nstream\n`, o.stream, "\nendstream\nendobj\n"] });
+      } else {
+        objetos.push({ num: novo, partes: [`${novo} 0 obj\n${renum(o.dict || o.valor)}\nendobj\n`] });
+      }
+    }
+    return { num, objetos, x1, y1, largura: x2 - x1, altura: y2 - y1 };
+  }
+
+  // Escreve a folha como PDF. Mesmo contrato do escreverEps (lista de
+  // pedaços). rec.pdfs[chave]: o PDF de cada EPS (brasão, logo, molde);
+  // rec.inflar/rec.deflar: pako (opcionais).
+  function escreverPdf(folha, rec, titulo) {
+    const HS = folha.alturaMm * PT_POR_MM;
+    const WS = folha.larguraMm * PT_POR_MM;
+    const k = PT_POR_MM;
+    let ultimo = 3; // 1 catálogo, 2 páginas, 3 página
+    const novoNum = () => ++ultimo;
+    const conteudoNum = novoNum();
+
+    // Imagens e formas usadas na folha.
+    const imgs = {}, forms = {};
+    folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((op) => {
+      if (op.tipo === "imagem" && rec.imagens[op.chave] && !imgs[op.chave]) {
+        const img = rec.imagens[op.chave];
+        imgs[op.chave] = { nome: "Im" + Object.keys(imgs).length, num: novoNum(), mascara: img.mascaraZ ? novoNum() : 0 };
+      }
+      if (op.tipo === "eps" && rec.pdfs && rec.pdfs[op.chave] && !forms[op.chave]) {
+        const f = pdfComoForm(rec.pdfs[op.chave], novoNum, rec.inflar, rec.deflar);
+        forms[op.chave] = { nome: "Fm" + Object.keys(forms).length, ...f };
+      }
+    }));
+
+    const c = []; // conteúdo da página (texto)
+    const w = (s) => c.push(s);
+    const cmykPdf = (v) => cmykPs(v);
+    const mat = (a, b, cc, d, e, f) => `${num(a)} ${num(b)} ${num(cc)} ${num(d)} ${num(e)} ${num(f)} cm\n`;
+
+    folha.blocos.forEach((pos) => {
+      const b = pos.bloco;
+      const hb = b.h;
+      if (pos.rot === 90) w("q " + mat(0, 1, -1, 0, (pos.x + pos.w) * k, HS - (pos.y + pos.h) * k));
+      else if (pos.rot === 180) w("q " + mat(-1, 0, 0, -1, (pos.x + pos.w) * k, HS - pos.y * k));
+      else w("q " + mat(1, 0, 0, 1, pos.x * k, HS - (pos.y + pos.h) * k));
+      const X = (v) => num(v * k);
+      const Y = (v) => num((hb - v) * k);
+      const caminho = (comandos) => {
+        let s = "";
+        let cx = 0, cy = 0;
+        comandos.forEach((cm) => {
+          if (cm.type === "M") { s += `${X(cm.x)} ${Y(cm.y)} m\n`; cx = cm.x; cy = cm.y; }
+          else if (cm.type === "L") { s += `${X(cm.x)} ${Y(cm.y)} l\n`; cx = cm.x; cy = cm.y; }
+          else if (cm.type === "C") {
+            s += `${X(cm.x1)} ${Y(cm.y1)} ${X(cm.x2)} ${Y(cm.y2)} ${X(cm.x)} ${Y(cm.y)} c\n`;
+            cx = cm.x; cy = cm.y;
+          } else if (cm.type === "Q") {
+            const c1x = cx + (2 / 3) * (cm.x1 - cx), c1y = cy + (2 / 3) * (cm.y1 - cy);
+            const c2x = cm.x + (2 / 3) * (cm.x1 - cm.x), c2y = cm.y + (2 / 3) * (cm.y1 - cm.y);
+            s += `${X(c1x)} ${Y(c1y)} ${X(c2x)} ${Y(c2y)} ${X(cm.x)} ${Y(cm.y)} c\n`;
+            cx = cm.x; cy = cm.y;
+          } else if (cm.type === "Z") s += "h\n";
+        });
+        return s;
+      };
+      // Giro/espelho em volta do centro da caixa (y para cima: giro negativo).
+      const giro = (op) => {
+        if (!op.rot && !op.flipH && !op.flipV) return ["", ""];
+        const cx = (op.x + op.w / 2) * k, cy = (hb - (op.y + op.h / 2)) * k;
+        const a = (-(op.rot || 0) * Math.PI) / 180, co = Math.cos(a), si = Math.sin(a);
+        const sx = op.flipH ? -1 : 1, sy = op.flipV ? -1 : 1;
+        return ["q " + mat(1, 0, 0, 1, cx, cy) + mat(co, si, -si, co, 0, 0) + mat(sx, 0, 0, sy, 0, 0) + mat(1, 0, 0, 1, -cx, -cy), "Q\n"];
+      };
+      let recortando = false;
+      b.ops.forEach((op) => {
+        const querRecorte = !!(op.recortar && b.contorno && b.contorno.length);
+        if (querRecorte && !recortando) { w(`q\n${caminho(b.contorno)}W n\n`); recortando = true; }
+        else if (!querRecorte && recortando) { w("Q\n"); recortando = false; }
+        if (op.tipo === "linha" && op.fora) {
+          const m = op.mm + 1;
+          const fora = `${X(-m)} ${Y(-m)} m ${X(b.w + m)} ${Y(-m)} l ${X(b.w + m)} ${Y(hb + m)} l ${X(-m)} ${Y(hb + m)} l h\n`;
+          w(`q\n${fora}${caminho(op.comandos)}W* n\n${caminho(op.comandos)}${cmykPdf(op.cmyk)} K ${num(op.mm * 2 * k)} w 1 j S Q\n`);
+        } else if (op.tipo === "linha") {
+          w(`q\n${caminho(op.comandos)}${cmykPdf(op.cmyk)} K ${num(op.mm * k)} w 1 j S Q\n`);
+        } else if (op.tipo === "caminho") {
+          const s = caminho(op.comandos);
+          if (op.contorno2) w(`q\n${s}${cmykPdf(op.contorno2.cmyk)} K ${num(op.contorno2.mm * 2 * k)} w 1 j 1 J S Q\n`);
+          if (op.contorno) w(`q\n${s}${cmykPdf(op.contorno.cmyk)} K ${num(op.contorno.mm * 2 * k)} w 1 j 1 J S Q\n`);
+          w(`q\n${s}${cmykPdf(op.cmyk)} k f Q\n`);
+        } else if (op.tipo === "imagem") {
+          const im = imgs[op.chave];
+          if (!im) return;
+          const [gi, gf] = giro(op);
+          w(gi + "q " + mat(op.w * k, 0, 0, op.h * k, op.x * k, (hb - op.y - op.h) * k) + `/${im.nome} Do Q\n` + gf);
+        } else if (op.tipo === "eps") {
+          const f = forms[op.chave];
+          if (!f) return;
+          const [gi, gf] = giro(op);
+          const sx = (op.w * k) / f.largura, sy = (op.h * k) / f.altura;
+          w(gi + "q " + mat(sx, 0, 0, sy, op.x * k - f.x1 * sx, (hb - op.y - op.h) * k - f.y1 * sy) + `/${f.nome} Do Q\n` + gf);
+        }
+      });
+      if (recortando) w("Q\n");
+      w("Q\n");
+    });
+
+    // Monta o arquivo, contando os bytes de cada objeto para a xref.
+    const pedacos = [];
+    const offsets = {};
+    let pos = 0;
+    // Texto do PDF = bytes latin-1 (1 caractere = 1 byte; os objetos copiados
+    // do Ghostscript podem ter bytes acima de 127).
+    const L1 = (t) => { const u = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) u[i] = t.charCodeAt(i) & 255; return u; };
+    const tam = (p) => p.length;
+    const por = (p) => { pedacos.push(typeof p === "string" ? L1(p) : p); pos += tam(p); };
+    por("%PDF-1.4\n");
+    por(new Uint8Array([37, 226, 227, 207, 211, 10])); // %âãÏÓ (arquivo binário)
+    const objeto = (n, partes) => { offsets[n] = pos; partes.forEach(por); };
+
+    const recursosXo = Object.values(imgs).map((im) => `/${im.nome} ${im.num} 0 R`)
+      .concat(Object.values(forms).map((f) => `/${f.nome} ${f.num} 0 R`)).join(" ");
+    objeto(1, ["1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"]);
+    objeto(2, ["2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"]);
+    objeto(3, [`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(WS)} ${num(HS)}] ` +
+      `/Resources << /XObject << ${recursosXo} >> >> /Contents ${conteudoNum} 0 R >>\nendobj\n`]);
+    let dadosC = L1(c.join(""));
+    let filtroC = "";
+    if (rec.deflar) { dadosC = rec.deflar(dadosC); filtroC = "/Filter /FlateDecode "; }
+    objeto(conteudoNum, [`${conteudoNum} 0 obj\n<< ${filtroC}/Length ${tam(dadosC)} >>\nstream\n`, dadosC, "\nendstream\nendobj\n"]);
+
+    const somaZ = (l) => (l || []).reduce((s, x) => s + x.length, 0);
+    Object.keys(imgs).forEach((chave) => {
+      const im = imgs[chave], img = rec.imagens[chave];
+      objeto(im.num, [`${im.num} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.largura} /Height ${img.altura} ` +
+        `/ColorSpace /DeviceCMYK /BitsPerComponent 8 /Filter /FlateDecode /Length ${somaZ(img.cmykZ)}` +
+        (im.mascara ? ` /Mask ${im.mascara} 0 R` : "") + " >>\nstream\n", ...img.cmykZ, "\nendstream\nendobj\n"]);
+      if (im.mascara) {
+        // Máscara de 1 bit: 1 = transparente (como no EPS).
+        objeto(im.mascara, [`${im.mascara} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.largura} /Height ${img.altura} ` +
+          `/ImageMask true /BitsPerComponent 1 /Filter /FlateDecode /Length ${somaZ(img.mascaraZ)} >>\nstream\n`,
+          ...img.mascaraZ, "\nendstream\nendobj\n"]);
+      }
+    });
+    Object.values(forms).forEach((f) => f.objetos.forEach((o) => objeto(o.num, o.partes)));
+
+    const xref = pos;
+    let x = `xref\n0 ${ultimo + 1}\n0000000000 65535 f \n`;
+    for (let n = 1; n <= ultimo; n++) {
+      x += offsets[n] != null ? String(offsets[n]).padStart(10, "0") + " 00000 n \n" : "0000000000 65535 f \n";
+    }
+    const tituloPdf = String(titulo || "Folha").replace(/[^\x20-\x7e]/g, "_").replace(/[()\\]/g, " ");
+    por(x + `trailer\n<< /Size ${ultimo + 1} /Root 1 0 R /Info << /Title (${tituloPdf}) /Producer (Interclasse) >> >>\nstartxref\n${xref}\n%%EOF\n`);
+    return pedacos;
+  }
+
   return {
     PT_POR_MM,
     extrairPostScript,
@@ -1364,7 +1671,9 @@ const EPS = (function () {
     contornoComSangria,
     estimarTamanho,
     ascii85,
-    escreverEps
+    escreverEps,
+    escreverPdf,
+    pdfComoForm
   };
 })();
 

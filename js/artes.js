@@ -60,6 +60,36 @@ function limparParaFirestore(obj) {
 const arred1 = (v) => Math.round(v * 10) / 10;
 
 // Sangria usada nas prévias (a mesma da última geração; padrão 2 mm).
+// Resolução real da arte em cada tamanho: ela é feita para o molde base e
+// esticada para cobrir o molde de cada tamanho (mais a sangria), então nos
+// tamanhos maiores sobram menos pixels por polegada. [{ tam, ppi }] na ordem
+// da tabela de tamanhos (só os que têm molde da peça).
+function ppiPorTamanho(arte, pecaId) {
+  if (!arte || !arte.larguraPx) return [];
+  const moldes = moldesConfig.pecas[pecaId] || {};
+  const mb = moldes[moldesConfig.tamanhoBase];
+  const sangria = sangriaDaPrevia();
+  return TODOS_TAMANHOS.filter((t) => moldes[t] && moldes[t].bbox).map((t) => {
+    const dim = EPS.tamanhoMmDoBbox(moldes[t].bbox);
+    const base = mb && mb.bbox ? EPS.tamanhoMmDoBbox(mb.bbox) : dim;
+    const c = EPS.caixaArte(arte, base, dim, sangria);
+    const ppi = Math.min(arte.larguraPx / (c.w / 25.4), arte.alturaPx / (c.h / 25.4));
+    return { tam: t, ppi: Math.round(ppi) };
+  });
+}
+
+const PPI_BOM = 200, PPI_MINIMO = 150;
+
+// "600 ppi no M · 430 ppi no G4" e o nível ("" / "baixo" / "ruim").
+function resumoPpi(arte, pecaId) {
+  const lista = ppiPorTamanho(arte, pecaId);
+  if (!lista.length) return null;
+  const pior = lista.reduce((a, b) => (b.ppi < a.ppi ? b : a));
+  const melhor = lista.reduce((a, b) => (b.ppi > a.ppi ? b : a));
+  const texto = melhor.tam === pior.tam ? `${pior.ppi} ppi no ${pior.tam}` : `${melhor.ppi} ppi no ${melhor.tam} · ${pior.ppi} ppi no ${pior.tam}`;
+  return { texto, pior, nivel: pior.ppi < PPI_MINIMO ? "ruim" : pior.ppi < PPI_BOM ? "baixo" : "" };
+}
+
 function sangriaDaPrevia() {
   const s = layoutConfig && layoutConfig.folha && layoutConfig.folha.sangriaMm;
   return s == null ? 2 : Number(s) || 0;
@@ -750,7 +780,8 @@ function criarBlocoProducaoTime(timeId, time) {
       ${gol ? `<span class="pix-ajuda">${icone("hand")} ${nProprios} arquivo(s) próprio(s) do goleiro — o resto usa o da camiseta comum</span>` : ""}
     </summary>`;
 
-  const infoPng = (a) => a ? {
+  const infoPng = (a, pecaId) => a ? {
+    ppi: pecaId ? resumoPpi(a, pecaId) : null,
     previa: a.previaUrl,
     nome: a.nomeArquivo || "",
     info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi · ` +
@@ -776,14 +807,14 @@ function criarBlocoProducaoTime(timeId, time) {
     grade.appendChild(criarSlotProducao(timeId, id, titulo, proprio, formato, herdado));
   };
 
-  const gradePecas = grupo("Peças da camiseta", "TIFF CMYK 600 dpi (cor exata; compressão LZW) ou PNG 600 dpi (RGB, convertido para CMYK de forma simples), feito para o molde do tamanho base. Nos outros tamanhos a arte acompanha o molde.");
+  const gradePecas = grupo("Peças da camiseta", "TIFF CMYK (cor exata) ou PNG, feito para o molde do tamanho base — nos outros tamanhos a arte é esticada para cobrir o molde, então perde resolução nos maiores. O espaço mostra a resolução real em cada ponta (ex.: \"300 ppi no M · 215 ppi no G4\"): mantenha pelo menos ~200 ppi no maior tamanho (em geral ~300 ppi no base basta). No Illustrator, marque \"Compactação LZW\" ao exportar o TIFF: o arquivo fica muito menor e sobe mais rápido.");
   // Uma arte serve para as duas mangas; a da direita só aparece quando o
   // time ativa "manga direita com arte diferente".
   PECAS_PRODUCAO.forEach((peca) => {
     if (peca.id === "mangaDir" && !comum.mangaDirDiferente) return;
     const titulo = peca.id === "mangaEsq" && !comum.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
-    slot(gradePecas, `arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id]),
-      infoPng(comum.pecas && comum.pecas[peca.id]), "TIFF CMYK ou PNG, 600 dpi");
+    slot(gradePecas, `arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id], peca.id),
+      infoPng(comum.pecas && comum.pecas[peca.id], peca.id), "TIFF CMYK ou PNG, 600 dpi");
   });
 
   const gradeExtras = grupo("Brasão, detalhe e fonte", "");
@@ -885,7 +916,8 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
     <div class="producao-slot-previa">${previa}</div>
     <div class="producao-slot-info">${andamento
       ? `<span class="producao-slot-andamento">${escapeHtmlAdmin(andamento)}</span>`
-      : atual ? `${atual.nome ? `<span class="producao-slot-nome" title="${escAttr(atual.nome)}">${escapeHtmlAdmin(atual.nome)}</span>` : ""}<span>${escapeHtmlAdmin(atual.info || "")}</span>`
+      : atual ? `${atual.nome ? `<span class="producao-slot-nome" title="${escAttr(atual.nome)}">${escapeHtmlAdmin(atual.nome)}</span>` : ""}<span>${escapeHtmlAdmin(atual.info || "")}</span>` +
+        (atual.ppi ? `<span class="producao-slot-ppi ${atual.ppi.nivel}" title="Resolução real da arte em cada tamanho (ela é esticada para cobrir o molde)">${escapeHtmlAdmin(atual.ppi.texto)}${atual.ppi.nivel ? (atual.ppi.nivel === "ruim" ? " — baixo demais" : " — baixo para impressão") : ""}</span>` : "")
         : herdado ? "Usa o da camiseta comum" : "Nenhum arquivo"}</div>`;
   const acoes = document.createElement("div");
   acoes.className = "producao-slot-acoes";
@@ -1009,7 +1041,7 @@ async function miniaturaDaArte(bytes, info) {
 // Devolve os dados a gravar, ou null se cancelado. `marcar(texto)` mostra o
 // andamento.
 // Aceita TIFF (de preferência CMYK: a cor sai exata) ou PNG.
-async function enviarPngProducao(file, pref, marcar) {
+async function enviarPngProducao(file, pref, marcar, pecaId) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const leitor = leitorDeBitmap(bytes);
   const tiff = leitor !== PngStream;
@@ -1017,8 +1049,12 @@ async function enviarPngProducao(file, pref, marcar) {
   const tipo = tiff ? "TIFF" : "PNG";
   if (tiff && !info.cmyk &&
       !confirm("Este TIFF não está em CMYK: as cores serão convertidas pela fórmula simples (como no PNG). Para a cor exata, exporte o TIFF em CMYK. Enviar mesmo assim?")) return null;
-  if (info.dpi && info.dpi !== 600 &&
-      !confirm(`Este ${tipo} está em ${info.dpi} dpi (o esperado é 600). O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return null;
+  // Arte de peça: a resolução que importa é a real no maior tamanho.
+  const rp = pecaId ? resumoPpi({ larguraPx: info.largura, alturaPx: info.altura, dpi: info.dpi || 600 }, pecaId) : null;
+  if (rp && rp.nivel &&
+      !confirm(`Esta arte fica com ${rp.pior.ppi} ppi no tamanho ${rp.pior.tam} (${rp.texto}) — ${rp.nivel === "ruim" ? "baixo demais" : "abaixo de " + PPI_BOM + " ppi"} para impressão. Enviar mesmo assim?`)) return null;
+  if (!rp && info.dpi && info.dpi < 300 &&
+      !confirm(`Este ${tipo} está em ${info.dpi} dpi. O tamanho real na peça é calculado pelo dpi do arquivo. Enviar mesmo assim?`)) return null;
   marcar("enviando 0%…");
   const env = await enviarArquivoDrive(driveScriptUrl, file, pref,
     (f) => marcar(`enviando ${Math.round(f * 100)}%…`));
@@ -1068,7 +1104,7 @@ async function enviarArquivoProducao(timeId, slot, goleiro, arquivo) {
       guardarArquivoDriveNoCache(env.partes, bytes);
       dados = { partes: env.partes, nome: file.name.replace(/\.(ttf|otf)$/i, "") };
     } else {
-      dados = await enviarPngProducao(file, pref, marcar);
+      dados = await enviarPngProducao(file, pref, marcar, slot.startsWith("arte:") ? slot.slice(5) : null);
       if (!dados) return;
     }
     const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
@@ -1994,7 +2030,7 @@ function renderizarEditorLayout() {
           <button type="button" data-historico="refazer" title="Refazer (Ctrl+Y)" aria-label="Refazer">${icone("redo-2")}</button>
         </span>
         <span id="layoutEstadoSalvar" class="estudio-salvo" aria-live="polite"></span>
-        <button type="button" class="botao-acento" data-l="teste" title="Baixa esta peça em EPS com o apelido e o número de teste">${icone("download")} EPS de teste</button>
+        <button type="button" class="botao-acento" data-l="teste" title="Baixa esta peça (PDF ou EPS, como na última folha gerada) com o apelido e o número de teste">${icone("download")} Arquivo de teste</button>
       </header>
       ${!layoutModo ? "" : `<p class="estudio-aviso${layoutGoleiro ? " goleiro" : ""}">${layoutAluno
         ? `${icone("shirt")} Editando só a camiseta de <strong>${escapeHtmlAdmin(rotuloCamiseta(alunoDoTime(modoTime(), layoutAluno)))}</strong> (${nomeTime}). O que mudar ou adicionar aqui vale só para ela; o resto segue ${alunoGoleiroNoEditor() ? "a camiseta do goleiro" : "o time"}.`
@@ -3530,7 +3566,7 @@ function perguntarOpcoesEps(resumo) {
     fundo.innerHTML = `
       <div class="modal-pix-conteudo modal-form-conteudo">
         <button type="button" class="modal-pix-fechar" aria-label="Fechar">×</button>
-        <h3>Folha EPS (CMYK)</h3>
+        <h3>Folhas de impressão (CMYK)</h3>
         <p class="pix-ajuda">${escapeHtmlAdmin(resumo)}</p>
         <p class="pix-ajuda eps-cor">${icone("palette")} ${escapeHtmlAdmin(resumoConversaoCor())}</p>
         <form>
@@ -3548,7 +3584,9 @@ function perguntarOpcoesEps(resumo) {
             <select name="molde"><option value="frente">Por cima da arte (faca de 3 mm por fora)</option><option value="fundo">Por baixo da arte</option><option value="nenhum">Não incluir</option></select></label>
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
           <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
-          <label class="checkbox-inline"><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
+          <label>Formato do arquivo
+            <select name="formato"><option value="pdf">PDF (abre no Corel sem erros; depois Salvar como → CDR)</option><option value="eps">EPS</option></select></label>
+          <label class="checkbox-inline" data-so-eps><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
           <button type="submit" class="primario">Gerar</button>
         </form>
       </div>`;
@@ -3556,6 +3594,11 @@ function perguntarOpcoesEps(resumo) {
     form.rotacao.value = f.rotacao || "0";
     form.dpi.value = String(f.dpi || 600);
     form.molde.value = f.molde || "frente";
+    form.formato.value = f.formato === "eps" ? "eps" : "pdf";
+    const soEps = fundo.querySelector("[data-so-eps]");
+    const mostrarSoEps = () => soEps.classList.toggle("oculto", form.formato.value !== "eps");
+    form.formato.onchange = mostrarSoEps;
+    mostrarSoEps();
     const fechar = (valor) => { fundo.remove(); resolve(valor); };
     fundo.querySelector(".modal-pix-fechar").onclick = () => fechar(null);
     fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(null); });
@@ -3570,7 +3613,8 @@ function perguntarOpcoesEps(resumo) {
         molde: form.molde.value,
         alturaMaxCm: Math.max(0, Number(form.alturaMaxCm.value) || 0),
         etiqueta: form.etiqueta.checked,
-        corel: form.corel.checked
+        corel: form.corel.checked,
+        formato: form.formato.value
       });
     };
     document.body.appendChild(fundo);
@@ -3691,12 +3735,14 @@ async function gerarFolhasEps(linhas, nomeBase) {
       for (let i = 0; i < folhas.length; i++) {
         const f = folhas[i];
         const sufixo = (g.goleiro ? "-goleiros" : "") + (folhas.length > 1 ? `-folha${i + 1}` : "");
-        const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${sufixo}.eps`;
+        const pdf = op.formato !== "eps";
+        const nome = `${slugify(nomeBase + "-" + time.nome) || "folha"}${sufixo}.${pdf ? "pdf" : "eps"}`;
         etapa(`escrevendo o arquivo${folhas.length > 1 ? ` (folha ${i + 1} de ${folhas.length})` : ""}…`, 0.85 + 0.15 * (i / folhas.length));
         await esperarTela();
-        const mb = EPS.estimarTamanho(f, rec, { corel: op.corel }) / 1e6;
-        if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi${op.corel ? " ou desligue \"Compatível com o Corel\" (a arte repetida entra uma vez só)" : ""}.`);
-        arquivos.push({ nome, blob: new Blob(EPS.escreverEps(f, rec, `${rotuloTime}${sufixo}`, { corel: op.corel }), { type: "application/postscript" }) });
+        const corel = !pdf && op.corel;
+        const mb = EPS.estimarTamanho(f, rec, { corel }) / 1e6;
+        if (mb > 500) prog.aviso(`${nome}: arquivo grande (~${Math.round(mb)} MB). Se o programa não abrir, gere em 300 dpi${corel ? " ou desligue \"Compatível com o Corel\" (a arte repetida entra uma vez só)" : ""}.`);
+        arquivos.push({ nome, blob: await arquivoDaFolha(f, rec, `${rotuloTime}${sufixo}`, pdf ? "pdf" : "eps", { corel }, (t) => etapa(t)) });
       }
       // Várias folhas do mesmo time: um .zip só dele.
       let saida = arquivos[0];
@@ -3707,7 +3753,7 @@ async function gerarFolhasEps(linhas, nomeBase) {
         arquivos.forEach((a) => zip.file(a.nome, a.blob));
         // STORE: o EPS já vem comprimido por dentro; recomprimir só gasta tempo.
         saida = {
-          nome: `${slugify(nomeBase + "-" + time.nome) || "folhas"}${g.goleiro ? "-goleiros" : ""}-eps.zip`,
+          nome: `${slugify(nomeBase + "-" + time.nome) || "folhas"}${g.goleiro ? "-goleiros" : ""}-${op.formato !== "eps" ? "pdf" : "eps"}.zip`,
           blob: await zip.generateAsync({ type: "blob", compression: "STORE" })
         };
       }
@@ -3995,7 +4041,7 @@ function abrirProgressoEps(itens, op) {
   fundo.setAttribute("aria-label", "Gerando as folhas EPS");
   fundo.innerHTML = `
     <div class="modal-pix-conteudo">
-      <h3>${escapeHtmlAdmin(o.titulo || "Gerando as folhas EPS")}</h3>
+      <h3>${escapeHtmlAdmin(o.titulo || "Gerando as folhas de impressão")}</h3>
       <p class="progresso-eps-resumo" aria-live="polite"></p>
       <div class="progresso-barra geral" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span><b></b></div>
       <p class="progresso-eps-etapa"></p>
@@ -4067,7 +4113,7 @@ function abrirProgressoEps(itens, op) {
     fim(gerados, resumo) {
       barra(".progresso-barra.geral", 1);
       barra(".progresso-barra.etapa", 1);
-      q("h3").textContent = ctl.cancelado ? "Geração cancelada" : o.tituloFim || "Folhas EPS prontas";
+      q("h3").textContent = ctl.cancelado ? "Geração cancelada" : o.tituloFim || "Folhas prontas";
       q(".progresso-eps-resumo").textContent = resumo || `${gerados} arquivo(s) baixado(s) de ${itens.length} time(s).`;
       q(".progresso-eps-etapa").textContent = avisos.length ? "Confira os avisos abaixo." : "";
       if (avisos.length) q(".progresso-eps-avisos").open = true;
@@ -4085,6 +4131,26 @@ function abrirProgressoEps(itens, op) {
   desenharLista();
   geral();
   return ctl;
+}
+
+// A folha no formato escolhido: PDF (os EPS — brasão, logo, molde — viram
+// PDF pelo Ghostscript e entram como forma vetorial) ou EPS.
+async function arquivoDaFolha(folha, rec, titulo, formato, opEps, aviso) {
+  if (formato === "eps") {
+    return new Blob(EPS.escreverEps(folha, rec, titulo, opEps), { type: "application/postscript" });
+  }
+  const pako = await carregarLib("pako");
+  rec.inflar = pako.inflate;
+  rec.deflar = (u) => pako.deflate(u);
+  rec.pdfs = rec.pdfs || {};
+  const usados = new Set();
+  folha.blocos.forEach(({ bloco }) => bloco.ops.forEach((o) => { if (o.tipo === "eps" && rec.eps[o.chave]) usados.add(o.chave); }));
+  for (const chave of usados) {
+    if (rec.pdfs[chave]) continue;
+    if (aviso) aviso(`convertendo ${chave.startsWith("molde:") ? "o molde" : chave === "logo" ? "o logo" : chave === "brasao" ? "o brasão" : "uma imagem EPS"} para PDF…`);
+    rec.pdfs[chave] = await PreviaEps.paraPdf(rec.eps[chave].bytes);
+  }
+  return new Blob(EPS.escreverPdf(folha, rec, titulo), { type: "application/pdf" });
 }
 
 // "⬇ EPS de teste" do editor: a peça aberta, no tamanho mostrado, com o
@@ -4106,12 +4172,14 @@ async function baixarEpsDeTesteLayout() {
     const { folhas } = EPS.empacotar(blocos, { larguraMm: m.dim.w + 26, espacoMm: 10, rotacao: "0" });
     avisoProducao("");
     if (!folhas.length) { alert(avisos.join("\n") || "Nada para gerar."); return; }
-    baixarBlob(slugify(`teste-${time.nome}-${nomePecaProducao(layoutPeca)}-${m.tam}`) + ".eps",
-      new Blob(EPS.escreverEps(folhas[0], rec, "Teste", { corel: (layoutConfig.folha || {}).corel !== false }), { type: "application/postscript" }));
+    const formato = (layoutConfig.folha || {}).formato === "eps" ? "eps" : "pdf";
+    baixarBlob(slugify(`teste-${time.nome}-${nomePecaProducao(layoutPeca)}-${m.tam}`) + "." + formato,
+      await arquivoDaFolha(folhas[0], rec, "Teste", formato, { corel: (layoutConfig.folha || {}).corel !== false }, avisoProducao));
+    avisoProducao("");
     if (avisos.length) alert(avisos.join("\n"));
   } catch (e) {
     console.error(e);
     avisoProducao("");
-    alert("Não foi possível gerar o EPS de teste: " + (e.message || e));
+    alert("Não foi possível gerar o arquivo de teste: " + (e.message || e));
   }
 }

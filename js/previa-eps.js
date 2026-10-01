@@ -118,5 +118,39 @@ const PreviaEps = (function () {
     return EPS.contornoDePdf(pdf, inflar);
   }
 
-  return { carregar, gerar, contorno };
+  // EPS → PDF (pdfwrite), para entrar na folha em PDF como forma vetorial.
+  // As cores ficam como estão (CMYK continua CMYK).
+  async function paraPdf(bytesEps) {
+    const { fabrica, modulo } = await carregar();
+    const erros = [];
+    const gs = await fabrica({
+      noInitialRun: true,
+      print: () => {},
+      printErr: (t) => erros.push(t),
+      instantiateWasm: (imports, ok) => {
+        WebAssembly.instantiate(modulo, imports).then((inst) => ok(inst));
+        return {};
+      }
+    });
+    gs.FS.writeFile("/in.eps", bytesEps);
+    const rc = gs.callMain([
+      "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET", "-dEPSCrop",
+      "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4", "-dAutoRotatePages=/None",
+      "-sColorConversionStrategy=LeaveColorUnchanged",
+      "-sOutputFile=/out.pdf", "/in.eps"
+    ]);
+    let pdf = null;
+    try {
+      pdf = gs.FS.readFile("/out.pdf");
+    } catch (e) {
+      pdf = null;
+    }
+    if (rc !== 0 || !pdf || !pdf.length) {
+      throw new Error("O Ghostscript não conseguiu converter este EPS para PDF." +
+        (erros.length ? " " + erros.slice(-3).join(" ") : ""));
+    }
+    return pdf;
+  }
+
+  return { carregar, gerar, contorno, paraPdf };
 })();

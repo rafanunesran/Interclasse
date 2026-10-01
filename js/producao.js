@@ -401,7 +401,7 @@ function renderizarListaLevas() {
     if (typeof gerarFolhasEps === "function") {
       const btnEps = document.createElement("button");
       btnEps.className = "primario";
-      btnEps.textContent = "Folhas EPS (CMYK)";
+      btnEps.textContent = "Folhas de impressão (CMYK)";
       btnEps.title = "Folha de impressão de cada time da leva, já personalizada (moldes da aba Tamanhos, layout da aba Artes e arquivos do time)";
       btnEps.disabled = itens.length === 0;
       btnEps.onclick = () => gerarFolhasEps(grupos.flatMap((g) => g.linhas), leva.nome || "leva");

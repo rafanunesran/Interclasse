@@ -522,6 +522,16 @@ retangular (a geração avisa).
       que o Corel usa. Se o PNG tiver perfil embutido, a conversão parte dele; senão, do sRGB;
     - **sem perfil**, por uma fórmula simples, e aí a cor sai diferente da arte original.
   - O espaço do arquivo mostra o que foi enviado: "TIFF CMYK (cor exata)" ou "PNG (RGB → CMYK)".
+  - **Resolução real por tamanho:** a arte é feita para o molde base e esticada nos outros tamanhos,
+    então perde resolução nos maiores. O espaço mostra os dois extremos, por exemplo "302 ppi no M ·
+    216 ppi no G4".
+    - Abaixo de **200 ppi** no pior tamanho, fica em âmbar.
+    - Abaixo de **150 ppi**, fica em vermelho, e o site pergunta antes de enviar.
+
+    Na prática, uns **300 ppi no tamanho base** bastam para o G4 ficar acima de 200 ppi. Com isso,
+    não é preciso exportar em 600 ppi.
+  - **TIFF pesado demais?** No Illustrator, marque **"Compactação LZW"** ao exportar o TIFF. Sem ela,
+    uma frente de 600 ppi passa de 700 MB.
   - **Ordem de preferência:** TIFF CMYK (exato), depois PNG com perfil ICC (próximo), depois PNG
     sem perfil (aproximado). O diálogo das folhas EPS diz qual conversão vai ser usada.
 
@@ -739,7 +749,15 @@ Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
 - se o fornecedor deixa **girar** as peças (90° quando aproveitar melhor) ou não;
 - a **resolução** das artes (600 dpi original, 300 ou 150 para prova);
 - contorno do molde por cima/por baixo/fora, altura máxima por folha e o marcador da costureira.
-- **Compatível com o Corel** (vem ligado). O EPS sai mais simples, porque o importador do Corel
+- **Formato do arquivo: PDF** (padrão) ou EPS. O **PDF abre no Corel sem erros**; de lá,
+  *Arquivo → Salvar como → CDR*, que é o formato que a gráfica pede. O CDR é um formato fechado do
+  Corel e nenhum site consegue gravá-lo direto. No PDF:
+  - cada arte entra **uma vez só** e é reaproveitada, com os mesmos valores CMYK do arquivo enviado;
+  - o brasão, o logo e os moldes em EPS são convertidos para PDF no próprio navegador (Ghostscript)
+    e entram como vetor.
+
+  O arquivo costuma ficar menor que o EPS.
+- **Compatível com o Corel** (só no EPS, vem ligado). O EPS sai mais simples, porque o importador do Corel
   não aceita bem alguns recursos de PostScript nível 3:
   - cada arte entra no arquivo no ponto em que é desenhada, sem fluxo reaproveitável nem
     `resetfile`;

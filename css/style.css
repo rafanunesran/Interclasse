@@ -3028,3 +3028,8 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .progresso-eps-avisos summary { cursor: pointer; font-weight: 600; color: #b45309; }
 .progresso-eps-avisos ul { margin: 6px 0 0; padding-left: 18px; max-height: 25vh; overflow-y: auto; }
 .progresso-eps-botoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* Resolução real da arte por tamanho (espaço de arquivo do time) */
+.producao-slot-ppi { display: block; font-size: 0.78rem; color: #15803d; }
+.producao-slot-ppi.baixo { color: #b45309; font-weight: 600; }
+.producao-slot-ppi.ruim { color: #b91c1c; font-weight: 700; }
