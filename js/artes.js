@@ -2414,8 +2414,11 @@ function renderizarPalcoLayout() {
     } else if (fonte) {
       // Sem o giro: quem gira é a caixa inteira (a div), com a seleção junto.
       const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraComTam(amostraLayout, m.tam, time)), { w: c.w, h: c.h }, el, { semGiro: true });
+      // Número com tamanho por dígitos: o espaço dele aparece tracejado.
+      const sub = el.id === layoutElSel && EPS.caixaPorDigitos(el, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h });
+      const guia = sub ? `<rect class="arte-el-digitos" x="${(sub.x * s).toFixed(2)}" y="${(sub.y * s).toFixed(2)}" width="${(sub.w * s).toFixed(2)}" height="${(sub.h * s).toFixed(2)}" />` : "";
       div.innerHTML = `<svg class="arte-el-svg" width="${c.w * s}" height="${c.h * s}" overflow="visible">` +
-        `${svgDoTexto(l.comandos, el, s)}</svg>`;
+        `${svgDoTexto(l.comandos, el, s)}${guia}</svg>`;
     } else {
       div.innerHTML = `<span class="arte-el-rotulo">${escapeHtmlAdmin(rotuloElementoLayout(el))}${time ? "" : "<br>(escolha um time para ver a fonte)"}</span>`;
     }
@@ -3060,6 +3063,74 @@ function adicionarElementoLayout(tipo) {
   renderizarEditorLayout();
 }
 
+// ---------------- Número: tamanho por quantidade de dígitos ----------------
+// Para 1, 2 e 3 dígitos o número pode ter largura e altura próprias (em mm
+// na tela, gravadas em % da caixa para valer em todos os tamanhos) e ser
+// esticado para preencher esse espaço — "7" largo e "100" estreito, por ex.
+const AMOSTRA_DIGITOS = { 1: "7", 2: "10", 3: "100" };
+
+function painelPorDigitos(elT, c) {
+  const pd = elT.porDigitos || {};
+  const atual = EPS.digitosDoNumero(amostraLayout.numero);
+  const linha = (n) => {
+    const d = pd[n];
+    const w = d && Number(d.w) > 0 ? (c.w * Number(d.w)) / 100 : null;
+    const h = d && Number(d.h) > 0 ? (c.h * Number(d.h)) / 100 : null;
+    return `<div class="digitos-linha${atual === n ? " ativo" : ""}" data-digitos="${n}">
+      <button type="button" class="secundario digitos-ver" data-ver-digitos="${n}" title="Ver a prévia com ${AMOSTRA_DIGITOS[n]}">${n} dígito${n > 1 ? "s" : ""}${n === 3 ? "+" : ""}</button>
+      <label>Larg.<input type="number" step="0.5" min="1" data-dig-w placeholder="${c.w.toFixed(1)}" value="${w == null ? "" : w.toFixed(1)}" /></label>
+      <label>Alt.<input type="number" step="0.5" min="1" data-dig-h placeholder="${c.h.toFixed(1)}" value="${h == null ? "" : h.toFixed(1)}" /></label>
+      <label class="interruptor" title="Distorce o número para ocupar exatamente esse espaço"><input type="checkbox" data-dig-esticar ${!d || d.esticar !== false ? "checked" : ""} ${d ? "" : "disabled"} /> <span>Esticar</span></label>
+      ${d ? `<button type="button" class="botao-icone" data-dig-limpar title="Voltar a usar a caixa inteira" aria-label="Limpar">${icone("x")}</button>` : ""}
+    </div>`;
+  };
+  return `
+      <section class="painel-secao">
+        <h4 class="painel-titulo">${icone("hash")} Tamanho por dígitos <span>mm</span></h4>
+        <div class="digitos-grade">${[1, 2, 3].map(linha).join("")}</div>
+        <p class="pix-ajuda">Largura e altura do número para cada quantidade de dígitos, dentro da caixa (vazio = a caixa inteira). Com "Esticar" o número é distorcido para preencher esse espaço. Vale proporcionalmente em todos os tamanhos. Clique em "1 dígito"… para ver a prévia.</p>
+      </section>`;
+}
+
+function ligarPainelPorDigitos(box, el, elT, c) {
+  box.querySelectorAll("[data-ver-digitos]").forEach((b) => {
+    b.onclick = () => {
+      amostraLayout.numero = AMOSTRA_DIGITOS[b.dataset.verDigitos];
+      document.querySelectorAll('[data-amostra="numero"]').forEach((inp) => (inp.value = amostraLayout.numero));
+      renderizarPalcoLayout();
+      renderizarPainelLayout();
+    };
+  });
+  box.querySelectorAll(".digitos-linha").forEach((lin) => {
+    const n = lin.dataset.digitos;
+    const gravar = (muda) => {
+      const pd = { ...(elT.porDigitos || {}) };
+      const d = muda(pd[n] ? { ...pd[n] } : { esticar: true });
+      if (d) pd[n] = d; else delete pd[n];
+      gravarEstiloElemento(el.id, "porDigitos", Object.keys(pd).length ? pd : null);
+    };
+    const pct = (inp, total) => {
+      const v = Number(inp.value);
+      return v > 0 ? Math.round(Math.min(100, (v / total) * 100) * 100) / 100 : null;
+    };
+    const inW = lin.querySelector("[data-dig-w]"), inH = lin.querySelector("[data-dig-h]");
+    const aoMudar = () => gravar((d) => {
+      d.w = pct(inW, c.w);
+      d.h = pct(inH, c.h);
+      if (d.w == null && d.h == null) return null;
+      if (d.w == null) d.w = 100;
+      if (d.h == null) d.h = 100;
+      return d;
+    });
+    inW.onchange = aoMudar;
+    inH.onchange = aoMudar;
+    const chk = lin.querySelector("[data-dig-esticar]");
+    chk.onchange = () => gravar((d) => ({ ...d, esticar: chk.checked }));
+    const limpar = lin.querySelector("[data-dig-limpar]");
+    if (limpar) limpar.onclick = () => gravar(() => null);
+  });
+}
+
 // Medidas e fundo da etiqueta de tamanho (layout geral, vale para todos).
 function renderizarPainelEtiqueta() {
   const box = document.getElementById("layoutPainelEl");
@@ -3298,13 +3369,13 @@ function renderizarPainelLayout() {
           <div class="campo-alinhar"><span>Alinhamento</span><span class="segmentado-icones" role="group" aria-label="Alinhamento">${[["esquerda", "align-left"], ["centro", "align-center"], ["direita", "align-right"]].map(([v, ic]) =>
             `<button type="button" data-alinhar="${v}" class="${(elT.alinhamento || "centro") === v ? "ativo" : ""}" title="${v === "centro" ? "Centro" : v === "esquerda" ? "Esquerda" : "Direita"}" aria-pressed="${(elT.alinhamento || "centro") === v}">${icone(ic)}</button>`).join("")}</span></div>
           <label>Texto maior que a caixa
-            <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option></select></label>
+            <select data-p="ajuste"><option value="encolher">Encolher tudo</option><option value="comprimir">Comprimir na largura</option><option value="esticar">Esticar para preencher a caixa</option></select></label>
           <label>Espaço entre letras<input type="number" step="0.01" data-p="espacamento" value="${Number(elT.espacamento) || 0}" /></label>
         </div>
         <label class="interruptor"><input type="checkbox" data-p="maiusculas" ${elT.maiusculas !== false ? "checked" : ""} /> <span>MAIÚSCULAS</span></label>
         ${el.tipo === "nome" && edicaoCompleta ? `<label class="interruptor"><input type="checkbox" data-p="usarNomeSeVazio" ${el.usarNomeSeVazio !== false ? "checked" : ""} /> <span>Sem apelido, usar o nome</span></label>` : ""}
         <p class="pix-ajuda">A caixa é o limite: nome ou número comprido encolhe (ou é comprimido) para caber — nunca sai dela.</p>
-      </section>
+      </section>${EPS.ehElementoNumero(elT) ? painelPorDigitos(elT, c) : ""}
       <section class="painel-secao">
         <h4 class="painel-titulo">${icone("palette")} Cores <span>CMYK %</span></h4>
         <p class="arte-rotulo-cor">Preenchimento</p>${cmyk("corCmyk", elT.corCmyk)}
@@ -3410,6 +3481,7 @@ function renderizarPainelLayout() {
       gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" || inp.type === "range" ? Number(inp.value) || 0 : inp.value);
     };
   });
+  ligarPainelPorDigitos(box, el, elT, c);
   // Amostra: seletor de cor; conta-gotas: pega a cor de um ponto da arte.
   box.querySelectorAll("[data-cor-rgb]").forEach((inp) => {
     inp.onchange = () => gravarEstilo(inp.dataset.corRgb, hexParaCmyk(inp.value));

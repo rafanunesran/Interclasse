@@ -1792,6 +1792,14 @@ tr.linha-marcada > td { background: #eff6ff; }
 .arte-el.selecionado { outline: 2px solid var(--azul); z-index: 3; }
 .arte-el img { width: 100%; height: 100%; object-fit: fill; pointer-events: none; display: block; }
 .arte-el-svg { position: absolute; left: 0; top: 0; pointer-events: none; }
+.arte-el-digitos { fill: none; stroke: #0ea5e9; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.digitos-grade { display: flex; flex-direction: column; gap: 6px; }
+.digitos-linha { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px; border-radius: 6px; }
+.digitos-linha.ativo { background: rgba(14, 165, 233, 0.12); }
+.digitos-linha label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.75rem; }
+.digitos-linha input[type="number"] { width: 4.5em; margin: 0; }
+.digitos-linha .digitos-ver { padding: 2px 8px; font-size: 0.75rem; min-width: 6.5em; }
+.digitos-linha .interruptor { margin: 0; }
 .arte-el-rotulo {
   display: flex; align-items: center; justify-content: center; text-align: center;
   width: 100%; height: 100%; font-size: 0.7rem; color: var(--azul);

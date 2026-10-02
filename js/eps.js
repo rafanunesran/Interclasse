@@ -96,7 +96,9 @@ const EPS = (function () {
   //   maiusculas   — converte para maiúsculas (padrão: true)
   //   alinhamento  — "centro" (padrão), "esquerda" ou "direita"
   //   ajuste       — texto maior que a caixa: "encolher" (padrão, reduz tudo)
-  //                  ou "comprimir" (só estreita as letras, mantém a altura)
+  //                  ou "comprimir" (só estreita as letras, mantém a altura);
+  //                  "esticar" preenche a caixa inteira, largura e altura cada
+  //                  uma no seu (distorce as letras)
   //   espacamento  — espaço extra entre letras, em fração do corpo (ex. 0.05)
   function layoutTexto(font, texto, caixa, opcoes) {
     const op = opcoes || {};
@@ -123,7 +125,9 @@ const EPS = (function () {
 
     let escalaY = caixa.h / cap; // mm por unidade da fonte
     let escalaX = escalaY;
-    if (larguraU * escalaX > caixa.w) {
+    if (op.ajuste === "esticar") {
+      escalaX = caixa.w / larguraU;
+    } else if (larguraU * escalaX > caixa.w) {
       if (op.ajuste === "comprimir") {
         escalaX = caixa.w / larguraU;
       } else {
@@ -202,7 +206,12 @@ const EPS = (function () {
   // na caixa (continua nunca saindo dela). Devolve { comandos } em mm,
   // relativos ao canto de cima da caixa.
   //   opcoes.semGiro — sem o giro/espelho (o editor gira a caixa inteira).
-  function textoDoElemento(font, texto, caixa, el, opcoes) {
+  function textoDoElemento(font, texto, caixaEl, el, opcoes) {
+    // Número com tamanho próprio para a quantidade de dígitos: desenha numa
+    // caixa menor dentro da do elemento (e, se pedido, esticado nela).
+    const sub = caixaPorDigitos(el, texto, caixaEl);
+    const caixa = sub ? { w: sub.w, h: sub.h } : caixaEl;
+    if (sub && sub.esticar) el = { ...el, ajuste: "esticar" };
     const l = layoutTexto(font, texto, caixa, el);
     let cmds = l.comandos;
     if (!cmds.length) return { comandos: [] };
@@ -237,11 +246,42 @@ const EPS = (function () {
       const y0 = (caixa.h - H) / 2;
       cmds = transformarComandos(cmds, (x, y) => [x0 + (x - b3.x1) * e, y0 + (y - b3.y1) * e]);
     }
+    if (sub) cmds = deslocarComandos(cmds, sub.x, sub.y);
     if (!(opcoes && opcoes.semGiro)) {
-      const f = transformacaoDoElemento(el, caixa.w / 2, caixa.h / 2);
+      const f = transformacaoDoElemento(el, caixaEl.w / 2, caixaEl.h / 2);
       if (f) cmds = transformarComandos(cmds, f);
     }
     return { comandos: cmds };
+  }
+
+  // Elemento de número? (o número nas costas, ou um texto com o campo número)
+  function ehElementoNumero(el) {
+    return el.tipo === "numero" || el.campo === "numero";
+  }
+
+  // Quantos dígitos (1, 2 ou 3 — 3 vale para 3 ou mais) tem o número.
+  function digitosDoNumero(texto) {
+    const n = String(texto == null ? "" : texto).trim().length;
+    return n ? Math.min(3, n) : 0;
+  }
+
+  // Tamanho do número conforme a quantidade de dígitos: el.porDigitos =
+  // { "1": { w, h, esticar }, "2": ..., "3": ... }, com w e h em % da caixa
+  // do elemento (vale em todos os tamanhos de camiseta). Devolve a caixa
+  // menor (mm, relativa à do elemento: centrada na altura e alinhada como o
+  // texto) ou null quando não há tamanho próprio para esse número.
+  function caixaPorDigitos(el, texto, caixa) {
+    if (!el || !el.porDigitos || !ehElementoNumero(el)) return null;
+    const d = el.porDigitos[digitosDoNumero(texto)];
+    if (!d) return null;
+    const pw = Number(d.w), ph = Number(d.h);
+    if (!(pw > 0) && !(ph > 0)) return null;
+    const w = caixa.w * Math.min(100, pw > 0 ? pw : 100) / 100;
+    const h = caixa.h * Math.min(100, ph > 0 ? ph : 100) / 100;
+    let x = (caixa.w - w) / 2;
+    if (el.alinhamento === "esquerda") x = 0;
+    else if (el.alinhamento === "direita") x = caixa.w - w;
+    return { x, y: (caixa.h - h) / 2, w, h, esticar: d.esticar !== false };
   }
 
   // Sombra do texto ligada? (deslocamento em mm e cor)
@@ -1763,6 +1803,9 @@ const EPS = (function () {
     layoutTexto,
     elementosDaPecaNoTime,
     textoDoElemento,
+    caixaPorDigitos,
+    digitosDoNumero,
+    ehElementoNumero,
     transformarComandos,
     transformacaoDoElemento,
     sombraDoElemento,
