@@ -1793,13 +1793,33 @@ tr.linha-marcada > td { background: #eff6ff; }
 .arte-el img { width: 100%; height: 100%; object-fit: fill; pointer-events: none; display: block; }
 .arte-el-svg { position: absolute; left: 0; top: 0; pointer-events: none; }
 .arte-el-digitos { fill: none; stroke: #0ea5e9; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
-.digitos-grade { display: flex; flex-direction: column; gap: 6px; }
-.digitos-linha { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px; border-radius: 6px; }
-.digitos-linha.ativo { background: rgba(14, 165, 233, 0.12); }
-.digitos-linha label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.75rem; }
-.digitos-linha input[type="number"] { width: 4.5em; margin: 0; }
-.digitos-linha .digitos-ver { padding: 2px 8px; font-size: 0.75rem; min-width: 6.5em; }
-.digitos-linha .interruptor { margin: 0; }
+.digitos-cartoes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.digitos-cartao {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px;
+  border: 1px solid var(--borda, #d1d5db); border-radius: 8px; background: transparent; cursor: pointer; color: inherit;
+}
+.digitos-cartao.ativo { border-color: #0ea5e9; box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.25); background: rgba(14, 165, 233, 0.08); }
+.digitos-cartao strong { font-size: 0.75rem; }
+.digitos-cartao small { font-size: 0.65rem; color: var(--texto-suave); text-align: center; line-height: 1.2; }
+.digitos-mini { display: block; width: 100%; height: 64px; }
+.digitos-mini-svg { width: 100%; height: 100%; display: block; }
+.digitos-mini-caixa { fill: rgba(148, 163, 184, 0.12); stroke: #94a3b8; }
+.digitos-mini-area { fill: none; stroke: #0ea5e9; }
+.digitos-mini-sem-fonte { fill: #64748b; font-weight: 700; }
+.digitos-editando { margin: 4px 0 6px; font-size: 0.8rem; }
+.digitos-modo { display: flex; margin-bottom: 4px; }
+.digitos-modo button { flex: 1; }
+.digitos-editar .campo-deslizante em { font-style: normal; color: var(--texto-suave); }
+/* Alças das bordas do elemento selecionado: puxar estica/espreme. */
+.arte-el-lado {
+  display: none; position: absolute; width: 10px; height: 10px; transform: translate(-50%, -50%);
+  background: #fff; border: 2px solid var(--azul); border-radius: 50%; z-index: 2;
+}
+.arte-el-lado-e, .arte-el-lado-w { cursor: ew-resize; width: 8px; height: 18px; border-radius: 4px; }
+.arte-el-lado-n, .arte-el-lado-s { cursor: ns-resize; width: 18px; height: 8px; border-radius: 4px; }
+.arte-el-lado.no-tracejado { border-color: #0ea5e9; }
+.arte-el.selecionado .arte-el-lado { display: block; }
+.arte-el.travado .arte-el-lado { display: none !important; }
 .arte-el-rotulo {
   display: flex; align-items: center; justify-content: center; text-align: center;
   width: 100%; height: 100%; font-size: 0.7rem; color: var(--azul);

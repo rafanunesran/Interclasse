@@ -2412,13 +2412,7 @@ function renderizarPalcoLayout() {
         ? `<img src="${escAttr(urlPreviaGrande(url))}" alt="" draggable="false" style="object-fit:${EPS.imagemLivre(el) ? "fill" : "contain"}" />`
         : `<span class="arte-el-rotulo">${el.tipo === "logo" ? "Logo<br>(envie em Configurações)" : el.tipo === "detalhe" ? "Detalhe da manga" : el.tipo === "imagem" ? "Imagem" : "Brasão"}</span>`;
     } else if (fonte) {
-      // Sem o giro: quem gira é a caixa inteira (a div), com a seleção junto.
-      const l = EPS.textoDoElemento(fonte, EPS.textoDoCampo(el, amostraComTam(amostraLayout, m.tam, time)), { w: c.w, h: c.h }, el, { semGiro: true });
-      // Número com tamanho por dígitos: o espaço dele aparece tracejado.
-      const sub = el.id === layoutElSel && EPS.caixaPorDigitos(el, EPS.textoDoCampo(el, amostraLayout), { w: c.w, h: c.h });
-      const guia = sub ? `<rect class="arte-el-digitos" x="${(sub.x * s).toFixed(2)}" y="${(sub.y * s).toFixed(2)}" width="${(sub.w * s).toFixed(2)}" height="${(sub.h * s).toFixed(2)}" />` : "";
-      div.innerHTML = `<svg class="arte-el-svg" width="${c.w * s}" height="${c.h * s}" overflow="visible">` +
-        `${svgDoTexto(l.comandos, el, s)}${guia}</svg>`;
+      div.innerHTML = svgTextoNoPalco(el, c, s, fonte, amostraComTam(amostraLayout, m.tam, time), el.id === layoutElSel);
     } else {
       div.innerHTML = `<span class="arte-el-rotulo">${escapeHtmlAdmin(rotuloElementoLayout(el))}${time ? "" : "<br>(escolha um time para ver a fonte)"}</span>`;
     }
@@ -2437,6 +2431,15 @@ function renderizarPalcoLayout() {
     alcaGiro.className = "arte-el-giro";
     alcaGiro.title = "Girar (Shift: de 15 em 15°)";
     div.appendChild(alcaGiro);
+    // Alças das bordas: puxar estica ou espreme (distorce) o elemento.
+    ["e", "w", "n", "s"].forEach((lado) => {
+      const a = document.createElement("span");
+      a.className = "arte-el-lado arte-el-lado-" + lado;
+      a.dataset.lado = lado;
+      a.title = lado === "e" || lado === "w" ? "Puxe para esticar ou espremer na largura" : "Puxe para esticar ou espremer na altura";
+      div.appendChild(a);
+    });
+    posicionarLados(div, el, c, s, amostraComTam(amostraLayout, m.tam, time));
     ligarArrasteLayout(div, alca, elGeral, alcaGiro);
     palco.appendChild(div);
   });
@@ -2770,6 +2773,77 @@ function desenharReguas(palco, dim, s) {
 
 // Arrastar (mover) e a alça do canto (redimensionar). O brasão mantém a
 // proporção; as caixas de texto são livres (são o limite do texto).
+// SVG do texto de um elemento no palco (sem o giro: quem gira é a div).
+// Selecionado, o número com tamanho por dígitos mostra o espaço tracejado.
+function svgTextoNoPalco(el, c, s, fonte, amostra, comGuia) {
+  const texto = EPS.textoDoCampo(el, amostra);
+  const l = EPS.textoDoElemento(fonte, texto, { w: c.w, h: c.h }, el, { semGiro: true });
+  const sub = comGuia && EPS.caixaPorDigitos(el, texto, { w: c.w, h: c.h });
+  const guia = sub ? `<rect class="arte-el-digitos" x="${(sub.x * s).toFixed(2)}" y="${(sub.y * s).toFixed(2)}" width="${(sub.w * s).toFixed(2)}" height="${(sub.h * s).toFixed(2)}" />` : "";
+  return `<svg class="arte-el-svg" width="${c.w * s}" height="${c.h * s}" overflow="visible">${svgDoTexto(l.comandos, el, s)}${guia}</svg>`;
+}
+
+// Onde ficam as alças das bordas: na caixa ou, no número com tamanho por
+// dígitos, no espaço tracejado daquela quantidade de dígitos.
+function areaDasAlcas(el, c, amostra) {
+  const sub = !ehCaixaImagem(el) && EPS.caixaPorDigitos(el, EPS.textoDoCampo(el, amostra), { w: c.w, h: c.h });
+  return sub ? { x: sub.x, y: sub.y, w: sub.w, h: sub.h, digitos: true } : { x: 0, y: 0, w: c.w, h: c.h, digitos: false };
+}
+
+function posicionarLados(div, el, c, s, amostra) {
+  const a = areaDasAlcas(el, c, amostra);
+  const pos = { e: [a.x + a.w, a.y + a.h / 2], w: [a.x, a.y + a.h / 2], n: [a.x + a.w / 2, a.y], s: [a.x + a.w / 2, a.y + a.h] };
+  div.querySelectorAll("[data-lado]").forEach((al) => {
+    const [x, y] = pos[al.dataset.lado];
+    al.style.left = x * s + "px";
+    al.style.top = y * s + "px";
+    al.classList.toggle("no-tracejado", a.digitos);
+  });
+}
+
+// Redesenha só um elemento do palco com valores provisórios (enquanto se
+// puxa uma alça ou um deslizante), sem gravar nada.
+function previaElementoNoPalco(elId, elPrev, c) {
+  const div = document.querySelector(`#layoutPalco .arte-el[data-id="${elId}"]`);
+  const m = medidasLayout();
+  if (!div || !m) return;
+  const s = m.s;
+  div.style.left = c.x * s + "px";
+  div.style.top = c.y * s + "px";
+  div.style.width = c.w * s + "px";
+  div.style.height = c.h * s + "px";
+  const time = timeDaPrevia();
+  const amostra = amostraComTam(amostraLayout, m.tam, time);
+  if (ehCaixaImagem(elPrev)) {
+    const img = div.querySelector("img");
+    if (img) img.style.objectFit = EPS.imagemLivre(elPrev) ? "fill" : "contain";
+  } else {
+    const fonte = fonteProntaDoTime(time);
+    const svg = div.querySelector("svg.arte-el-svg");
+    if (fonte && svg) {
+      const t = document.createElement("div");
+      t.innerHTML = svgTextoNoPalco(elPrev, c, s, fonte, amostra, true);
+      const novo = t.firstChild;
+      if (svg.style.transform) novo.style.transform = svg.style.transform;
+      svg.replaceWith(novo);
+    }
+  }
+  posicionarLados(div, elPrev, c, s, amostra);
+}
+
+// Valores do tamanho por dígitos (em %) depois de puxar a borda `lado` do
+// tracejado por (dx, dy) mm. Centrado, as duas bordas andam juntas.
+function porDigitosPuxado(elT, n, ini, c, lado, dx, dy) {
+  const centro = (elT.alinhamento || "centro") === "centro";
+  let w = ini.w, h = ini.h;
+  if (lado === "e") w += centro ? 2 * dx : (elT.alinhamento === "direita" ? 0 : dx);
+  if (lado === "w") w -= centro ? 2 * dx : (elT.alinhamento === "esquerda" ? 0 : dx);
+  if (lado === "s") h += 2 * dy;
+  if (lado === "n") h -= 2 * dy;
+  const pct = (v, t) => Math.round(Math.max(5, Math.min(100, (v / t) * 100)) * 10) / 10;
+  return { ...(elT.porDigitos || {}), [n]: { w: pct(w, c.w), h: pct(h, c.h), esticar: true } };
+}
+
 function ligarArrasteLayout(div, alca, el, alcaGiro) {
   div.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 || contaGotasAlvo) return; // conta-gotas: quem trata é o palco
@@ -2815,6 +2889,52 @@ function ligarArrasteLayout(div, alca, el, alcaGiro) {
       div.addEventListener("pointermove", mover);
       div.addEventListener("pointerup", soltar);
       div.addEventListener("pointercancel", soltar);
+      return;
+    }
+
+    // Alça de uma borda: estica ou espreme só naquela direção (distorce).
+    const lado = ev.target.dataset && ev.target.dataset.lado;
+    if (lado) {
+      const amostra = amostraComTam(amostraLayout, m.tam, timeDaPrevia());
+      const area = areaDasAlcas(elT, ini, amostra);
+      const n = EPS.digitosDoNumero(EPS.textoDoCampo(elT, amostra));
+      let prev = elT;
+      const moverLado = (e) => {
+        const dx = (e.clientX - x0) / m.s, dy = (e.clientY - y0) / m.s;
+        if (area.digitos) {
+          prev = { ...elT, porDigitos: porDigitosPuxado(elT, n, area, ini, lado, dx, dy) };
+          const d = prev.porDigitos[n];
+          estadoSalvarLayout(`${n} dígito${n > 1 ? "s" : ""}: ${d.w}% × ${d.h}% da caixa`);
+        } else {
+          atual = { ...ini };
+          if (lado === "e") atual.w = Math.max(2, ini.w + dx);
+          if (lado === "w") { atual.w = Math.max(2, ini.w - dx); atual.x = ini.x + ini.w - atual.w; }
+          if (lado === "s") atual.h = Math.max(2, ini.h + dy);
+          if (lado === "n") { atual.h = Math.max(2, ini.h - dy); atual.y = ini.y + ini.h - atual.h; }
+          prev = ehCaixaImagem(el) ? { ...elT, livre: true } : { ...elT, ajuste: "esticar" };
+          estadoSalvarLayout(`${atual.w.toFixed(1)} × ${atual.h.toFixed(1)} mm`);
+        }
+        previaElementoNoPalco(el.id, prev, area.digitos ? ini : atual);
+      };
+      const soltarLado = async () => {
+        div.removeEventListener("pointermove", moverLado);
+        div.removeEventListener("pointerup", soltarLado);
+        div.removeEventListener("pointercancel", soltarLado);
+        layoutArrastando = false;
+        if (area.digitos) {
+          if (prev !== elT) await gravarEstiloElemento(el.id, "porDigitos", prev.porDigitos);
+        } else if (atual.w !== ini.w || atual.h !== ini.h) {
+          gravarCaixaLayout(el, m, atual);
+          if (ehCaixaImagem(el) ? !EPS.imagemLivre(elT) : elT.ajuste !== "esticar") {
+            await gravarEstiloElemento(el.id, ehCaixaImagem(el) ? "livre" : "ajuste", ehCaixaImagem(el) ? true : "esticar");
+          }
+        }
+        renderizarPalcoLayout();
+        renderizarPainelLayout();
+      };
+      div.addEventListener("pointermove", moverLado);
+      div.addEventListener("pointerup", soltarLado);
+      div.addEventListener("pointercancel", soltarLado);
       return;
     }
 
@@ -3064,31 +3184,74 @@ function adicionarElementoLayout(tipo) {
 }
 
 // ---------------- Número: tamanho por quantidade de dígitos ----------------
-// Para 1, 2 e 3 dígitos o número pode ter largura e altura próprias (em mm
-// na tela, gravadas em % da caixa para valer em todos os tamanhos) e ser
-// esticado para preencher esse espaço — "7" largo e "100" estreito, por ex.
+// Para 1, 2 e 3 dígitos o número pode ter um espaço próprio dentro da caixa
+// (gravado em % da caixa, vale em todos os tamanhos) e ser distorcido para
+// preenchê-lo — "7" largo e "100" estreito, por exemplo. Três modos:
+//   normal    — sem nada (a caixa inteira, como qualquer texto);
+//   distorcer — preenche o espaço, largura e altura cada uma no seu;
+//   encaixar  — cabe no espaço sem distorcer.
 const AMOSTRA_DIGITOS = { 1: "7", 2: "10", 3: "100" };
+const ROTULO_DIGITOS = { 1: "1 dígito", 2: "2 dígitos", 3: "3 dígitos" };
+
+function modoDigitos(d) {
+  return !d ? "normal" : d.esticar === false ? "encaixar" : "distorcer";
+}
+
+function resumoDigitos(d) {
+  const m = modoDigitos(d);
+  if (m === "normal") return "Caixa inteira";
+  return `${m === "distorcer" ? "Distorcido" : "Encaixado"} · ${Math.round(Number(d.w) || 100)}% × ${Math.round(Number(d.h) || 100)}%`;
+}
+
+// Miniatura do número com n dígitos dentro da caixa (em mm, com a fonte do time).
+function miniaturaDigitos(elT, c, n, fonte) {
+  const caixa = { w: c.w, h: c.h };
+  const borda = Math.max(c.w, c.h) * 0.015;
+  const sub = EPS.caixaPorDigitos(elT, AMOSTRA_DIGITOS[n], caixa);
+  const guia = sub ? `<rect x="${sub.x}" y="${sub.y}" width="${sub.w}" height="${sub.h}" class="digitos-mini-area" stroke-width="${borda}" stroke-dasharray="${borda * 4} ${borda * 3}" />` : "";
+  const texto = fonte
+    ? svgDoTexto(EPS.textoDoElemento(fonte, AMOSTRA_DIGITOS[n], caixa, elT, { semGiro: true }).comandos, elT, 1)
+    : `<text x="${c.w / 2}" y="${c.h * 0.7}" text-anchor="middle" font-size="${c.h * 0.6}" class="digitos-mini-sem-fonte">${AMOSTRA_DIGITOS[n]}</text>`;
+  return `<svg viewBox="${-borda} ${-borda} ${c.w + 2 * borda} ${c.h + 2 * borda}" preserveAspectRatio="xMidYMid meet" class="digitos-mini-svg">` +
+    `<rect x="0" y="0" width="${c.w}" height="${c.h}" class="digitos-mini-caixa" stroke-width="${borda}" />${guia}${texto}</svg>`;
+}
 
 function painelPorDigitos(elT, c) {
   const pd = elT.porDigitos || {};
-  const atual = EPS.digitosDoNumero(amostraLayout.numero);
-  const linha = (n) => {
-    const d = pd[n];
-    const w = d && Number(d.w) > 0 ? (c.w * Number(d.w)) / 100 : null;
-    const h = d && Number(d.h) > 0 ? (c.h * Number(d.h)) / 100 : null;
-    return `<div class="digitos-linha${atual === n ? " ativo" : ""}" data-digitos="${n}">
-      <button type="button" class="secundario digitos-ver" data-ver-digitos="${n}" title="Ver a prévia com ${AMOSTRA_DIGITOS[n]}">${n} dígito${n > 1 ? "s" : ""}${n === 3 ? "+" : ""}</button>
-      <label>Larg.<input type="number" step="0.5" min="1" data-dig-w placeholder="${c.w.toFixed(1)}" value="${w == null ? "" : w.toFixed(1)}" /></label>
-      <label>Alt.<input type="number" step="0.5" min="1" data-dig-h placeholder="${c.h.toFixed(1)}" value="${h == null ? "" : h.toFixed(1)}" /></label>
-      <label class="interruptor" title="Distorce o número para ocupar exatamente esse espaço"><input type="checkbox" data-dig-esticar ${!d || d.esticar !== false ? "checked" : ""} ${d ? "" : "disabled"} /> <span>Esticar</span></label>
-      ${d ? `<button type="button" class="botao-icone" data-dig-limpar title="Voltar a usar a caixa inteira" aria-label="Limpar">${icone("x")}</button>` : ""}
-    </div>`;
+  const fonte = fonteProntaDoTime(timeDaPrevia());
+  const atual = EPS.digitosDoNumero(amostraLayout.numero) || 2;
+  const d = pd[atual];
+  const modo = modoDigitos(d);
+  const cartao = (n) => `
+      <button type="button" class="digitos-cartao${atual === n ? " ativo" : ""}" data-ver-digitos="${n}" title="Editar e ver no palco o número com ${ROTULO_DIGITOS[n]} (${AMOSTRA_DIGITOS[n]})">
+        <span class="digitos-mini" data-mini="${n}">${miniaturaDigitos(elT, c, n, fonte)}</span>
+        <strong>${ROTULO_DIGITOS[n]}${n === 3 ? "+" : ""}</strong>
+        <small data-resumo="${n}">${resumoDigitos(pd[n])}</small>
+      </button>`;
+  const deslizante = (eixo, rotulo, total) => {
+    const v = d ? Math.round(Number(d[eixo]) || 100) : 100;
+    return `<label class="campo-deslizante">${rotulo} <small data-mm="${eixo}">${((total * v) / 100).toFixed(1)} mm</small>
+      <span><input type="range" min="5" max="100" step="1" data-dig="${eixo}" value="${v}" /><input type="number" min="5" max="100" step="1" data-dig="${eixo}" value="${v}" /><em>%</em></span></label>`;
   };
   return `
       <section class="painel-secao">
-        <h4 class="painel-titulo">${icone("hash")} Tamanho por dígitos <span>mm</span></h4>
-        <div class="digitos-grade">${[1, 2, 3].map(linha).join("")}</div>
-        <p class="pix-ajuda">Largura e altura do número para cada quantidade de dígitos, dentro da caixa (vazio = a caixa inteira). Com "Esticar" o número é distorcido para preencher esse espaço. Vale proporcionalmente em todos os tamanhos. Clique em "1 dígito"… para ver a prévia.</p>
+        <h4 class="painel-titulo">${icone("hash")} Número por dígitos</h4>
+        <p class="pix-ajuda">O número pode ter um espaço próprio para cada quantidade de dígitos. Escolha abaixo qual editar — o palco mostra o mesmo.</p>
+        <div class="digitos-cartoes">${[1, 2, 3].map(cartao).join("")}</div>
+        <div class="digitos-editar">
+          <p class="digitos-editando">Editando: <strong>${ROTULO_DIGITOS[atual]}${atual === 3 ? " ou mais" : ""}</strong> (ex.: ${AMOSTRA_DIGITOS[atual]})</p>
+          <div class="segmentado digitos-modo" role="group" aria-label="Modo">
+            <button type="button" data-dig-modo="normal" class="${modo === "normal" ? "ativo" : ""}" title="Usa a caixa inteira, sem distorcer (como qualquer texto)">Normal</button>
+            <button type="button" data-dig-modo="distorcer" class="${modo === "distorcer" ? "ativo" : ""}" title="Estica ou espreme o número para preencher o espaço">Distorcer</button>
+            <button type="button" data-dig-modo="encaixar" class="${modo === "encaixar" ? "ativo" : ""}" title="Cabe no espaço mantendo a proporção das letras">Só encaixar</button>
+          </div>
+          ${modo === "normal"
+            ? `<p class="pix-ajuda">Normal: o número ocupa a caixa inteira sem distorcer. Escolha <strong>Distorcer</strong> para esticar ou espremer.</p>`
+            : `${deslizante("w", "Largura", c.w)}${deslizante("h", "Altura", c.h)}
+              <p class="pix-ajuda">${modo === "distorcer" ? "O número é esticado ou espremido para preencher exatamente o espaço tracejado." : "O número cabe no espaço tracejado sem distorcer."}
+              No palco, puxe as alças das bordas do tracejado para ajustar direto.</p>`}
+        </div>
+        <p class="pix-ajuda">Vale em todos os tamanhos de camiseta (proporcional à caixa). Na impressão sai igual à prévia.</p>
       </section>`;
 }
 
@@ -3101,33 +3264,47 @@ function ligarPainelPorDigitos(box, el, elT, c) {
       renderizarPainelLayout();
     };
   });
-  box.querySelectorAll(".digitos-linha").forEach((lin) => {
-    const n = lin.dataset.digitos;
-    const gravar = (muda) => {
-      const pd = { ...(elT.porDigitos || {}) };
-      const d = muda(pd[n] ? { ...pd[n] } : { esticar: true });
-      if (d) pd[n] = d; else delete pd[n];
-      gravarEstiloElemento(el.id, "porDigitos", Object.keys(pd).length ? pd : null);
+  const n = EPS.digitosDoNumero(amostraLayout.numero) || 2;
+  const comDigitos = (d) => {
+    const pd = { ...(elT.porDigitos || {}) };
+    if (d) pd[n] = d; else delete pd[n];
+    return Object.keys(pd).length ? pd : null;
+  };
+  box.querySelectorAll("[data-dig-modo]").forEach((b) => {
+    b.onclick = () => {
+      const atual = (elT.porDigitos || {})[n];
+      const modo = b.dataset.digModo;
+      const d = modo === "normal" ? null : { w: 100, h: 100, ...(atual || {}), esticar: modo === "distorcer" };
+      gravarEstiloElemento(el.id, "porDigitos", comDigitos(d));
     };
-    const pct = (inp, total) => {
-      const v = Number(inp.value);
-      return v > 0 ? Math.round(Math.min(100, (v / total) * 100) * 100) / 100 : null;
-    };
-    const inW = lin.querySelector("[data-dig-w]"), inH = lin.querySelector("[data-dig-h]");
-    const aoMudar = () => gravar((d) => {
-      d.w = pct(inW, c.w);
-      d.h = pct(inH, c.h);
-      if (d.w == null && d.h == null) return null;
-      if (d.w == null) d.w = 100;
-      if (d.h == null) d.h = 100;
-      return d;
+  });
+  // Deslizantes: mexendo, o palco e a miniatura mudam na hora; soltando, grava.
+  const fonte = fonteProntaDoTime(timeDaPrevia());
+  const valores = () => {
+    const v = {};
+    box.querySelectorAll('input[type="range"][data-dig]').forEach((r) => (v[r.dataset.dig] = Math.max(5, Math.min(100, Number(r.value) || 100))));
+    return { ...((elT.porDigitos || {})[n] || {}), ...v };
+  };
+  const previa = () => {
+    const d = valores();
+    const elPrev = { ...elT, porDigitos: comDigitos(d) };
+    const m = medidasLayout();
+    if (m) previaElementoNoPalco(el.id, elPrev, caixaNoEditor(el, m));
+    const mini = box.querySelector(`[data-mini="${n}"]`);
+    if (mini) mini.innerHTML = miniaturaDigitos(elPrev, c, n, fonte);
+    const res = box.querySelector(`[data-resumo="${n}"]`);
+    if (res) res.textContent = resumoDigitos(d);
+    ["w", "h"].forEach((k) => {
+      const mm = box.querySelector(`[data-mm="${k}"]`);
+      if (mm) mm.textContent = (((k === "w" ? c.w : c.h) * d[k]) / 100).toFixed(1) + " mm";
     });
-    inW.onchange = aoMudar;
-    inH.onchange = aoMudar;
-    const chk = lin.querySelector("[data-dig-esticar]");
-    chk.onchange = () => gravar((d) => ({ ...d, esticar: chk.checked }));
-    const limpar = lin.querySelector("[data-dig-limpar]");
-    if (limpar) limpar.onclick = () => gravar(() => null);
+  };
+  box.querySelectorAll("[data-dig]").forEach((inp) => {
+    inp.oninput = () => {
+      box.querySelectorAll(`[data-dig="${inp.dataset.dig}"]`).forEach((o) => { if (o !== inp) o.value = inp.value; });
+      previa();
+    };
+    inp.onchange = () => gravarEstiloElemento(el.id, "porDigitos", comDigitos(valores()));
   });
 }
 
