@@ -496,6 +496,44 @@ function badgePagamentoHtml(aluno) {
   return '<span class="badge pendente">Pendente</span>';
 }
 
+// ---------------- Cadastro de camisetas ----------------
+
+// Quantas camisetas iguais dá para cadastrar de uma vez.
+const QTD_CAMISETAS_IGUAIS_MAX = 50;
+
+function lerQuantidadeCamisetas(input) {
+  const n = parseInt(input && input.value, 10);
+  return Math.max(1, Math.min(QTD_CAMISETAS_IGUAIS_MAX, n || 1));
+}
+
+// Cadastra `quantidade` camisetas iguais no pedido. Cada uma vira um
+// documento próprio — e a produção, o pagamento e a contagem por tamanho
+// continuam vendo uma camiseta por linha, sem nada a mudar. As cópias levam
+// o mesmo `grupoIguais`, para o número repetido entre elas não ser apontado
+// como duplicado.
+function cadastrarCamisetasIguais(timeId, dados, quantidade) {
+  const col = db.collection(COL_TIMES).doc(timeId).collection("alunos");
+  const qtd = Math.max(1, Math.min(QTD_CAMISETAS_IGUAIS_MAX, Number(quantidade) || 1));
+  const doc = { ...dados, excluido: false, criadoEm: firebase.firestore.FieldValue.serverTimestamp() };
+  if (qtd === 1) return col.add(doc);
+  const lote = db.batch();
+  const grupo = col.doc().id;
+  for (let i = 0; i < qtd; i++) lote.set(col.doc(), { ...doc, grupoIguais: grupo });
+  return lote.commit();
+}
+
+// Números repetidos no time — as cópias de um mesmo cadastro com quantidade
+// (mesmo `grupoIguais`) contam uma vez só.
+function numerosDuplicados(alunos) {
+  const donos = {};
+  (alunos || []).forEach((a) => {
+    if (!a.numero) return;
+    const n = String(a.numero);
+    (donos[n] = donos[n] || new Set()).add(a.grupoIguais || a.id);
+  });
+  return Object.keys(donos).filter((n) => donos[n].size > 1);
+}
+
 // ---------------- Produção (o que vai ser impresso) ----------------
 
 // Só entra na produção quem já pagou (a camiseta interna conta como paga).

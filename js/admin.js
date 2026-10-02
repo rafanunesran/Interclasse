@@ -3612,6 +3612,7 @@ const elNovaCamisetaNome = document.getElementById("novaCamisetaNome");
 const elNovaCamisetaTamanho = document.getElementById("novaCamisetaTamanho");
 const elNovaCamisetaNumero = document.getElementById("novaCamisetaNumero");
 const elNovaCamisetaCostas = document.getElementById("novaCamisetaCostas");
+const elNovaCamisetaQtd = document.getElementById("novaCamisetaQtd");
 const elNovaCamisetaGoleiro = document.getElementById("novaCamisetaGoleiro");
 const elNovaCamisetaProf = document.getElementById("novaCamisetaProf");
 const elMsgNovaCamiseta = document.getElementById("msgNovaCamiseta");
@@ -3662,7 +3663,7 @@ function conferirNumeroRepetido() {
   const numero = elNovaCamisetaNumero ? elNovaCamisetaNumero.value.trim() : "";
   const donos = !numero || !estado
     ? []
-    : estado.alunos.filter((a) => String(a.numero || "") === numero).map((a) => a.nome);
+    : [...new Set(estado.alunos.filter((a) => String(a.numero || "") === numero).map((a) => a.nome))];
 
   elNovaCamisetaDuplicado.textContent = donos.length
     ? `⚠️ O número ${numero} já é de ${donos.join(", ")} neste time.`
@@ -3678,6 +3679,7 @@ function limparNovaCamiseta() {
   if (elNovaCamisetaNome) elNovaCamisetaNome.value = "";
   if (elNovaCamisetaNumero) elNovaCamisetaNumero.value = "";
   if (elNovaCamisetaCostas) elNovaCamisetaCostas.value = "";
+  if (elNovaCamisetaQtd) elNovaCamisetaQtd.value = "1";
   if (elNovaCamisetaGoleiro) elNovaCamisetaGoleiro.checked = false;
   if (elNovaCamisetaProf) elNovaCamisetaProf.checked = false;
   // O tamanho também volta ao "Selecione...": cadastrar o próximo com o
@@ -3710,21 +3712,22 @@ if (elFormNovaCamiseta) {
       // Mesmo formato do cadastro feito na página do time (js/time.js) —
       // inclusive `excluido: false`, sem o qual a camiseta não apareceria
       // na lista (a consulta filtra por esse campo).
-      await db.collection(COL_TIMES).doc(timeId).collection("alunos").add({
+      const quantidade = lerQuantidadeCamisetas(elNovaCamisetaQtd);
+      await cadastrarCamisetasIguais(timeId, {
         nome,
         tamanho,
         numero: elNovaCamisetaNumero.value.trim(),
         // Em branco, o que vai estampado é o nome do estudante.
         nomeCamiseta: elNovaCamisetaCostas.value.trim() || nome,
         goleiro: !!(elNovaCamisetaGoleiro && elNovaCamisetaGoleiro.checked),
-        prof: !!(elNovaCamisetaProf && elNovaCamisetaProf.checked),
-        excluido: false,
-        criadoEm: firebase.firestore.FieldValue.serverTimestamp()
-      });
+        prof: !!(elNovaCamisetaProf && elNovaCamisetaProf.checked)
+      }, quantidade);
 
       // Deixa a lista do time aberta para a camiseta nova aparecer ao fechar.
       estadoTimes[timeId].expandido = true;
-      mostrarMensagem(elMsgNovaCamiseta, `✅ ${nome} entrou na lista. Pode cadastrar o próximo.`, "aviso");
+      mostrarMensagem(elMsgNovaCamiseta, quantidade > 1
+        ? `✅ ${quantidade} camisetas iguais de ${nome} entraram na lista. Pode cadastrar o próximo.`
+        : `✅ ${nome} entrou na lista. Pode cadastrar o próximo.`, "aviso");
       limparNovaCamiseta();
       elNovaCamisetaNome.focus();
     } catch (erro) {

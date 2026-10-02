@@ -803,11 +803,7 @@ function renderizarTabela() {
   const podeEditar = desbloqueado && pedidoAceitaCadastro(timeAtual) && cadastrosGlobaisAbertos;
 
   // Conta ocorrências de cada número (ignorando vazios) para destacar duplicados
-  const contagemNumero = {};
-  alunosAtuais.forEach((a) => {
-    if (a.numero) contagemNumero[a.numero] = (contagemNumero[a.numero] || 0) + 1;
-  });
-  const duplicados = Object.keys(contagemNumero).filter((n) => contagemNumero[n] > 1);
+  const duplicados = numerosDuplicados(alunosAtuais);
 
   if (duplicados.length > 0) {
     mostrarMensagem(
@@ -1114,7 +1110,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
   botao.disabled = true;
 
   try {
-    await db.collection(COL_TIMES).doc(timeId).collection("alunos").add({
+    const quantidade = lerQuantidadeCamisetas(document.getElementById("qtdCamisetas"));
+    await cadastrarCamisetasIguais(timeId, {
       nome,
       tamanho,
       numero,
@@ -1122,12 +1119,14 @@ elFormAluno.addEventListener("submit", async (ev) => {
       // Camiseta de cor especial: o goleiro sai separado na produção.
       goleiro,
       // Camiseta de professor: marca só para organização.
-      prof,
-      excluido: false,
-      criadoEm: firebase.firestore.FieldValue.serverTimestamp()
-    });
+      prof
+    }, quantidade);
     elFormAluno.reset();
-    if (elMsgCadastro) mostrarMensagem(elMsgCadastro, `✅ ${nome} entrou na lista. Pode cadastrar o próximo.`, "aviso");
+    if (elMsgCadastro) {
+      mostrarMensagem(elMsgCadastro, quantidade > 1
+        ? `✅ ${quantidade} camisetas iguais de ${nome} entraram na lista. Pode cadastrar o próximo.`
+        : `✅ ${nome} entrou na lista. Pode cadastrar o próximo.`, "aviso");
+    }
     document.getElementById("nomeAluno").focus();
   } catch (erro) {
     console.error(erro);

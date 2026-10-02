@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Time — Camisetas Interclasse</title>
-<link rel="stylesheet" href="css/style.css?v=20261103b" />
+<link rel="stylesheet" href="css/style.css?v=20261103c" />
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
 </head>
 <body>
@@ -136,6 +136,10 @@
         <label for="nomeCostas">Nome na camiseta (costas)</label>
         <input type="text" id="nomeCostas" required />
 
+        <label for="qtdCamisetas">Quantidade de camisetas iguais</label>
+        <input type="number" id="qtdCamisetas" min="1" max="50" step="1" value="1" class="input-curto" />
+        <p class="pix-ajuda">Mais de 1: entram várias camisetas idênticas (mesmo nome, número e tamanho). Cada uma aparece na lista e é paga e produzida separadamente.</p>
+
         <label class="checkbox-inline" for="goleiroAluno">
           <input type="checkbox" id="goleiroAluno" />
           <i data-icone="hand"></i> É goleiro (camiseta de cor especial)
@@ -264,9 +268,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
-<script src="js/firebase-init.js?v=20261103b"></script>
-<script src="js/icones.js?v=20261103b"></script>
-<script src="js/utils.js?v=20261103b"></script>
-<script src="js/time.js?v=20261103b"></script>
+<script src="js/firebase-init.js?v=20261103c"></script>
+<script src="js/icones.js?v=20261103c"></script>
+<script src="js/utils.js?v=20261103c"></script>
+<script src="js/time.js?v=20261103c"></script>
 </body>
 </html>
