@@ -779,7 +779,9 @@ Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
   Por isso o arquivo fica maior quando a mesma arte se repete muitas vezes. Desligado, a arte
   repetida entra uma vez só e o arquivo fica menor, o que funciona bem no Illustrator e nos RIPs.
 
-Cada peça leva um **marcador para a costureira** dentro da área de impressão:
+Cada peça leva um **marcador para a costureira** dentro da área de impressão. Ele usa uma fonte
+própria do site (`fonts/marcador.ttf`, DejaVu Sans Bold de licença livre), então sai mesmo em time
+**sem fonte enviada** (sem nome e número na camiseta):
 **`Time-Tamanho-Peça`** (ex.: `7B-P-Frente`), com **4 mm** de altura, centralizado a **1 mm da
 borda de baixo do molde** (seguindo o contorno — barra curva, manga que afina —, sempre dentro da
 área de impressão e fora da faca de 3 mm). Na **gola** o marcador vai na **lateral esquerda, na vertical** (lendo de baixo

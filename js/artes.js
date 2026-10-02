@@ -114,6 +114,22 @@ function imagemDaCaixa(el, prod, pecaId) {
 
 // Fontes (opentype) já lidas, por arquivo.
 const fontesLidas = {};
+// Fonte própria do marcador da costureira (DejaVu Sans Bold, só os
+// caracteres latinos — fonts/marcador.ttf). O marcador sai em toda peça, mesmo
+// em time sem fonte enviada (sem nome/número na camiseta).
+let promessaFonteMarcador = null;
+let fonteMarcadorPronta = null;
+function fonteDoMarcador() {
+  if (!promessaFonteMarcador) {
+    promessaFonteMarcador = Promise.all([carregarLib("opentype"), fetch(new URL("fonts/marcador.ttf", document.baseURI)).then((r) => {
+      if (!r.ok) throw new Error("fonte do marcador não encontrada");
+      return r.arrayBuffer();
+    })]).then(([opentype, buf]) => (fonteMarcadorPronta = opentype.parse(buf)))
+      .catch((e) => { promessaFonteMarcador = null; throw e; });
+  }
+  return promessaFonteMarcador;
+}
+
 function obterFonte(ref) {
   const chave = chaveArquivoDrive(ref);
   if (!fontesLidas[chave]) {
@@ -1291,8 +1307,13 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
   });
 
   // Marcador da costureira (só na prévia "Arte", como vai sair na folha).
-  if (comMolde && fonte && tam && molde && pecaId !== "etiquetaTam") {
-    const cmds = EPS.marcadorDaPeca(fonte, EPS.textoDoMarcador(time.nome, tam, nomePecaProducao(pecaId)), dim.w, dim.h, pecaId === "gola",
+  // Mesma fonte própria da folha; enquanto não carrega, desenha de novo depois.
+  if (comMolde && !fonteMarcadorPronta && !promessaFonteMarcador) {
+    fonteDoMarcador().then(() => { if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin(); }).catch(() => {});
+  }
+  const fonteMarc = fonteMarcadorPronta || fonte;
+  if (comMolde && fonteMarc && tam && molde && pecaId !== "etiquetaTam") {
+    const cmds = EPS.marcadorDaPeca(fonteMarc, EPS.textoDoMarcador(time.nome, tam, nomePecaProducao(pecaId)), dim.w, dim.h, pecaId === "gola",
       molde.contorno ? EPS.comandosDoContorno(molde.contorno) : null);
     if (cmds.length) {
       partes.push(`<path d="${caminhoSvg(cmds, 1)}" fill="#000" stroke="#fff" stroke-width="0.5" stroke-linejoin="round" paint-order="stroke" />`);
@@ -3744,7 +3765,17 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
   rec.inflar = pako.inflate; // recorte das imagens com transparência (EPS para o Corel)
   if (prod.fonte && prod.fonte.partes && !rec.fonte) {
     aviso("Carregando a fonte…");
-    rec.fonte = rec.fonteEtiqueta = await obterFonte(prod.fonte.partes);
+    rec.fonte = await obterFonte(prod.fonte.partes);
+  }
+  // Marcador da costureira: sempre a fonte própria (mesmo sem fonte do time);
+  // se ela não carregar, usa a do time.
+  if (!rec.fonteEtiqueta) {
+    try {
+      rec.fonteEtiqueta = await fonteDoMarcador();
+    } catch (e) {
+      console.warn("Fonte do marcador:", e);
+      rec.fonteEtiqueta = rec.fonte;
+    }
   }
   const lerEps = async (ref, bbox) => {
     const bytes = await baixarArquivoDrive(driveScriptUrl, ref);

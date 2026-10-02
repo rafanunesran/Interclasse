@@ -1129,6 +1129,9 @@ const EPS = (function () {
 
         // Marcador para a costureira, DENTRO da área de impressão:
         // "Time-Tamanho-Peça" (ex.: 7B-P-Frente), ver marcadorDaPeca().
+        if (op.etiqueta !== false && !rec.fonteEtiqueta && pecaId !== "etiquetaTam") {
+          avisar("Sem a fonte do marcador — as peças saíram sem a marcação da costureira.");
+        }
         if (op.etiqueta !== false && rec.fonteEtiqueta && pecaId !== "etiquetaTam") {
           const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId);
           const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola",
