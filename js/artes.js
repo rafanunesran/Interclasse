@@ -114,14 +114,14 @@ function imagemDaCaixa(el, prod, pecaId) {
 
 // Fontes (opentype) já lidas, por arquivo.
 const fontesLidas = {};
-// Fonte própria do marcador da costureira (DejaVu Sans Bold, só os
+// Fonte própria do marcador da costureira (DejaVu Sans Mono Bold, de largura fixa, só os
 // caracteres latinos — fonts/marcador.ttf). O marcador sai em toda peça, mesmo
 // em time sem fonte enviada (sem nome/número na camiseta).
 let promessaFonteMarcador = null;
 let fonteMarcadorPronta = null;
 function fonteDoMarcador() {
   if (!promessaFonteMarcador) {
-    promessaFonteMarcador = Promise.all([carregarLib("opentype"), fetch(new URL("fonts/marcador.ttf", document.baseURI)).then((r) => {
+    promessaFonteMarcador = Promise.all([carregarLib("opentype"), fetch(new URL("fonts/marcador.ttf?v=2", document.baseURI)).then((r) => {
       if (!r.ok) throw new Error("fonte do marcador não encontrada");
       return r.arrayBuffer();
     })]).then(([opentype, buf]) => (fonteMarcadorPronta = opentype.parse(buf)))

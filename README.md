@@ -780,7 +780,7 @@ Giro, espelho, efeitos e cores saem iguais na prévia, no mockup e na folha EPS.
   repetida entra uma vez só e o arquivo fica menor, o que funciona bem no Illustrator e nos RIPs.
 
 Cada peça leva um **marcador para a costureira** dentro da área de impressão. Ele usa uma fonte
-própria do site (`fonts/marcador.ttf`, DejaVu Sans Bold de licença livre), então sai mesmo em time
+própria do site (`fonts/marcador.ttf`, DejaVu Sans Mono Bold — letra básica de largura fixa, licença livre), igual para todos os clientes, então sai mesmo em time
 **sem fonte enviada** (sem nome e número na camiseta):
 **`Time-Tamanho-Peça`** (ex.: `7B-P-Frente`), com **4 mm** de altura, centralizado a **1 mm da
 borda de baixo do molde** (seguindo o contorno — barra curva, manga que afina —, sempre dentro da
