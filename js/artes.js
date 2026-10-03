@@ -3966,6 +3966,16 @@ function perguntarOpcoesEps(resumo) {
 // Ponto de entrada da aba Produção. linhas = [{ item, atual }] (itens da
 // leva). Sai um EPS por time (e um à parte para os goleiros, que vestem
 // outra cor), cada um baixado assim que fica pronto.
+// Erro de um time na geração, dizendo em que etapa parou (ex.: "baixando a
+// arte Costas…") e o que fazer quando é falha ao baixar um arquivo.
+function mensagemDeErroDoTime(rotulo, etapa, e) {
+  const msg = (e && e.message) || String(e);
+  const onde = etapa ? ` na etapa "${etapa.replace(/…$/, "").replace(/^\w/, (c) => c.toLowerCase())}"` : "";
+  const rede = /baixar do Drive|NetworkError|Failed to fetch|fetch/i.test(msg);
+  return `${rotulo}: erro${onde} — ${msg}` +
+    (rede ? ". Tente gerar de novo; se repetir, envie de novo esse arquivo nos Arquivos de produção do time." : "");
+}
+
 // Linhas da leva agrupadas por time (e os goleiros de cada time à parte):
 // Map chave → { timeId, goleiro, camisetas }. Avulsas vão para o time do
 // mesmo modelo; sem time, viram aviso.
@@ -4039,7 +4049,8 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
     }
     const { g, rotulo: rotuloTime } = lista[idx];
     prog.time(idx, "gerando");
-    const etapa = (t, f) => prog.etapa(idx, `${rotuloTime}: ${t}`, f);
+    let ultimaEtapa = "";
+    const etapa = (t, f) => { ultimaEtapa = t; prog.etapa(idx, `${rotuloTime}: ${t}`, f); };
     try {
       // Goleiros: os arquivos e ajustes do goleiro (o que ele não tiver vem
       // da camiseta comum).
@@ -4144,7 +4155,7 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
       prog.time(idx, "pronto", saida);
     } catch (e) {
       console.error(e);
-      prog.aviso(`${rotuloTime}: erro — ${e.message || e}`);
+      prog.aviso(mensagemDeErroDoTime(rotuloTime, ultimaEtapa, e));
       prog.time(idx, "erro", e.message || String(e));
     }
   }
@@ -4312,7 +4323,8 @@ async function gerarPdfCostureira(linhas, nomeBase) {
     }
     const { g, rotulo } = lista[idx];
     prog.time(idx, "gerando");
-    const etapa = (t, f) => prog.etapa(idx, `${rotulo}: ${t}`, f);
+    let ultimaEtapa = "";
+    const etapa = (t, f) => { ultimaEtapa = t; prog.etapa(idx, `${rotulo}: ${t}`, f); };
     try {
       const timeComum = estadoTimes[g.timeId].time;
       const time = timeNaVariante(timeComum, g.goleiro);
@@ -4368,7 +4380,7 @@ async function gerarPdfCostureira(linhas, nomeBase) {
       prog.time(idx, "pronto");
     } catch (e) {
       console.error(e);
-      prog.aviso(`${rotulo}: erro — ${e.message || e}`);
+      prog.aviso(mensagemDeErroDoTime(rotulo, ultimaEtapa, e));
       prog.time(idx, "erro", e.message || String(e));
     }
   }

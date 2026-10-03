@@ -1476,20 +1476,36 @@ async function enviarArquivoDrive(scriptUrl, file, prefixo, aoProgresso) {
 // o id de um arquivo ou a lista de partes. Guarda em memória: a mesma arte é
 // usada em todas as camisetas da leva.
 const cacheArquivosDrive = {};
-function baixarParteDrive(scriptUrl, fileId) {
+// Uma parte do arquivo, pelo Apps Script. O Apps Script falha de vez em
+// quando (muitas chamadas, tempo esgotado) e devolve uma página de erro sem
+// CORS — o navegador mostra "NetworkError"/"Failed to fetch". Por isso tenta
+// de novo até 4 vezes (espera 2, 4 e 8 s). Erro dado pelo próprio script
+// (arquivo inexistente, fora da pasta) não adianta repetir.
+async function baixarParteDrive(scriptUrl, fileId) {
   const sep = scriptUrl.includes("?") ? "&" : "?";
-  return fetch(scriptUrl + sep + "acao=arquivo&id=" + encodeURIComponent(fileId))
-    .then((r) => r.json())
-    .then((dados) => {
-      if (!dados || !dados.ok) {
-        throw new Error((dados && dados.erro) ||
-          "Não foi possível baixar o arquivo. Reimplante o Apps Script (apps-script/README.md).");
-      }
-      const bin = atob(dados.dataBase64 || "");
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return bytes;
-    });
+  const url = scriptUrl + sep + "acao=arquivo&id=" + encodeURIComponent(fileId);
+  const TENTATIVAS = 4;
+  let ultimoErro = null;
+  for (let t = 1; t <= TENTATIVAS; t++) {
+    let dados;
+    try {
+      const r = await fetch(url);
+      dados = await r.json();
+    } catch (e) {
+      ultimoErro = e;
+      if (t < TENTATIVAS) await new Promise((ok) => setTimeout(ok, 2000 * 2 ** (t - 1)));
+      continue;
+    }
+    if (!dados || !dados.ok) {
+      throw new Error((dados && dados.erro) ||
+        "Não foi possível baixar o arquivo. Reimplante o Apps Script (apps-script/README.md).");
+    }
+    const bin = atob(dados.dataBase64 || "");
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  throw new Error(`falha de conexão ao baixar do Drive (${(ultimoErro && ultimoErro.message) || "erro de rede"}; tentei ${TENTATIVAS} vezes)`);
 }
 
 function chaveArquivoDrive(ref) {
@@ -1497,12 +1513,22 @@ function chaveArquivoDrive(ref) {
 }
 
 function baixarArquivoDrive(scriptUrl, ref) {
+  // Sem a URL (Configurações ainda carregando) não adianta tentar — nem
+  // guardar no cache uma tentativa que vai falhar.
+  if (!scriptUrl) return Promise.reject(new Error("URL do Apps Script ainda não carregada (Configurações)."));
   const chave = chaveArquivoDrive(ref);
   if (!cacheArquivosDrive[chave]) {
     const ids = Array.isArray(ref) ? ref : [ref];
     cacheArquivosDrive[chave] = (async () => {
       const pedacos = [];
-      for (const id of ids) pedacos.push(await baixarParteDrive(scriptUrl, id));
+      for (let i = 0; i < ids.length; i++) {
+        try {
+          pedacos.push(await baixarParteDrive(scriptUrl, ids[i]));
+        } catch (e) {
+          if (ids.length > 1) e.message += ` — parte ${i + 1} de ${ids.length}`;
+          throw e;
+        }
+      }
       if (pedacos.length === 1) return pedacos[0];
       const total = pedacos.reduce((s, p) => s + p.length, 0);
       const junto = new Uint8Array(total);
