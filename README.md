@@ -813,6 +813,13 @@ Durante a geração, uma **janela de progresso** mostra:
 
 **Cancelar** para depois do time atual; os arquivos já baixados ficam.
 
+**Onde os arquivos ficam:** no Chrome e no Edge, o diálogo da geração tem **Salvar em → Escolher
+pasta…**. Os arquivos (e o PDF da costureira) passam a ser gravados direto nessa pasta, e com a
+opção marcada, numa subpasta com o nome do lote. A pasta fica lembrada neste computador; o navegador
+pode pedir de novo a permissão a cada sessão. **Usar Downloads** volta ao normal. O Firefox não
+permite escolher a pasta pelo site: nele os arquivos vão para Downloads. Para escolher a pasta a
+cada arquivo, use Configurações → Downloads → "Sempre perguntar onde salvar arquivos".
+
 ### PDF da costureira (aba **Produção**)
 
 O botão **PDF da costureira** na leva gera **um PDF geral**, em A4 em pé, para a montagem. Ele não

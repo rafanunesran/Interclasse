@@ -3900,8 +3900,58 @@ function baixarBlob(nome, blob) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// Arquivo gerado: na pasta escolhida (Chrome/Edge, js/pasta-saida.js) ou,
+// sem ela, nos Downloads. Devolve onde ficou ("Folhas/leva-3" ou "").
+async function salvarArquivoGerado(destino, nome, blob, prog) {
+  if (destino) {
+    try {
+      await PastaSaida.salvar(destino.handle, destino.subpasta, nome, blob);
+      return destino.rotulo;
+    } catch (e) {
+      console.error(e);
+      if (prog) prog.aviso(`Não consegui salvar ${nome} na pasta ${destino.rotulo} (${e.message || e}); baixei em Downloads.`);
+    }
+  }
+  baixarBlob(nome, blob);
+  return "";
+}
+
+// Linha "Salvar em" dos diálogos de geração. No Firefox (sem a API), só a
+// dica de como escolher a pasta a cada download.
+function htmlPastaSaida() {
+  if (!PastaSaida.suportado) {
+    return `<div class="eps-pasta"><span class="pix-ajuda">${icone("folder")} Este navegador salva em Downloads. Para escolher a pasta a cada arquivo: Configurações → Arquivos e aplicativos → Downloads → "Sempre perguntar onde salvar arquivos".</span></div>`;
+  }
+  return `<div class="eps-pasta"><span class="eps-pasta-titulo">Salvar em</span>
+      <span class="eps-pasta-nome" data-pasta="nome"></span>
+      <button type="button" class="secundario" data-pasta="escolher">Escolher pasta…</button>
+      <button type="button" class="secundario" data-pasta="downloads">Usar Downloads</button>
+      <label class="checkbox-inline" data-pasta="sub"><input type="checkbox" name="subpasta" /> Criar uma subpasta com o nome do lote</label></div>`;
+}
+function ligarPastaSaida(raiz) {
+  if (!PastaSaida.suportado) return;
+  const q = (k) => raiz.querySelector(`[data-pasta="${k}"]`);
+  const desenhar = () => {
+    const h = PastaSaida.atual;
+    q("nome").textContent = h ? "📁 " + h.name : "Downloads do navegador";
+    q("downloads").classList.toggle("oculto", !h);
+    q("sub").classList.toggle("oculto", !h);
+  };
+  const sub = q("sub").querySelector("input");
+  sub.checked = PastaSaida.usarSubpasta();
+  sub.onchange = () => PastaSaida.definirSubpasta(sub.checked);
+  q("escolher").onclick = async () => {
+    try { await PastaSaida.escolher(); } catch (e) { if (e.name !== "AbortError") alert("Não foi possível usar essa pasta: " + (e.message || e)); }
+    desenhar();
+  };
+  q("downloads").onclick = async () => { await PastaSaida.esquecer(); desenhar(); };
+  PastaSaida.carregar().then(desenhar);
+  desenhar();
+}
+
 // Diálogo da geração: largura, espaço, giro (depende do fornecedor)...
-function perguntarOpcoesEps(resumo) {
+// `nomeLote`: nome da subpasta, quando os arquivos vão para uma pasta.
+function perguntarOpcoesEps(resumo, nomeLote) {
   const f = layoutConfig.folha || {};
   return new Promise((resolve) => {
     const fundo = document.createElement("div");
@@ -3930,10 +3980,12 @@ function perguntarOpcoesEps(resumo) {
           <label>Formato do arquivo
             <select name="formato"><option value="pdf">PDF (abre no Corel sem erros; depois Salvar como → CDR)</option><option value="eps">EPS</option></select></label>
           <label class="checkbox-inline" data-so-eps><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
+          ${htmlPastaSaida()}
           <button type="submit" class="primario">Gerar</button>
         </form>
       </div>`;
     const form = fundo.querySelector("form");
+    ligarPastaSaida(fundo);
     form.rotacao.value = f.rotacao || "0";
     form.dpi.value = String(f.dpi || 600);
     form.molde.value = f.molde || "frente";
@@ -3945,9 +3997,12 @@ function perguntarOpcoesEps(resumo) {
     const fechar = (valor) => { fundo.remove(); resolve(valor); };
     fundo.querySelector(".modal-pix-fechar").onclick = () => fechar(null);
     fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(null); });
-    form.onsubmit = (ev) => {
+    form.onsubmit = async (ev) => {
       ev.preventDefault();
+      // A permissão da pasta é pedida aqui, ainda no clique.
+      const destino = await PastaSaida.destino(nomeLote);
       fechar({
+        destino,
         larguraCm: Number(form.larguraCm.value) || 150,
         espacoMm: Math.max(0, Number(form.espacoMm.value) || 0),
         sangriaMm: Math.max(0, Number(form.sangriaMm.value) || 0),
@@ -4031,8 +4086,10 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
     return;
   }
   const nomesTimes = [...new Set([...grupos.values()].map((g) => estadoTimes[g.timeId].time.nome))];
-  const op = await perguntarOpcoesEps(`${linhas.length} camiseta(s) de ${nomesTimes.length} time(s): ${nomesTimes.join(", ")}. Sai um arquivo por time.`);
+  const op = await perguntarOpcoesEps(`${linhas.length} camiseta(s) de ${nomesTimes.length} time(s): ${nomesTimes.join(", ")}. Sai um arquivo por time.`, slugify(nomeBase) || "lote");
   if (!op) return;
+  const destino = op.destino;
+  delete op.destino;
   layoutConfig.folha = { ...layoutConfig.folha, ...op };
   salvarLayout(true);
 
@@ -4041,9 +4098,11 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
   const lista = [...grupos.values()].map((g) => ({
     g, rotulo: estadoTimes[g.timeId].time.nome + (g.goleiro ? " (goleiros)" : ""), n: g.camisetas.length
   }));
-  const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })));
+  const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
+    destino ? { dica: `Cada time é salvo em ${destino.rotulo} assim que fica pronto.` } : undefined);
   avisos.forEach((a) => prog.aviso(a));
   let gerados = 0;
+  let ondeSalvou = "";
   const metragem = {}; // modelo → metros lineares das folhas geradas
   for (let idx = 0; idx < lista.length; idx++) {
     if (prog.cancelado) {
@@ -4153,7 +4212,8 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
           blob: await zip.generateAsync({ type: "blob", compression: "STORE" })
         };
       }
-      baixarBlob(saida.nome, saida.blob);
+      saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog);
+      if (saida.onde) ondeSalvou = saida.onde;
       gerados++;
       prog.time(idx, "pronto", saida);
     } catch (e) {
@@ -4168,7 +4228,7 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
     prog.aviso(`Metragem: ${totalM.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m lineares no rolo de ${op.larguraCm} cm.`);
     await gravarMetragemDaLeva(levaId, metragem, op.larguraCm);
   }
-  prog.fim(gerados);
+  prog.fim(gerados, ondeSalvou ? `${gerados} arquivo(s) de ${lista.length} time(s) salvos em ${ondeSalvou}.` : undefined);
 }
 
 // ---------------- PDF da costureira (aba Produção) ----------------
@@ -4248,6 +4308,8 @@ async function gerarPdfCostureira(linhas, nomeBase) {
   const lista = [...grupos.values()]
     .map((g) => ({ g, rotulo: estadoTimes[g.timeId].time.nome + (g.goleiro ? " (goleiros)" : ""), n: g.camisetas.length }))
     .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+  // Pasta escolhida nas folhas de impressão (permissão pedida ainda no clique).
+  const destino = await PastaSaida.destino(slugify(nomeBase) || "lote");
   const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
     { titulo: "Gerando o PDF da costureira", tituloFim: "PDF da costureira pronto", dica: "" });
   avisos.forEach((a) => prog.aviso(a));
@@ -4424,8 +4486,8 @@ async function gerarPdfCostureira(linhas, nomeBase) {
 
   const blob = doc.output("blob");
   const nome = `costura-${slugify(nomeBase) || "leva"}.pdf`;
-  baixarBlob(nome, blob);
-  prog.fim(1, `${nome} · ${doc.getNumberOfPages()} página(s) · ${(blob.size / 1e6).toFixed(1)} MB — ${feitos} de ${lista.length} modelo(s).`);
+  const onde = await salvarArquivoGerado(destino, nome, blob, prog);
+  prog.fim(1, `${nome}${onde ? ` (salvo em ${onde})` : ""} · ${doc.getNumberOfPages()} página(s) · ${(blob.size / 1e6).toFixed(1)} MB — ${feitos} de ${lista.length} modelo(s).`);
 }
 
 // Janela de progresso da geração: barra geral, etapa atual e a lista dos
@@ -4469,7 +4531,7 @@ function abrirProgressoEps(itens, op) {
       return `<li class="st-${e.st}"><span class="progresso-eps-icone">${ICONE[e.st]}</span>` +
         `<span class="progresso-eps-time">${escapeHtmlAdmin(x.rotulo)} <small>${x.n} camiseta(s)</small></span>` +
         `<span class="progresso-eps-st">${arq
-          ? `${escapeHtmlAdmin(arq.nome)} · ${(arq.blob.size / 1e6).toFixed(1)} MB <button type="button" class="secundario" data-baixar="${i}">Baixar de novo</button>`
+          ? `${escapeHtmlAdmin(arq.nome)} · ${(arq.blob.size / 1e6).toFixed(1)} MB${arq.onde ? ` · salvo em ${escapeHtmlAdmin(arq.onde)}` : ""} <button type="button" class="secundario" data-baixar="${i}">Baixar de novo</button>`
           : escapeHtmlAdmin(TEXTO[e.st] + (e.extra && typeof e.extra === "string" ? ` (${e.extra})` : ""))}</span></li>`;
     }).join("");
     fundo.querySelectorAll("[data-baixar]").forEach((b) => {

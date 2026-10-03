@@ -3065,3 +3065,10 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 /* Metragem das folhas geradas (aba Produção) */
 .metragem-leva { margin: 4px 0; color: #0f766e; }
 .metragem-modelo { font-size: 0.8rem; font-weight: 600; color: #0f766e; }
+
+/* Pasta onde as folhas geradas são salvas (diálogo da geração). */
+.eps-pasta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; margin: 4px 0 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; }
+.eps-pasta-titulo { font-weight: 600; }
+.eps-pasta-nome { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.eps-pasta .checkbox-inline { flex-basis: 100%; margin: 0; }
+.eps-pasta .oculto { display: none; }
