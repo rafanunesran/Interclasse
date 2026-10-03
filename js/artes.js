@@ -799,13 +799,14 @@ function criarBlocoProducaoTime(timeId, time) {
   const infoPng = (a, pecaId) => a ? {
     ppi: pecaId ? resumoPpi(a, pecaId) : null,
     tiffCmyk: a.tipoArquivo === "tiff" && !!a.cmyk,
+    incompleto: !partesValidas(a.partes),
     previa: a.previaUrl,
     nome: a.nomeArquivo || "",
     info: `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi · ` +
       (a.tipoArquivo === "tiff" ? (a.cmyk ? "TIFF CMYK (cor exata)" : "TIFF RGB → CMYK") : "PNG (RGB → CMYK)")
   } : null;
-  const infoBrasao = (b) => b ? { previa: b.previaUrl, nome: b.nomeArquivo || "", info: "EPS vetorial" } : null;
-  const infoFonte = (f) => f ? { nome: f.nome, info: "Fonte do nome e do número", fonte: true } : null;
+  const infoBrasao = (b) => b ? { previa: b.previaUrl, nome: b.nomeArquivo || "", info: "EPS vetorial", incompleto: !partesValidas(b.partes || b.epsId) } : null;
+  const infoFonte = (f) => f ? { nome: f.nome, info: "Fonte do nome e do número", fonte: true, incompleto: !partesValidas(f.partes) } : null;
 
   const grupo = (titulo, ajuda) => {
     const sec = document.createElement("section");
@@ -934,6 +935,7 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
     <div class="producao-slot-info">${andamento
       ? `<span class="producao-slot-andamento">${escapeHtmlAdmin(andamento)}</span>`
       : atual ? `${atual.nome ? `<span class="producao-slot-nome" title="${escAttr(atual.nome)}">${escapeHtmlAdmin(atual.nome)}</span>` : ""}<span>${escapeHtmlAdmin(atual.info || "")}</span>` +
+        (atual.incompleto ? '<span class="producao-slot-ppi ruim" title="Uma parte do arquivo não foi gravada no envio — a folha não sai com ele">⚠️ Arquivo incompleto — envie de novo</span>' : "") +
         (atual.ppi ? `<span class="producao-slot-ppi ${atual.ppi.nivel}" title="Resolução real da arte em cada tamanho (ela é esticada para cobrir o molde)">${escapeHtmlAdmin(atual.ppi.texto)}${atual.ppi.nivel ? (atual.ppi.nivel === "ruim" ? " — baixo demais" : " — baixo para impressão") : ""}</span>` : "")
         : herdado ? "Usa o da camiseta comum" : "Nenhum arquivo"}</div>`;
   const acoes = document.createElement("div");
@@ -3973,7 +3975,8 @@ function mensagemDeErroDoTime(rotulo, etapa, e) {
   const onde = etapa ? ` na etapa "${etapa.replace(/…$/, "").replace(/^\w/, (c) => c.toLowerCase())}"` : "";
   const rede = /baixar do Drive|NetworkError|Failed to fetch|fetch/i.test(msg);
   return `${rotulo}: erro${onde} — ${msg}` +
-    (rede ? ". Tente gerar de novo; se repetir, envie de novo esse arquivo nos Arquivos de produção do time." : "");
+    (/envie esse arquivo de novo$/.test(msg) ? " nos Arquivos de produção do time."
+      : rede ? ". Tente gerar de novo; se repetir, envie de novo esse arquivo nos Arquivos de produção do time." : "");
 }
 
 // Linhas da leva agrupadas por time (e os goleiros de cada time à parte):

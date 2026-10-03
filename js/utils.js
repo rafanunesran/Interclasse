@@ -1436,14 +1436,37 @@ function lerArquivoBase64(file) {
 // vira um arquivo na pasta do Drive e o site junta tudo na hora de usar.
 const TAMANHO_PARTE_DRIVE = 20 * 1024 * 1024;
 
+// Uma parte, com até 4 tentativas (espera 2, 4 e 8 s) em falha de rede,
+// resposta que não é JSON ou "ok" sem fileId — o Apps Script às vezes
+// responde assim (o POST cai no "script ativo"), e gravar sem o id deixava a
+// arte salva incompleta. Erro dado pelo próprio script não adianta repetir.
 async function enviarBase64Drive(scriptUrl, nome, mimeType, dataBase64) {
-  const resp = await fetch(scriptUrl, {
-    method: "POST",
-    body: JSON.stringify({ nome, mimeType, dataBase64 })
-  });
-  const dados = await resp.json();
-  if (!dados || !dados.ok) throw new Error((dados && dados.erro) || "Falha ao enviar o arquivo.");
-  return dados;
+  const TENTATIVAS = 4;
+  let ultimoErro = "";
+  for (let t = 1; t <= TENTATIVAS; t++) {
+    if (t > 1) await new Promise((ok) => setTimeout(ok, 2000 * 2 ** (t - 2)));
+    let dados;
+    try {
+      const resp = await fetch(scriptUrl, {
+        method: "POST",
+        body: JSON.stringify({ nome, mimeType, dataBase64 })
+      });
+      dados = await resp.json();
+    } catch (e) {
+      ultimoErro = e.message || String(e);
+      continue;
+    }
+    if (dados && dados.ok === false) throw new Error(dados.erro || "Falha ao enviar o arquivo.");
+    if (dados && dados.ok && typeof dados.fileId === "string" && dados.fileId) return dados;
+    ultimoErro = "o Apps Script não devolveu o id do arquivo";
+  }
+  throw new Error(`Falha ao enviar o arquivo (${ultimoErro}; tentei ${TENTATIVAS} vezes).`);
+}
+
+// Os ids de um arquivo (um id ou a lista de partes) estão todos preenchidos?
+function partesValidas(ref) {
+  const ids = Array.isArray(ref) ? ref : [ref];
+  return ids.length > 0 && ids.every((id) => typeof id === "string" && id !== "");
 }
 
 // Envia o arquivo original ao Drive. Devolve { fileId, partes, url }:
@@ -1464,11 +1487,15 @@ async function enviarArquivoDrive(scriptUrl, file, prefixo, aoProgresso) {
       nPartes === 1 ? nome : `${nome}.parte${i + 1}de${nPartes}`,
       nPartes === 1 ? file.type || "application/octet-stream" : "application/octet-stream",
       dataBase64
-    );
+    ).catch((e) => {
+      if (nPartes > 1) e.message = `Parte ${i + 1} de ${nPartes}: ${e.message} Envie de novo.`;
+      throw e;
+    });
     partes.push(dados.fileId);
     if (i === 0) url = dados.url;
     if (aoProgresso) aoProgresso((i + 1) / nPartes);
   }
+  if (!partesValidas(partes)) throw new Error("O envio ficou incompleto (alguma parte sem id). Envie de novo.");
   return { fileId: partes[0], partes, url: nPartes === 1 ? url : "" };
 }
 
@@ -1516,6 +1543,13 @@ function baixarArquivoDrive(scriptUrl, ref) {
   // Sem a URL (Configurações ainda carregando) não adianta tentar — nem
   // guardar no cache uma tentativa que vai falhar.
   if (!scriptUrl) return Promise.reject(new Error("URL do Apps Script ainda não carregada (Configurações)."));
+  if (!partesValidas(ref)) {
+    const ids = Array.isArray(ref) ? ref : [ref];
+    const i = ids.findIndex((id) => typeof id !== "string" || id === "");
+    return Promise.reject(new Error(ids.length > 1
+      ? `arquivo salvo incompleto (parte ${i + 1} de ${ids.length} sem id) — envie esse arquivo de novo`
+      : "arquivo salvo sem id — envie esse arquivo de novo"));
+  }
   const chave = chaveArquivoDrive(ref);
   if (!cacheArquivosDrive[chave]) {
     const ids = Array.isArray(ref) ? ref : [ref];
