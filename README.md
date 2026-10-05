@@ -813,6 +813,13 @@ Durante a geração, uma **janela de progresso** mostra:
 
 **Cancelar** para depois do time atual; os arquivos já baixados ficam.
 
+**Todos os times juntos:** no diálogo, **Arquivos → Todos os times juntos** encaixa as peças de
+todos os times da leva nas mesmas folhas, misturadas para gastar menos tecido. O marcador de cada
+peça diz o time, o tamanho e a peça. No **PDF** sai um arquivo só, com páginas de até 5 m (limite do
+formato). No **EPS** sai uma folha por arquivo, com até 45 m (o Corel não abre página maior), num
+.zip quando são várias. Todas as artes ficam na memória ao mesmo tempo: em leva muito grande, gere
+em 300 dpi.
+
 **Onde os arquivos ficam:** no Chrome e no Edge, o diálogo da geração tem **Salvar em → Escolher
 pasta…**. Os arquivos (e o PDF da costureira) passam a ser gravados direto nessa pasta, e com a
 opção marcada, numa subpasta com o nome do lote. A pasta fica lembrada neste computador; o navegador

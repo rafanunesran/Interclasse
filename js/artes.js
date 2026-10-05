@@ -3977,6 +3977,9 @@ function perguntarOpcoesEps(resumo, nomeLote) {
             <select name="molde"><option value="frente">Por cima da arte (faca de 3 mm por fora)</option><option value="fundo">Por baixo da arte</option><option value="nenhum">Não incluir</option></select></label>
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
           <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
+          <label>Arquivos
+            <select name="juntar"><option value="0">Um por time</option><option value="1">Todos os times juntos (peças misturadas)</option></select></label>
+          <p class="pix-ajuda oculto" data-so-juntar>Todos os times nas mesmas folhas, com as peças misturadas para gastar menos tecido (o marcador de cada peça diz o time). PDF: um arquivo com páginas de até 5 m. EPS: folhas de até 45 m (limite do Corel), juntas num .zip.</p>
           <label>Formato do arquivo
             <select name="formato"><option value="pdf">PDF (abre no Corel sem erros; depois Salvar como → CDR)</option><option value="eps">EPS</option></select></label>
           <label class="checkbox-inline" data-so-eps><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
@@ -3990,6 +3993,10 @@ function perguntarOpcoesEps(resumo, nomeLote) {
     form.dpi.value = String(f.dpi || 600);
     form.molde.value = f.molde || "frente";
     form.formato.value = f.formato === "eps" ? "eps" : "pdf";
+    form.juntar.value = f.juntar ? "1" : "0";
+    const soJuntar = fundo.querySelector("[data-so-juntar]");
+    form.juntar.onchange = () => soJuntar.classList.toggle("oculto", form.juntar.value !== "1");
+    form.juntar.onchange();
     const soEps = fundo.querySelector("[data-so-eps]");
     const mostrarSoEps = () => soEps.classList.toggle("oculto", form.formato.value !== "eps");
     form.formato.onchange = mostrarSoEps;
@@ -4012,12 +4019,171 @@ function perguntarOpcoesEps(resumo, nomeLote) {
         alturaMaxCm: Math.max(0, Number(form.alturaMaxCm.value) || 0),
         etiqueta: form.etiqueta.checked,
         corel: form.corel.checked,
-        formato: form.formato.value
+        formato: form.formato.value,
+        juntar: form.juntar.value === "1"
       });
     };
     document.body.appendChild(fundo);
     form.larguraCm.focus();
   });
+}
+
+// Carrega os arquivos de um grupo (time ou goleiros) e monta os blocos das
+// peças. Devolve { time, rec, blocos } ou { fora: motivo }.
+async function montarBlocosDoGrupo(g, op, etapa, prog, rotulo) {
+  // Goleiros: os arquivos e ajustes do goleiro (o que ele não tiver vem
+  // da camiseta comum).
+  const timeComum = estadoTimes[g.timeId].time;
+  const time = timeNaVariante(timeComum, g.goleiro);
+  const falta = pendenciasProducao(time);
+  if (falta.includes("arte das peças")) {
+    prog.aviso(`${rotulo}: o time não tem arte enviada — ficou de fora.`);
+    return { fora: "sem arte das peças" };
+  }
+  falta.forEach((x) => prog.aviso(`${rotulo}: falta ${x}.`));
+  if (g.goleiro && !temVarianteGoleiro(timeComum)) {
+    prog.aviso(`${rotulo}: os goleiros saíram num arquivo à parte, com a mesma arte do time — envie as artes do goleiro em Arquivos de produção → 🧤 Goleiro.`);
+  }
+  // Camisetas com arte própria saem no mesmo arquivo, cada uma com a
+  // sua versão; as outras, com a do time.
+  const partes = new Map();
+  g.camisetas.forEach((c) => {
+    const k = c._alunoId && temArteIndividual(timeComum, c._alunoId) ? c._alunoId : "";
+    if (!partes.has(k)) partes.set(k, []);
+    partes.get(k).push(c);
+  });
+  const nInd = [...partes.keys()].filter(Boolean).length;
+  if (nInd) prog.aviso(`${rotulo}: ${nInd} camiseta(s) com arte própria.`);
+  let rec = null;
+  const blocos = [];
+  let iParte = 0;
+  // Fases do time: carregar/converter 0–80%, montar 80–85%, escrever 85–100%.
+  for (const [alunoId, camisetas] of partes) {
+    const timeParte = alunoId ? timeDaCamiseta(timeComum, alunoId, g.goleiro) : time;
+    const pecasIds = pecasDoTime(timeParte);
+    const tamanhos = [...new Set(camisetas.map((c) => c.tamanho))];
+    const base = iParte / partes.size;
+    rec = await carregarRecursosDoTime(timeParte, tamanhos, pecasIds, op.dpi,
+      (t, f) => etapa(t, 0.8 * (base + (f == null ? 0 : f) / partes.size)), rec);
+    iParte++;
+    etapa("montando a folha…", 0.8 * (iParte / partes.size));
+    await esperarTela();
+    const r = EPS.montarBlocos(moldesConfig, layoutDoTime(timeParte), timeParte, camisetas, rec,
+      { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
+    blocos.push(...r.blocos);
+    r.avisos.forEach((a) => prog.aviso(`${rotulo}${alunoId ? ` (${rotuloCamiseta(alunoDoTime(g.timeId, alunoId))})` : ""}: ${a}`));
+  }
+  return { time, rec, blocos };
+}
+
+// "Todos os times juntos": carrega e monta cada grupo, junta os blocos
+// (chaves dos arquivos de cada time renomeadas, para a arte de um não valer
+// pela do outro — moldes e logo são os mesmos para todos) e encaixa tudo
+// nas mesmas folhas. PDF: um arquivo, páginas de até 5 m. EPS: folhas de
+// até 45 m (o Corel não abre maior), num .zip se forem várias.
+async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
+  const recJunto = { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
+  const todos = [];
+  const areaModelo = {}; // modelo → mm² das peças (repartir a metragem)
+  const prontos = [];
+  for (let idx = 0; idx < lista.length; idx++) {
+    if (prog.cancelado) {
+      for (let k = idx; k < lista.length; k++) prog.time(k, "cancelado");
+      break;
+    }
+    const { g, rotulo } = lista[idx];
+    prog.time(idx, "gerando");
+    let ultimaEtapa = "";
+    const etapa = (t, f) => { ultimaEtapa = t; prog.etapa(idx, `${rotulo}: ${t}`, f == null ? null : f / 0.85); };
+    try {
+      const r = await montarBlocosDoGrupo(g, op, etapa, prog, rotulo);
+      if (r.fora) { prog.time(idx, "fora", r.fora); continue; }
+      const pref = `g${idx}|`;
+      const nova = (c) => (c.startsWith("molde:") || c === "logo" ? c : pref + c);
+      const feitas = new Set();
+      r.blocos.forEach((b) => b.ops.forEach((o) => {
+        if ((o.tipo !== "eps" && o.tipo !== "imagem") || feitas.has(o)) return;
+        feitas.add(o);
+        o.chave = nova(String(o.chave));
+      }));
+      Object.entries(r.rec.eps).forEach(([c, v]) => { if (!recJunto.eps[nova(c)]) recJunto.eps[nova(c)] = v; });
+      Object.entries(r.rec.imagens).forEach(([c, v]) => { recJunto.imagens[nova(c)] = v; });
+      const nMods = Object.values(g.modelos).reduce((a, b) => a + b, 0) || 1;
+      const area = r.blocos.reduce((t, b) => t + b.w * b.h, 0);
+      Object.entries(g.modelos).forEach(([mod, n]) => { areaModelo[mod] = (areaModelo[mod] || 0) + area * (n / nMods); });
+      todos.push(...r.blocos);
+      prontos.push(idx);
+      prog.time(idx, "gerando");
+      prog.etapa(idx, `${rotulo}: pronto — esperando os outros times`, 1);
+    } catch (e) {
+      console.error(e);
+      prog.aviso(mensagemDeErroDoTime(rotulo, ultimaEtapa, e));
+      prog.time(idx, "erro", e.message || String(e));
+    }
+  }
+  if (!todos.length) {
+    prontos.forEach((i) => prog.time(i, "fora", "nenhuma peça para imprimir"));
+    prog.fim(0, "Nenhuma peça para imprimir.");
+    return;
+  }
+  const ultimo = prontos[prontos.length - 1];
+  const etapaFim = (t, f) => prog.etapa(ultimo, `Todos os times: ${t}`, f);
+  try {
+    etapaFim("encaixando as peças de todos os times…");
+    await esperarTela();
+    const pdfFmt = op.formato !== "eps";
+    const altMax = op.alturaMaxCm > 0 ? op.alturaMaxCm * 10 : Infinity;
+    const limite = Math.min(altMax, pdfFmt ? EPS.PDF_ALTURA_MAX_MM : EPS.ALTURA_MAX_COREL_MM);
+    const { folhas, avisos: avE } = EPS.empacotar(todos, {
+      larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: limite
+    });
+    avE.forEach((a) => prog.aviso(a));
+    const base = slugify(nomeBase + "-todos") || "todos";
+    const mb = folhas.reduce((t, f) => t + EPS.estimarTamanho(f, recJunto, { corel: !pdfFmt && op.corel }), 0) / 1e6;
+    if (mb > 1500) prog.aviso(`Arquivo muito grande (~${Math.round(mb)} MB) para juntar todos os times. Se o navegador travar, gere em 300 dpi ou "Um por time".`);
+    let saida;
+    if (pdfFmt) {
+      const nome = base + ".pdf";
+      etapaFim(`escrevendo o PDF (${folhas.length} página(s))…`);
+      await esperarTela();
+      if (folhas.length > 1) prog.aviso(`${folhas.length} páginas no PDF (cada página tem no máximo ${Math.round(limite / 10)} cm de altura).`);
+      saida = { nome, blob: await arquivoDaFolha(folhas, recJunto, "Todos os times", "pdf", {}, (t) => etapaFim(t)) };
+    } else {
+      const arquivos = [];
+      for (let i = 0; i < folhas.length; i++) {
+        const nome = `${base}${folhas.length > 1 ? `-folha${i + 1}` : ""}.eps`;
+        etapaFim(`escrevendo o EPS${folhas.length > 1 ? ` (folha ${i + 1} de ${folhas.length})` : ""}…`);
+        await esperarTela();
+        arquivos.push({ nome, blob: await arquivoDaFolha(folhas[i], recJunto, `Todos os times${folhas.length > 1 ? ` - folha ${i + 1}` : ""}`, "eps", { corel: op.corel }, (t) => etapaFim(t)) });
+      }
+      if (folhas.length > 1) prog.aviso(`${folhas.length} folhas EPS (cada uma com no máximo ${(limite / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m de altura), juntas num .zip.`);
+      saida = arquivos[0];
+      if (arquivos.length > 1) {
+        etapaFim("compactando as folhas…");
+        const JSZip = await carregarLib("JSZip");
+        const zip = new JSZip();
+        arquivos.forEach((a) => zip.file(a.nome, a.blob));
+        saida = { nome: base + "-eps.zip", blob: await zip.generateAsync({ type: "blob", compression: "STORE" }) };
+      }
+    }
+    saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog);
+    // Cada time: pronto (juntado); o arquivo aparece no último, com "Baixar de novo".
+    prontos.forEach((i) => prog.time(i, "pronto", i === ultimo ? saida : "juntado"));
+    // Metragem: altura das folhas repartida entre os modelos pela área.
+    const metros = folhas.reduce((t, f) => t + f.alturaMm, 0) / 1000;
+    const areaTotal = Object.values(areaModelo).reduce((a, b) => a + b, 0) || 1;
+    const metragem = {};
+    Object.entries(areaModelo).forEach(([mod, a]) => { metragem[mod] = Math.round(metros * (a / areaTotal) * 100) / 100; });
+    prog.aviso(`Metragem: ${metros.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m lineares no rolo de ${op.larguraCm} cm.`);
+    await gravarMetragemDaLeva(levaId, metragem, op.larguraCm);
+    prog.fim(1, `${saida.nome}: ${prontos.length} de ${lista.length} time(s) juntos${saida.onde ? `, salvo em ${saida.onde}` : ""}.`);
+  } catch (e) {
+    console.error(e);
+    const msg = e.message || String(e);
+    prog.aviso(`Erro ao juntar os times: ${msg}${/memory|memória|allocation|Array buffer/i.test(msg) ? " — falta de memória: gere em 300 dpi ou \"Um por time\"." : ""}`);
+    prontos.forEach((i) => prog.time(i, "erro", "não juntou"));
+    prog.fim(0, "Não foi possível gerar o arquivo com todos os times.");
+  }
 }
 
 // Ponto de entrada da aba Produção. linhas = [{ item, atual }] (itens da
@@ -4086,7 +4252,7 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
     return;
   }
   const nomesTimes = [...new Set([...grupos.values()].map((g) => estadoTimes[g.timeId].time.nome))];
-  const op = await perguntarOpcoesEps(`${linhas.length} camiseta(s) de ${nomesTimes.length} time(s): ${nomesTimes.join(", ")}. Sai um arquivo por time.`, slugify(nomeBase) || "lote");
+  const op = await perguntarOpcoesEps(`${linhas.length} camiseta(s) de ${nomesTimes.length} time(s): ${nomesTimes.join(", ")}.`, slugify(nomeBase) || "lote");
   if (!op) return;
   const destino = op.destino;
   delete op.destino;
@@ -4098,6 +4264,13 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
   const lista = [...grupos.values()].map((g) => ({
     g, rotulo: estadoTimes[g.timeId].time.nome + (g.goleiro ? " (goleiros)" : ""), n: g.camisetas.length
   }));
+  if (op.juntar) {
+    const progJ = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
+      { dica: "Os times são carregados um a um; no fim sai um arquivo com todos juntos." });
+    avisos.forEach((a) => progJ.aviso(a));
+    await gerarFolhasJuntas(lista, op, destino, progJ, nomeBase, levaId);
+    return;
+  }
   const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
     destino ? { dica: `Cada time é salvo em ${destino.rotulo} assim que fica pronto.` } : undefined);
   avisos.forEach((a) => prog.aviso(a));
@@ -4114,49 +4287,12 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
     let ultimaEtapa = "";
     const etapa = (t, f) => { ultimaEtapa = t; prog.etapa(idx, `${rotuloTime}: ${t}`, f); };
     try {
-      // Goleiros: os arquivos e ajustes do goleiro (o que ele não tiver vem
-      // da camiseta comum).
-      const timeComum = estadoTimes[g.timeId].time;
-      const time = timeNaVariante(timeComum, g.goleiro);
-      const falta = pendenciasProducao(time);
-      if (falta.includes("arte das peças")) {
-        prog.aviso(`${rotuloTime}: o time não tem arte enviada — ficou de fora.`);
-        prog.time(idx, "fora", "sem arte das peças");
+      const r0 = await montarBlocosDoGrupo(g, op, etapa, prog, rotuloTime);
+      if (r0.fora) {
+        prog.time(idx, "fora", r0.fora);
         continue;
       }
-      falta.forEach((x) => prog.aviso(`${rotuloTime}: falta ${x}.`));
-      if (g.goleiro && !temVarianteGoleiro(timeComum)) {
-        prog.aviso(`${rotuloTime}: os goleiros saíram num arquivo à parte, com a mesma arte do time — envie as artes do goleiro em Arquivos de produção → 🧤 Goleiro.`);
-      }
-      // Camisetas com arte própria saem no mesmo arquivo, cada uma com a
-      // sua versão; as outras, com a do time.
-      const partes = new Map();
-      g.camisetas.forEach((c) => {
-        const k = c._alunoId && temArteIndividual(timeComum, c._alunoId) ? c._alunoId : "";
-        if (!partes.has(k)) partes.set(k, []);
-        partes.get(k).push(c);
-      });
-      const nInd = [...partes.keys()].filter(Boolean).length;
-      if (nInd) prog.aviso(`${rotuloTime}: ${nInd} camiseta(s) com arte própria.`);
-      let rec = null;
-      const blocos = [];
-      let iParte = 0;
-      // Fases do time: carregar/converter 0–80%, montar 80–85%, escrever 85–100%.
-      for (const [alunoId, camisetas] of partes) {
-        const timeParte = alunoId ? timeDaCamiseta(timeComum, alunoId, g.goleiro) : time;
-        const pecasIds = pecasDoTime(timeParte);
-        const tamanhos = [...new Set(camisetas.map((c) => c.tamanho))];
-        const base = iParte / partes.size;
-        rec = await carregarRecursosDoTime(timeParte, tamanhos, pecasIds, op.dpi,
-          (t, f) => etapa(t, 0.8 * (base + (f == null ? 0 : f) / partes.size)), rec);
-        iParte++;
-        etapa("montando a folha…", 0.8 * (iParte / partes.size));
-        await esperarTela();
-        const r = EPS.montarBlocos(moldesConfig, layoutDoTime(timeParte), timeParte, camisetas, rec,
-          { molde: op.molde, etiqueta: op.etiqueta, sangriaMm: op.sangriaMm, pecas: pecasIds, nomePeca: nomePecaProducao, nomeTime: time.nome });
-        blocos.push(...r.blocos);
-        r.avisos.forEach((a) => prog.aviso(`${rotuloTime}${alunoId ? ` (${rotuloCamiseta(alunoDoTime(g.timeId, alunoId))})` : ""}: ${a}`));
-      }
+      const { time, rec, blocos } = r0;
       etapa("encaixando as peças na folha…", 0.82);
       await esperarTela();
       // PDF: página de no máximo ~5 m (limite do formato — acima disso o

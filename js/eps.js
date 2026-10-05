@@ -1488,6 +1488,8 @@ const EPS = (function () {
 
   // Página de PDF: no máximo 200 polegadas (limite do formato, ~5,08 m).
   const PDF_ALTURA_MAX_MM = 5000;
+  // EPS: o CorelDRAW não abre página maior que ~45 m (1800 polegadas).
+  const ALTURA_MAX_COREL_MM = 45000;
 
   const latin1 = (u8, a, b) => {
     let s = "";
@@ -1842,7 +1844,8 @@ const EPS = (function () {
     comprimentoReforco,
     bordaDeOmbroAOmbro,
     REFORCO_FOLGA_MM,
-    PDF_ALTURA_MAX_MM
+    PDF_ALTURA_MAX_MM,
+    ALTURA_MAX_COREL_MM
   };
 })();
 
