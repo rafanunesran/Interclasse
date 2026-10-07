@@ -606,6 +606,24 @@ function compartilhar_(dados) {
   }
 }
 
+// Jeito facil de criar as Propriedades: cole as duas chaves entre as aspas,
+// rode configurarChavesNuvem (> Executar) UMA vez e depois APAGUE as chaves
+// daqui de novo (deixe as aspas vazias) e salve. As chaves ficam guardadas nas
+// Propriedades do script, fora do codigo.
+function configurarChavesNuvem() {
+  var GITHUB_TOKEN = ""; // a chave do GitHub (comeca com github_pat_)
+  var WORKER_TOKEN = ""; // a mesma senha do segredo WORKER_TOKEN do GitHub
+  var props = PropertiesService.getScriptProperties();
+  if (GITHUB_TOKEN) props.setProperty("GITHUB_TOKEN", GITHUB_TOKEN.trim());
+  if (WORKER_TOKEN) props.setProperty("WORKER_TOKEN", WORKER_TOKEN.trim());
+  if (!GITHUB_TOKEN && !WORKER_TOKEN) {
+    Logger.log("Nada mudou: cole as chaves entre as aspas antes de executar.");
+    return;
+  }
+  Logger.log("Chaves guardadas. Agora apague as chaves deste codigo, salve e rode testarNuvem.");
+  testarNuvem();
+}
+
 // Rode no editor (> Executar -> testarNuvem) depois de criar as Propriedades.
 // Nao dispara nada: so confere se as chaves estao la e se o GitHub aceita a
 // chave. O resultado aparece no "Registro de execucao".
