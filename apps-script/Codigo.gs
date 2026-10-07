@@ -14,7 +14,7 @@
 
 // Versão deste código. Abrindo a URL do app da Web (/exec) no navegador, ela
 // aparece na resposta — é o jeito de conferir se a implantação está atualizada.
-var VERSAO_SCRIPT = "2026-09-26-backup";
+var VERSAO_SCRIPT = "2026-10-08-nuvem";
 
 // Nome da pasta no seu Drive onde as imagens ficam (criada automaticamente).
 var NOME_PASTA = "Interclasse Camisetas";
@@ -24,6 +24,10 @@ function doPost(e) {
     var dados = JSON.parse(e.postData.contents);
     // Ações do backup (aba Backup do Super Admin) — ver a parte de backup, mais abaixo.
     if (dados.acao && String(dados.acao).indexOf("backup") === 0) return json_(rotearBackup_(dados));
+    // Geração na nuvem (js/nuvem.js e a máquina do GitHub) — ver o fim do arquivo.
+    if (dados.acao === "nuvem") return json_(dispararNuvem_(dados));
+    if (dados.acao === "sessaoUpload") return json_(sessaoUpload_(dados));
+    if (dados.acao === "compartilhar") return json_(compartilhar_(dados));
     if (!dados.dataBase64) return json_({ ok: false, erro: "Sem imagem." });
 
     var pasta = obterPasta_();
@@ -475,4 +479,155 @@ function restaurar_(backup, escopo) {
     firestore_("post", BACKUP_BASE + ":commit", { writes: writes });
   }
   return { restaurados: docs.length, backupSeguranca: seguranca.nome };
+}
+
+
+// ============================================================================
+// ============================================================================
+// GERAÇÃO NA NUVEM (folhas de impressão)
+// ============================================================================
+// ============================================================================
+//
+// O site cria um pedido (Firestore, coleção "trabalhos") e chama a ação
+// "nuvem": aqui o pedido vira um disparo do GitHub Actions (workflow
+// gerar-folhas.yml). A máquina do GitHub gera as folhas e, para cada arquivo,
+// pede "sessaoUpload": este script cria a pasta
+// "Interclasse Camisetas/Impressão/<lote>" e abre um envio retomável no Drive;
+// a máquina manda os bytes direto ao Google (arquivos grandes demais para
+// passar por aqui). "sessaoUpload" e "compartilhar" exigem o WORKER_TOKEN.
+//
+// Propriedades do script (engrenagem → Propriedades do script):
+//   GITHUB_TOKEN  chave do GitHub (fine-grained, só o repositório, Actions: leitura e escrita)
+//   WORKER_TOKEN  senha da máquina — igual ao segredo WORKER_TOKEN do GitHub
+//   GITHUB_REPO   (opcional) dono/repositório — padrão rafanunesran/interclasse
+//   GITHUB_REF    (opcional) branch — padrão main
+// As chaves ficam SÓ nas Propriedades, nunca neste código.
+//
+// Depois de colar: rode testarNuvem (▶ Executar) e reimplante
+// (Implantar → Gerenciar implantações → Editar → Nova versão).
+
+function propsNuvem_() {
+  var p = PropertiesService.getScriptProperties();
+  return {
+    githubToken: p.getProperty("GITHUB_TOKEN"),
+    workerToken: p.getProperty("WORKER_TOKEN"),
+    repo: p.getProperty("GITHUB_REPO") || "rafanunesran/interclasse",
+    ref: p.getProperty("GITHUB_REF") || "main"
+  };
+}
+
+function cabecalhosGithub_(token) {
+  return {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+
+// Pedido do site: liga a máquina do GitHub para o trabalho informado.
+function dispararNuvem_(dados) {
+  try {
+    var id = String(dados.trabalhoId || "");
+    if (!/^[A-Za-z0-9_-]{6,60}$/.test(id)) return { ok: false, erro: "Trabalho inválido." };
+    var cfg = propsNuvem_();
+    if (!cfg.githubToken) {
+      return { ok: false, erro: "Falta a propriedade GITHUB_TOKEN no Apps Script (engrenagem → Propriedades do script)." };
+    }
+    var resp = UrlFetchApp.fetch(
+      "https://api.github.com/repos/" + cfg.repo + "/actions/workflows/gerar-folhas.yml/dispatches", {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({ ref: cfg.ref, inputs: { trabalho: id } }),
+        headers: cabecalhosGithub_(cfg.githubToken),
+        muteHttpExceptions: true
+      });
+    var codigo = resp.getResponseCode();
+    if (codigo !== 204) {
+      return { ok: false, erro: "O GitHub recusou o disparo (" + codigo + "): " + resp.getContentText().slice(0, 300) };
+    }
+    return { ok: true, actionsUrl: "https://github.com/" + cfg.repo + "/actions/workflows/gerar-folhas.yml" };
+  } catch (err) {
+    return { ok: false, erro: String(err) };
+  }
+}
+
+function subpasta_(pai, nome) {
+  var it = pai.getFoldersByName(nome);
+  return it.hasNext() ? it.next() : pai.createFolder(nome);
+}
+
+function exigirWorker_(dados) {
+  var cfg = propsNuvem_();
+  if (!cfg.workerToken || String(dados.token || "") !== cfg.workerToken) {
+    throw new Error("Token da máquina inválido (confira o WORKER_TOKEN aqui e no GitHub).");
+  }
+}
+
+// Pedido da máquina: abre o envio de um arquivo na pasta do lote.
+function sessaoUpload_(dados) {
+  try {
+    exigirWorker_(dados);
+    var lote = String(dados.lote || "lote").replace(/[\\/]/g, "-").slice(0, 120);
+    var pasta = subpasta_(subpasta_(obterPasta_(), "Impressão"), lote);
+    // Visível por link: as prévias em PNG aparecem no site.
+    pasta.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var mime = String(dados.mimeType || "application/octet-stream");
+    var cab = { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "X-Upload-Content-Type": mime };
+    if (dados.tamanho) cab["X-Upload-Content-Length"] = String(dados.tamanho);
+    var resp = UrlFetchApp.fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id", {
+      method: "post",
+      contentType: "application/json; charset=UTF-8",
+      payload: JSON.stringify({ name: String(dados.nome || "arquivo"), parents: [pasta.getId()], mimeType: mime }),
+      headers: cab,
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() !== 200) {
+      return { ok: false, erro: "Drive (" + resp.getResponseCode() + "): " + resp.getContentText().slice(0, 300) };
+    }
+    var h = resp.getAllHeaders();
+    var url = h.Location || h.location;
+    if (!url) return { ok: false, erro: "O Drive não devolveu o endereço do envio." };
+    return { ok: true, uploadUrl: url, pastaId: pasta.getId(), pastaUrl: pasta.getUrl() };
+  } catch (err) {
+    return { ok: false, erro: String(err) };
+  }
+}
+
+// Pedido da máquina: deixa os arquivos (prévias) visíveis por link.
+function compartilhar_(dados) {
+  try {
+    exigirWorker_(dados);
+    (dados.ids || []).forEach(function (id) {
+      DriveApp.getFileById(String(id)).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, erro: String(err) };
+  }
+}
+
+// Rode no editor (▶ Executar → testarNuvem) depois de criar as Propriedades.
+// Não dispara nada: só confere se as chaves estão lá e se o GitHub aceita a
+// chave. O resultado aparece no "Registro de execução".
+function testarNuvem() {
+  var cfg = propsNuvem_();
+  Logger.log("GITHUB_TOKEN: " + (cfg.githubToken ? "ok" : "FALTANDO"));
+  Logger.log("WORKER_TOKEN: " + (cfg.workerToken ? "ok (" + cfg.workerToken.length + " caracteres)" : "FALTANDO"));
+  Logger.log("Repositório: " + cfg.repo + " · branch: " + cfg.ref);
+  if (!cfg.githubToken) return;
+  var resp = UrlFetchApp.fetch("https://api.github.com/repos/" + cfg.repo + "/actions/workflows", {
+    headers: cabecalhosGithub_(cfg.githubToken),
+    muteHttpExceptions: true
+  });
+  var codigo = resp.getResponseCode();
+  if (codigo !== 200) {
+    Logger.log("GitHub: ERRO " + codigo + " — confira a chave (repositório certo e Actions: Read and write). " +
+      resp.getContentText().slice(0, 200));
+    return;
+  }
+  var nomes = (JSON.parse(resp.getContentText()).workflows || []).map(function (w) { return w.path; });
+  Logger.log("GitHub: chave ok. Workflows: " + nomes.join(", "));
+  Logger.log(nomes.indexOf(".github/workflows/gerar-folhas.yml") >= 0
+    ? "gerar-folhas.yml encontrado — tudo pronto."
+    : "gerar-folhas.yml ainda não está no repositório (normal até a próxima atualização do site).");
 }

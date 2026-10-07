@@ -106,3 +106,22 @@ levas de produção e cobranças — e salva um arquivo `.json` na pasta **priva
 
 > Os arquivos de arte, moldes e imagens já ficam no seu Drive (pasta "Interclasse Camisetas");
 > o backup guarda as referências a eles. Não apague essa pasta.
+
+## Geração na nuvem (folhas de impressão)
+
+O botão **☁️ Gerar na nuvem** do site pede a este script que ligue a máquina do GitHub Actions. A
+máquina gera as folhas e as salva em `Interclasse Camisetas/Impressão/<lote>` no Drive.
+
+1. **Propriedades do script** (engrenagem → Propriedades do script → Adicionar):
+   - `GITHUB_TOKEN`: chave *fine-grained* do GitHub, só do repositório `interclasse`, com
+     **Actions: Read and write**;
+   - `WORKER_TOKEN`: a mesma senha guardada no segredo `WORKER_TOKEN` do GitHub;
+   - opcionais: `GITHUB_REPO` (padrão `rafanunesran/interclasse`) e `GITHUB_REF` (padrão `main`).
+
+   As chaves ficam só nas Propriedades, nunca no código.
+2. Cole o `Codigo.gs` novo e salve.
+3. Escolha **testarNuvem** e clique em ▶ **Executar**. O registro mostra se as chaves estão lá e se
+   o GitHub aceita a chave. Essa função não dispara nada.
+4. **Implantar → Gerenciar implantações → ✏️ Editar → Versão: Nova versão → Implantar.** A URL
+   continua a mesma.
+5. Abra a URL `/exec` no navegador: a resposta deve mostrar `"versao": "2026-10-08-nuvem"`.
