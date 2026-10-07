@@ -3764,6 +3764,9 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
   const pako = await carregarLib("pako");
   const prod = producaoDoTime(time);
   const rec = recBase || { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
+  // Miniatura (URL da prévia no Drive) de cada arquivo, por chave — para o
+  // PNG de conferência das colunas.
+  rec.previas = rec.previas || {};
   rec.inflar = pako.inflate; // recorte das imagens com transparência (EPS para o Corel)
   if (prod.fonte && prod.fonte.partes && !rec.fonte) {
     aviso("Carregando a fonte…");
@@ -3788,6 +3791,8 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
     aviso("Carregando o logo da empresa…");
     rec.eps.logo = await lerEps(logoEmpresa.partes || logoEmpresa.epsId, logoEmpresa.bbox);
   }
+  if (logoEmpresa && logoEmpresa.previaUrl) rec.previas.logo = logoEmpresa.previaUrl;
+  if (prod.brasao && prod.brasao.previaUrl) rec.previas.brasao = prod.brasao.previaUrl;
   if (prod.brasao && !rec.eps.brasao) {
     aviso("Carregando o brasão…");
     rec.eps.brasao = await lerEps(prod.brasao.partes || prod.brasao.epsId, prod.brasao.bbox);
@@ -3823,6 +3828,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
         if (rec.eps[chave]) continue;
         aviso(`Carregando a imagem ${a.nomeArquivo || ""}…`);
         rec.eps[chave] = await lerEps(a.partes || a.epsId, a.bbox);
+        if (a.previaUrl) rec.previas[chave] = a.previaUrl;
       } else {
         imagens.push({ chave, img: a, nome: a.nomeArquivo || "imagem" });
       }
@@ -3830,6 +3836,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
   }
   // `aviso(texto, fração)`: a fração (0–1) é do carregamento deste time —
   // os arquivos pequenos até 10%, a conversão das artes (a parte demorada) o resto.
+  imagens.forEach((x) => { if (x.img && x.img.previaUrl) rec.previas[x.chave] = x.img.previaUrl; });
   const aConverter = imagens.filter((x, i) => !rec.imagens[x.chave] && imagens.findIndex((y) => y.chave === x.chave) === i);
   let feitas = 0;
   const fracao = (f) => 0.1 + 0.9 * ((feitas + f) / Math.max(1, aConverter.length));
@@ -3978,7 +3985,13 @@ function perguntarOpcoesEps(resumo, nomeLote) {
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
           <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
           <label>Arquivos
-            <select name="juntar"><option value="0">Um por time</option><option value="1">Todos os times juntos (peças misturadas)</option></select></label>
+            <select name="juntar"><option value="0">Um por time</option><option value="1">Todos os times juntos (peças misturadas)</option><option value="colunas">Colunas de 7 m — todos os times, EPS para o Corel</option></select></label>
+          <div class="oculto eps-colunas" data-so-colunas>
+            <p class="pix-ajuda">Todos os times juntos, com as peças encaixadas em colunas da largura do rolo. Cada arquivo EPS traz as colunas lado a lado (abre no Corel → Salvar como CDR) e cada coluna ganha um PNG para conferência. Arquivo grande: prefira 300 dpi.</p>
+            <label>Altura da coluna (cm)<input type="number" name="alturaColunaCm" min="50" step="10" value="${escAttr(f.alturaColunaCm || 700)}" /></label>
+            <label>Colunas por arquivo<input type="number" name="colunasPorArquivo" min="1" max="30" step="1" value="${escAttr(f.colunasPorArquivo || 10)}" /></label>
+            <label>Espaço entre colunas (cm)<input type="number" name="espacoColunasCm" min="0" step="0.5" value="${escAttr(f.espacoColunasCm == null ? 5 : f.espacoColunasCm)}" /></label>
+          </div>
           <p class="pix-ajuda oculto" data-so-juntar>Todos os times nas mesmas folhas, com as peças misturadas para gastar menos tecido (o marcador de cada peça diz o time). PDF: um arquivo com páginas de até 5 m. EPS: folhas de até 45 m (limite do Corel), juntas num .zip.</p>
           <label>Formato do arquivo
             <select name="formato"><option value="pdf">PDF (abre no Corel sem erros; depois Salvar como → CDR)</option><option value="eps">EPS</option></select></label>
@@ -3996,14 +4009,29 @@ function perguntarOpcoesEps(resumo, nomeLote) {
     form.dpi.value = String(f.dpi || 600);
     form.molde.value = f.molde || "frente";
     form.formato.value = f.formato === "eps" ? "eps" : "pdf";
-    form.juntar.value = f.juntar ? "1" : "0";
+    form.juntar.value = f.juntar === "colunas" ? "colunas" : f.juntar ? "1" : "0";
     const soJuntar = fundo.querySelector("[data-so-juntar]");
-    form.juntar.onchange = () => soJuntar.classList.toggle("oculto", form.juntar.value !== "1");
-    form.juntar.onchange();
+    const soColunas = fundo.querySelector("[data-so-colunas]");
+    let antes = form.juntar.value;
+    form.juntar.onchange = () => {
+      const col = form.juntar.value === "colunas";
+      soJuntar.classList.toggle("oculto", form.juntar.value !== "1");
+      soColunas.classList.toggle("oculto", !col);
+      // Colunas: sempre EPS compatível com o Corel; 300 dpi sugerido.
+      form.formato.disabled = col;
+      if (col) {
+        form.formato.value = "eps";
+        form.corel.checked = true;
+        if (antes !== "colunas" && form.dpi.value === "600") form.dpi.value = "300";
+      }
+      mostrarSoEps();
+      antes = form.juntar.value;
+    };
     const soEps = fundo.querySelector("[data-so-eps]");
     const mostrarSoEps = () => soEps.classList.toggle("oculto", form.formato.value !== "eps");
     form.formato.onchange = mostrarSoEps;
     mostrarSoEps();
+    form.juntar.onchange();
     const fechar = (valor) => { fundo.remove(); resolve(valor); };
     fundo.querySelector(".modal-pix-fechar").onclick = () => fechar(null);
     fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(null); });
@@ -4023,9 +4051,12 @@ function perguntarOpcoesEps(resumo, nomeLote) {
         molde: form.molde.value,
         alturaMaxCm: Math.max(0, Number(form.alturaMaxCm.value) || 0),
         etiqueta: form.etiqueta.checked,
-        corel: form.corel.checked,
-        formato: form.formato.value,
-        juntar: form.juntar.value === "1"
+        corel: form.juntar.value === "colunas" ? true : form.corel.checked,
+        formato: form.juntar.value === "colunas" ? "eps" : form.formato.value,
+        juntar: form.juntar.value === "colunas" ? "colunas" : form.juntar.value === "1",
+        alturaColunaCm: Math.max(50, Number(form.alturaColunaCm.value) || 700),
+        colunasPorArquivo: Math.max(1, Math.round(Number(form.colunasPorArquivo.value) || 10)),
+        espacoColunasCm: Math.max(0, Number(form.espacoColunasCm.value) || 0)
       });
     };
     document.body.appendChild(fundo);
@@ -4087,7 +4118,7 @@ async function montarBlocosDoGrupo(g, op, etapa, prog, rotulo) {
 // nas mesmas folhas. PDF: um arquivo, páginas de até 5 m. EPS: folhas de
 // até 45 m (o Corel não abre maior), num .zip se forem várias.
 async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
-  const recJunto = { eps: {}, imagens: {}, fonte: null, fonteEtiqueta: null };
+  const recJunto = { eps: {}, imagens: {}, previas: {}, fonte: null, fonteEtiqueta: null };
   const todos = [];
   const areaModelo = {}; // modelo → mm² das peças (repartir a metragem)
   const prontos = [];
@@ -4113,6 +4144,7 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
       }));
       Object.entries(r.rec.eps).forEach(([c, v]) => { if (!recJunto.eps[nova(c)]) recJunto.eps[nova(c)] = v; });
       Object.entries(r.rec.imagens).forEach(([c, v]) => { recJunto.imagens[nova(c)] = v; });
+      Object.entries(r.rec.previas || {}).forEach(([c, v]) => { recJunto.previas[nova(c)] = v; });
       const nMods = Object.values(g.modelos).reduce((a, b) => a + b, 0) || 1;
       const area = r.blocos.reduce((t, b) => t + b.w * b.h, 0);
       Object.entries(g.modelos).forEach(([mod, n]) => { areaModelo[mod] = (areaModelo[mod] || 0) + area * (n / nMods); });
@@ -4136,17 +4168,25 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
   try {
     etapaFim("encaixando as peças de todos os times…");
     await esperarTela();
-    const pdfFmt = op.formato !== "eps";
+    const colunas = op.juntar === "colunas";
+    const pdfFmt = !colunas && op.formato !== "eps";
     const altMax = op.alturaMaxCm > 0 ? op.alturaMaxCm * 10 : Infinity;
-    const limite = Math.min(altMax, pdfFmt ? EPS.PDF_ALTURA_MAX_MM : EPS.ALTURA_MAX_COREL_MM);
+    const limite = colunas ? Math.min((op.alturaColunaCm || 700) * 10, EPS.ALTURA_MAX_COREL_MM)
+      : Math.min(altMax, pdfFmt ? EPS.PDF_ALTURA_MAX_MM : EPS.ALTURA_MAX_COREL_MM);
     const { folhas, avisos: avE } = EPS.empacotar(todos, {
       larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: limite
     });
     avE.forEach((a) => prog.aviso(a));
     const base = slugify(nomeBase + "-todos") || "todos";
+    let saida;
+    let resumoFim = "";
+    if (colunas) {
+      const r = await escreverColunas(folhas, recJunto, op, destino, prog, base, etapaFim);
+      saida = r.saida;
+      resumoFim = r.resumo;
+    } else {
     const mb = folhas.reduce((t, f) => t + EPS.estimarTamanho(f, recJunto, { corel: !pdfFmt && op.corel }), 0) / 1e6;
     if (mb > 1500) prog.aviso(`Arquivo muito grande (~${Math.round(mb)} MB) para juntar todos os times. Se o navegador travar, gere em 300 dpi ou "Um por time".`);
-    let saida;
     if (pdfFmt) {
       const nome = base + ".pdf";
       etapaFim(`escrevendo o PDF (${folhas.length} página(s))…`);
@@ -4172,6 +4212,7 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
       }
     }
     saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog);
+    }
     // Cada time: pronto (juntado); o arquivo aparece no último, com "Baixar de novo".
     prontos.forEach((i) => prog.time(i, "pronto", i === ultimo ? saida : "juntado"));
     // Metragem: altura das folhas repartida entre os modelos pela área.
@@ -4181,7 +4222,7 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
     Object.entries(areaModelo).forEach(([mod, a]) => { metragem[mod] = Math.round(metros * (a / areaTotal) * 100) / 100; });
     prog.aviso(`Metragem: ${metros.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m lineares no rolo de ${op.larguraCm} cm.`);
     await gravarMetragemDaLeva(levaId, metragem, op.larguraCm);
-    prog.fim(1, `${saida.nome}: ${prontos.length} de ${lista.length} time(s) juntos${saida.onde ? `, salvo em ${saida.onde}` : ""}.`);
+    prog.fim(1, resumoFim || `${saida.nome}: ${prontos.length} de ${lista.length} time(s) juntos${saida.onde ? `, salvo em ${saida.onde}` : ""}.`);
   } catch (e) {
     console.error(e);
     const msg = e.message || String(e);
@@ -4189,6 +4230,172 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
     prontos.forEach((i) => prog.time(i, "erro", "não juntou"));
     prog.fim(0, "Não foi possível gerar o arquivo com todos os times.");
   }
+}
+
+// Modo "colunas": cada folha encaixada (até a altura da coluna) é uma
+// coluna; até N colunas lado a lado viram um EPS (compatível com o Corel).
+// Cada coluna ganha um PNG de conferência. Devolve { saida, resumo }.
+async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) {
+  const porArq = Math.max(1, op.colunasPorArquivo || 10);
+  const gap = Math.max(0, (op.espacoColunasCm == null ? 5 : op.espacoColunasCm) * 10);
+  const L = op.larguraCm * 10;
+  const grupos = [];
+  for (let i = 0; i < colunas.length; i += porArq) grupos.push(colunas.slice(i, i + porArq));
+  const altM = ((op.alturaColunaCm || 700) / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  prog.aviso(`${colunas.length} coluna(s) de até ${altM} m → ${grupos.length} arquivo(s) EPS com até ${porArq} coluna(s) cada.`);
+  const multi = grupos.length > 1;
+  let saida = null, ondeSalvou = "", nPng = 0;
+  for (let gi = 0; gi < grupos.length; gi++) {
+    const g = grupos[gi];
+    const n0 = gi * porArq; // nº da primeira coluna deste arquivo
+    const folha = {
+      larguraMm: g.length * L + (g.length - 1) * gap,
+      alturaMm: Math.max(...g.map((f) => f.alturaMm)),
+      blocos: []
+    };
+    g.forEach((f, j) => f.blocos.forEach((b) => folha.blocos.push({ ...b, x: b.x + j * (L + gap) })));
+    const nome = `${base}-colunas${multi ? `-arquivo${gi + 1}` : ""}.eps`;
+    const mb = EPS.estimarTamanho(folha, rec, { corel: true }) / 1e6;
+    if (mb > 1500) prog.aviso(`${nome}: ~${Math.round(mb)} MB — se o navegador travar, gere em 300 ou 150 dpi, ou com menos colunas por arquivo.`);
+    etapaFim(`escrevendo o EPS ${gi + 1} de ${grupos.length} (${g.length} coluna(s))…`, gi / grupos.length);
+    await esperarTela();
+    const blob = await arquivoDaFolha(folha, rec, `Todos os times - colunas ${n0 + 1} a ${n0 + g.length}`, "eps", { corel: true }, (t) => etapaFim(t));
+    saida = { nome, blob };
+    saida.onde = await salvarArquivoGerado(destino, nome, blob, prog);
+    if (saida.onde) ondeSalvou = saida.onde;
+    // PNG de cada coluna (conferência). Nos Downloads, um .zip por arquivo.
+    const pngs = [];
+    for (let j = 0; j < g.length; j++) {
+      etapaFim(`prévia PNG da coluna ${n0 + j + 1} de ${colunas.length}…`);
+      await esperarTela();
+      try {
+        pngs.push({ nome: `${base}${multi ? `-arquivo${gi + 1}` : ""}-coluna${n0 + j + 1}.png`, blob: await previaPngDaColuna(g[j], rec) });
+      } catch (e) {
+        console.error(e);
+        prog.aviso(`Prévia da coluna ${n0 + j + 1} não gerada: ${e.message || e}`);
+      }
+    }
+    nPng += pngs.length;
+    if (destino) {
+      for (const p of pngs) await salvarArquivoGerado(destino, p.nome, p.blob, prog);
+    } else if (pngs.length) {
+      const JSZip = await carregarLib("JSZip");
+      const zip = new JSZip();
+      pngs.forEach((p) => zip.file(p.nome, p.blob));
+      await salvarArquivoGerado(null, `${base}${multi ? `-arquivo${gi + 1}` : ""}-conferencia-png.zip`,
+        await zip.generateAsync({ type: "blob", compression: "STORE" }), prog);
+    }
+  }
+  return {
+    saida,
+    resumo: `${grupos.length} arquivo(s) EPS com ${colunas.length} coluna(s) e ${nPng} PNG(s) de conferência${ondeSalvou ? `, salvos em ${ondeSalvou}` : ""}.`
+  };
+}
+
+// Miniaturas (prévias RGB no Drive) para o PNG de conferência, por URL.
+const miniaturasDaPrevia = {};
+function miniaturaDaPrevia(url) {
+  if (!url) return Promise.resolve(null);
+  if (!miniaturasDaPrevia[url]) {
+    let id = "";
+    try { id = new URL(url).searchParams.get("id") || ""; } catch (e) { id = ""; }
+    miniaturasDaPrevia[url] = (id ? baixarArquivoDrive(driveScriptUrl, id) : Promise.reject(new Error("sem id")))
+      .then((bytes) => createImageBitmap(new Blob([bytes])))
+      .catch((e) => { console.warn("Miniatura não carregou:", url, e); return null; });
+  }
+  return miniaturasDaPrevia[url];
+}
+
+function rgbDoCmyk(cmyk) {
+  const [c, m, y, k] = (cmyk || [0, 0, 0, 100]).map((v) => Math.max(0, Math.min(100, Number(v) || 0)) / 100);
+  const f = (x) => Math.round(255 * (1 - x) * (1 - k));
+  return `rgb(${f(c)},${f(m)},${f(y)})`;
+}
+
+// PNG de conferência de uma coluna (folha encaixada): as peças nas mesmas
+// posições do EPS, com as miniaturas das artes, nomes, números e marcadores.
+async function previaPngDaColuna(folha, rec, larguraPx) {
+  const esc = (larguraPx || 1200) / folha.larguraMm;
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(folha.larguraMm * esc));
+  c.height = Math.max(1, Math.min(32000, Math.round(folha.alturaMm * esc)));
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  const previas = rec.previas || {};
+  const bmp = {};
+  for (const pos of folha.blocos) {
+    for (const o of pos.bloco.ops) {
+      if ((o.tipo === "imagem" || o.tipo === "eps") && previas[o.chave] && !(o.chave in bmp)) bmp[o.chave] = await miniaturaDaPrevia(previas[o.chave]);
+    }
+  }
+  const caminho = (cmds) => {
+    const p = new Path2D();
+    (cmds || []).forEach((k) => {
+      if (k.type === "M") p.moveTo(k.x, k.y);
+      else if (k.type === "L") p.lineTo(k.x, k.y);
+      else if (k.type === "C") p.bezierCurveTo(k.x1, k.y1, k.x2, k.y2, k.x, k.y);
+      else if (k.type === "Q") p.quadraticCurveTo(k.x1, k.y1, k.x, k.y);
+      else if (k.type === "Z") p.closePath();
+    });
+    return p;
+  };
+  ctx.scale(esc, esc);
+  for (const pos of folha.blocos) {
+    const b = pos.bloco;
+    ctx.save();
+    // Mesmas posições e giros do escreverEps (aqui o y cresce para baixo).
+    if (pos.rot === 90) { ctx.translate(pos.x, pos.y + pos.h); ctx.rotate(-Math.PI / 2); }
+    else if (pos.rot === 180) { ctx.translate(pos.x + pos.w, pos.y + pos.h); ctx.rotate(Math.PI); }
+    else ctx.translate(pos.x, pos.y);
+    const contorno = b.contorno && b.contorno.length ? caminho(b.contorno) : null;
+    let recortando = false;
+    for (const op of b.ops) {
+      const quer = !!(op.recortar && contorno);
+      if (quer && !recortando) { ctx.save(); ctx.clip(contorno); recortando = true; }
+      else if (!quer && recortando) { ctx.restore(); recortando = false; }
+      ctx.lineJoin = "round";
+      if (op.tipo === "linha") {
+        ctx.strokeStyle = rgbDoCmyk(op.cmyk);
+        ctx.lineWidth = op.mm || 0.5;
+        ctx.stroke(caminho(op.comandos));
+      } else if (op.tipo === "caminho") {
+        const p = caminho(op.comandos);
+        [op.contorno2, op.contorno].forEach((ct) => {
+          if (!ct) return;
+          ctx.strokeStyle = rgbDoCmyk(ct.cmyk);
+          ctx.lineWidth = ct.mm * 2;
+          ctx.lineCap = "round";
+          ctx.stroke(p);
+        });
+        ctx.fillStyle = rgbDoCmyk(op.cmyk);
+        ctx.fill(p);
+      } else if (op.tipo === "imagem" || op.tipo === "eps") {
+        const im = bmp[op.chave];
+        ctx.save();
+        if (op.rot || op.flipH || op.flipV) {
+          const cx = op.x + op.w / 2, cy = op.y + op.h / 2;
+          ctx.translate(cx, cy);
+          ctx.rotate(((op.rot || 0) * Math.PI) / 180);
+          ctx.scale(op.flipH ? -1 : 1, op.flipV ? -1 : 1);
+          ctx.translate(-cx, -cy);
+        }
+        if (im) ctx.drawImage(im, op.x, op.y, op.w, op.h);
+        else if (String(op.chave).includes("molde:")) {
+          ctx.strokeStyle = "#1f2937";
+          ctx.lineWidth = 1;
+          if (contorno) ctx.stroke(contorno); else ctx.strokeRect(op.x, op.y, op.w, op.h);
+        } else {
+          ctx.fillStyle = "rgba(148,163,184,0.35)";
+          ctx.fillRect(op.x, op.y, op.w, op.h);
+        }
+        ctx.restore();
+      }
+    }
+    if (recortando) ctx.restore();
+    ctx.restore();
+  }
+  return canvasEmPng(c);
 }
 
 // Ponto de entrada da aba Produção. linhas = [{ item, atual }] (itens da

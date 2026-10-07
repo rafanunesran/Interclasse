@@ -820,6 +820,18 @@ formato). No **EPS** sai uma folha por arquivo, com até 45 m (o Corel não abre
 .zip quando são várias. Todas as artes ficam na memória ao mesmo tempo: em leva muito grande, gere
 em 300 dpi.
 
+**Colunas de 7 m (EPS para o Corel):** escolha **Arquivos → Colunas de 7 m** no diálogo. O site
+junta todos os times e encaixa as peças em **colunas** da largura do rolo, com até 7 m de altura.
+Cada **arquivo EPS** traz até 10 colunas lado a lado: abra no Corel e salve como CDR. A altura da
+coluna, as colunas por arquivo e o espaço entre elas podem ser mudados no diálogo.
+
+Cada coluna ganha um **PNG de conferência**, com as peças nas mesmas posições, as artes, os nomes,
+os números e o marcador da costureira. Na pasta escolhida, os PNGs ficam ao lado dos EPS; nos
+Downloads, vêm num .zip por arquivo.
+
+Nesse modo o EPS é sempre "Compatível com o Corel". Esse formato repete a arte a cada peça, então o
+arquivo fica grande: o diálogo sugere 300 dpi e avisa quando passa de ~1,5 GB.
+
 **Onde os arquivos ficam:** no Chrome e no Edge, o diálogo da geração tem **Salvar em → Escolher
 pasta…**. Os arquivos (e o PDF da costureira) passam a ser gravados direto nessa pasta, e com a
 opção marcada, numa subpasta com o nome do lote. A pasta fica lembrada neste computador; o navegador
