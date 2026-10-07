@@ -1,0 +1,8 @@
+{
+  "name": "interclasse-nuvem",
+  "private": true,
+  "description": "Máquina da geração na nuvem (GitHub Actions): abre o site, gera as folhas e envia ao Google Drive.",
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

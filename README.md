@@ -827,6 +827,32 @@ pode pedir de novo a permissão a cada sessão. **Usar Downloads** volta ao norm
 permite escolher a pasta pelo site: nele os arquivos vão para Downloads. Para escolher a pasta a
 cada arquivo, use Configurações → Downloads → "Sempre perguntar onde salvar arquivos".
 
+### Geração na nuvem (☁️ Gerar na nuvem)
+
+No diálogo das folhas, **☁️ Gerar na nuvem (salva no Drive)** faz a geração numa máquina do GitHub
+Actions em vez de no navegador, então o computador não trava com lote grande. A máquina tem 16 GB de
+memória e cada execução pode durar até 5 h.
+
+Como funciona:
+1. O site grava o pedido no Firestore (coleção `trabalhos`) e o Apps Script dispara o workflow
+   `.github/workflows/gerar-folhas.yml`.
+2. A máquina (`tools/nuvem/worker.js`) abre este mesmo site, entra com a conta da máquina e faz a
+   mesma geração do botão.
+3. Ela desenha uma **prévia PNG de cada folha** com o Ghostscript e envia tudo para o Drive, em
+   `Interclasse Camisetas/Impressão/<lote> - <data hora>`.
+4. O card do lote mostra o andamento (etapa e %) e, no fim, os arquivos, a pasta do Drive, as
+   prévias e o link da execução no GitHub.
+
+O que precisa estar configurado (uma vez):
+- **Firebase → Authentication:** a conta `maquina.interclasse@gmail.com` (`MAQUINA_EMAIL` em
+  `js/auth-admin.js`).
+- **Firestore → Regras:** as de `firestore.rules`, com `ehMaquina()` e `trabalhos`.
+- **GitHub → Settings → Secrets → Actions:** `MAQUINA_EMAIL`, `MAQUINA_SENHA` e `WORKER_TOKEN`.
+- **Apps Script → Propriedades do script:** `GITHUB_TOKEN` (chave *fine-grained* com Actions: Read
+  and write) e o mesmo `WORKER_TOKEN`. Confira rodando `testarNuvem`.
+
+Se der erro, o card do lote mostra o motivo, e **Ver execução** abre o registro completo no GitHub.
+
 ### PDF da costureira (aba **Produção**)
 
 O botão **PDF da costureira** na leva gera **um PDF geral**, em A4 em pé, para a montagem. Ele não

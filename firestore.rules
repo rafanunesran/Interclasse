@@ -29,6 +29,13 @@ service cloud.firestore {
         && request.auth.token.email == "rafaelnf93@gmail.com";
     }
 
+    // Conta da máquina da geração na nuvem (GitHub Actions). Mantenha igual
+    // ao MAQUINA_EMAIL de js/auth-admin.js.
+    function ehMaquina() {
+      return request.auth != null
+        && request.auth.token.email == "maquina.interclasse@gmail.com";
+    }
+
     // Documentos de configuração do site (config/...).
     // - config/geral, config/tamanhos, config/moldes e config/layout: só o
     //   admin pode gravar.
@@ -79,12 +86,24 @@ service cloud.firestore {
     // para ir à impressão de uma vez, incluindo camisetas avulsas que não
     // estão em nenhum pedido. É controle interno da produção, então nem a
     // leitura é pública: só a conta administradora entra aqui.
+    // A máquina da nuvem lê o lote e grava só a metragem.
     match /producao/{levaId} {
       allow read, write: if ehAdmin();
+      allow read: if ehMaquina();
+      allow update: if ehMaquina() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["metragem"]);
 
       match /itens/{itemId} {
         allow read, write: if ehAdmin();
+        allow read: if ehMaquina();
       }
+    }
+
+    // Gerações na nuvem (js/nuvem.js): o site (admin) cria o pedido; a
+    // máquina lê e atualiza o andamento e o resultado.
+    match /trabalhos/{trabalhoId} {
+      allow read, write: if ehAdmin();
+      allow read, update: if ehMaquina();
     }
 
     // Times (a coleção continua com o nome antigo, "turmas", para não

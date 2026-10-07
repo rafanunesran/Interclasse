@@ -7,6 +7,14 @@
 // firestore.rules.
 const MASTER_EMAIL = "rafaelnf93@gmail.com";
 
+// Conta da máquina da geração na nuvem (tools/nuvem/worker.js, GitHub
+// Actions). Igual a ehMaquina() em firestore.rules: só lê os lotes, grava a
+// metragem e o andamento dos trabalhos.
+const MAQUINA_EMAIL = "maquina.interclasse@gmail.com";
+function ehContaMaquina(user) {
+  return !!user && !user.isAnonymous && user.email === MAQUINA_EMAIL;
+}
+
 // Verdadeiro apenas quando o usuário logado é a conta administradora
 // (não anônimo e com o e-mail master).
 function ehContaAdmin(user) {

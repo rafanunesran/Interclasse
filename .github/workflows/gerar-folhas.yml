@@ -1,0 +1,48 @@
+# Geração na nuvem das folhas de impressão (js/nuvem.js → Apps Script → aqui).
+# Disparado pelo Apps Script com o id do trabalho (Firestore, "trabalhos").
+# Segredos (Settings → Secrets and variables → Actions): MAQUINA_EMAIL,
+# MAQUINA_SENHA e WORKER_TOKEN (o mesmo das Propriedades do Apps Script).
+name: Gerar folhas (nuvem)
+
+on:
+  workflow_dispatch:
+    inputs:
+      trabalho:
+        description: "Id do trabalho (Firestore, coleção trabalhos)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gerar-folhas
+  cancel-in-progress: false
+
+jobs:
+  gerar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Ghostscript (prévias em PNG)
+        run: sudo apt-get update -q && sudo apt-get install -y -q ghostscript unzip
+
+      - name: Playwright + Chromium
+        working-directory: tools/nuvem
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Gerar e enviar ao Drive
+        run: node tools/nuvem/worker.js
+        env:
+          TRABALHO: ${{ inputs.trabalho }}
+          MAQUINA_EMAIL: ${{ secrets.MAQUINA_EMAIL }}
+          MAQUINA_SENHA: ${{ secrets.MAQUINA_SENHA }}
+          WORKER_TOKEN: ${{ secrets.WORKER_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

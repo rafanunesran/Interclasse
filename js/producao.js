@@ -133,6 +133,7 @@ let prodSincTimer = null;
 const prodSincPendentes = new Map(); // "timeId/alunoId" -> valor em gravação
 
 function agendarSincronizacaoLotes() {
+  if (window.MODO_MAQUINA) return; // só o admin grava o lote nas camisetas
   clearTimeout(prodSincTimer);
   prodSincTimer = setTimeout(sincronizarLotesNosAlunos, 800);
 }

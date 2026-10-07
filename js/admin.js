@@ -90,6 +90,24 @@ document.addEventListener("visibilitychange", () => {
 });
 
 auth.onAuthStateChanged((user) => {
+  // Máquina da geração na nuvem: só o que a geração usa (as regras negam a
+  // ela preços, movimentações e a lista de trabalhos).
+  if (ehContaMaquina(user)) {
+    window.MODO_MAQUINA = true;
+    elPainel.classList.remove("oculto");
+    if (!painelIniciado) {
+      painelIniciado = true;
+      aoCarregarScripts(() => {
+        escutarClientes();
+        escutarTimes();
+        carregarPainelConfig();
+        if (typeof escutarLevas === "function") escutarLevas();
+        if (typeof escutarMoldes === "function") escutarMoldes();
+        if (typeof escutarLayout === "function") escutarLayout();
+      });
+    }
+    return;
+  }
   if (ehContaAdmin(user) && sessaoAdminExpirada()) {
     sairPorInatividade();
     return;
