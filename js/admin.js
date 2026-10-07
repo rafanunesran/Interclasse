@@ -110,6 +110,7 @@ auth.onAuthStateChanged((user) => {
         carregarPainelConfig();
         // Aba Produção (js/producao.js) — carregada depois deste arquivo.
         if (typeof escutarLevas === "function") escutarLevas();
+        if (typeof escutarTrabalhosNuvem === "function") escutarTrabalhosNuvem();
         // Produção em EPS: moldes (aba Tamanhos) e layout (aba Artes).
         if (typeof escutarMoldes === "function") escutarMoldes();
         if (typeof escutarLayout === "function") escutarLayout();

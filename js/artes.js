@@ -3984,7 +3984,10 @@ function perguntarOpcoesEps(resumo, nomeLote) {
             <select name="formato"><option value="pdf">PDF (abre no Corel sem erros; depois Salvar como → CDR)</option><option value="eps">EPS</option></select></label>
           <label class="checkbox-inline" data-so-eps><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
           ${htmlPastaSaida()}
-          <button type="submit" class="primario">Gerar</button>
+          <div class="eps-botoes-gerar">
+            <button type="submit" class="primario">Gerar aqui</button>
+            <button type="submit" class="secundario" name="nuvem" value="1" title="Roda numa máquina na nuvem (GitHub Actions) e salva os arquivos e as prévias em PNG no seu Google Drive — não trava este computador">☁️ Gerar na nuvem (salva no Drive)</button>
+          </div>
         </form>
       </div>`;
     const form = fundo.querySelector("form");
@@ -4006,10 +4009,12 @@ function perguntarOpcoesEps(resumo, nomeLote) {
     fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(null); });
     form.onsubmit = async (ev) => {
       ev.preventDefault();
+      const nuvem = !!(ev.submitter && ev.submitter.name === "nuvem");
       // A permissão da pasta é pedida aqui, ainda no clique.
-      const destino = await PastaSaida.destino(nomeLote);
+      const destino = nuvem ? null : await PastaSaida.destino(nomeLote);
       fechar({
         destino,
+        nuvem,
         larguraCm: Number(form.larguraCm.value) || 150,
         espacoMm: Math.max(0, Number(form.espacoMm.value) || 0),
         sangriaMm: Math.max(0, Number(form.sangriaMm.value) || 0),
@@ -4241,7 +4246,9 @@ async function gravarMetragemDaLeva(levaId, porModelo, larguraCm) {
   }
 }
 
-async function gerarFolhasEps(linhas, nomeBase, levaId) {
+// `opPronta`: opções já escolhidas (geração na nuvem, js/nuvem.js) — sem
+// diálogo; os arquivos saem como downloads.
+async function gerarFolhasEps(linhas, nomeBase, levaId, opPronta) {
   if (!driveScriptUrl) {
     alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm os arquivos).");
     return;
@@ -4252,12 +4259,20 @@ async function gerarFolhasEps(linhas, nomeBase, levaId) {
     return;
   }
   const nomesTimes = [...new Set([...grupos.values()].map((g) => estadoTimes[g.timeId].time.nome))];
-  const op = await perguntarOpcoesEps(`${linhas.length} camiseta(s) de ${nomesTimes.length} time(s): ${nomesTimes.join(", ")}.`, slugify(nomeBase) || "lote");
+  const op = opPronta ? { ...opPronta } : await perguntarOpcoesEps(`${linhas.length} camiseta(s) de ${nomesTimes.length} time(s): ${nomesTimes.join(", ")}.`, slugify(nomeBase) || "lote");
   if (!op) return;
-  const destino = op.destino;
+  const destino = op.destino || null;
+  const nuvem = op.nuvem;
   delete op.destino;
-  layoutConfig.folha = { ...layoutConfig.folha, ...op };
-  salvarLayout(true);
+  delete op.nuvem;
+  if (!opPronta) {
+    layoutConfig.folha = { ...layoutConfig.folha, ...op };
+    salvarLayout(true);
+  }
+  if (nuvem) {
+    await pedirGeracaoNaNuvem(linhas, nomeBase, levaId, op);
+    return;
+  }
 
   // Um arquivo por time, baixado assim que fica pronto (não junta tudo num
   // .zip no fim — mais leve para baixar e para a memória do navegador).

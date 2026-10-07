@@ -440,6 +440,15 @@ function renderizarListaLevas() {
     botoes.appendChild(btnExcluir);
 
     card.appendChild(botoes);
+    // Gerações na nuvem deste lote (js/nuvem.js): andamento, arquivos no
+    // Drive e prévias em PNG.
+    if (typeof preencherTrabalhosDaLeva === "function") {
+      const nuvem = document.createElement("div");
+      nuvem.className = "nuvem-leva";
+      nuvem.dataset.nuvemLeva = leva.id;
+      card.appendChild(nuvem);
+      preencherTrabalhosDaLeva(nuvem);
+    }
 
     if (expandida) {
       card.appendChild(criarFormAvulso(leva));
