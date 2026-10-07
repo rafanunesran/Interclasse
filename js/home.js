@@ -69,7 +69,6 @@ async function carregarInicio() {
     renderizarFiltros();
     renderizarLoja();
     mostrarCarrinho(); // de novo, agora sabendo quais times escondem o preço
-    carregarPrecosDoCliente();
   } catch (erro) {
     console.error(erro);
     elCarregando.classList.remove("oculto");
@@ -107,7 +106,6 @@ function renderizarFiltros() {
       window.history.replaceState({}, "", url.toString());
       renderizarFiltros();
       renderizarLoja();
-      carregarPrecosDoCliente();
     };
     elFiltroClientes.appendChild(b);
   });
@@ -171,36 +169,6 @@ function renderizarLoja() {
   times.forEach((time) => elLista.appendChild(criarCardProduto(time)));
 }
 
-// Preço especial (do cliente ou do time) só aparece no card quando a loja
-// está filtrada pelo próprio cliente — o link que foi mandado a ele. Na
-// vitrine de todos, esses cards ficam sem preço (e a loja nem lê o valor).
-const clientesComPrecoCarregado = new Set();
-
-async function carregarPrecosDoCliente() {
-  const id = clienteEscolhido;
-  if (!id || id === SEM_CLIENTE || clientesComPrecoCarregado.has(id)) return;
-  const times = timesLoja.filter((t) => clienteIdDoTime(t) === id && timeTemPrecoEspecial(t, clientesLoja));
-  if (times.length === 0) return;
-  await carregarPrecosEspeciais(configLoja, times.map((t) => ({ id: t.id, clienteId: id })));
-  clientesComPrecoCarregado.add(id);
-  if (clienteEscolhido === id) renderizarLoja();
-}
-
-function precoVisivelNoCard(time) {
-  if (!timeTemPrecoEspecial(time, clientesLoja)) return true;
-  const id = clienteIdDoTime(time);
-  return !!id && id === clienteEscolhido && clientesComPrecoCarregado.has(id);
-}
-
-// Preço exibido no card: o valor único ou "a partir de" o menor.
-function precoDoCard(timeId) {
-  const valores = Object.values(precosDoTime(configLoja, timeId)).filter((v) => v > 0);
-  if (valores.length === 0) return "";
-  const menor = Math.min(...valores);
-  const unico = valores.every((v) => v === menor);
-  return (unico ? "" : "a partir de ") + formatarReais(menor);
-}
-
 // Cor de fundo estável por time, para os cards sem imagem não ficarem iguais.
 function corDoTime(texto) {
   let h = 0;
@@ -228,15 +196,14 @@ function criarCardProduto(time) {
     ? `<span class="wrap-imagem"><img class="img-na-marca" src="${escaparHtml(capaUrl).replace(/"/g, "&quot;")}" alt="Camiseta de ${escaparHtml(time.nome)}" loading="lazy" />${marcaOverlay}</span>`
     : `<span class="produto-sem-imagem" style="background:${corDoTime(time.nome)}" aria-hidden="true">${icone("shirt")}</span>`;
 
+  // A vitrine não mostra preço: o valor aparece só na página do time.
   const cliente = nomeClienteLoja(time);
-  const preco = precoOculto(time) || !precoVisivelNoCard(time) ? "" : precoDoCard(time.id);
 
   item.innerHTML = `
     <span class="produto-img">${imagem}<span class="produto-status">${status}</span></span>
     <span class="produto-corpo">
       ${cliente ? `<span class="produto-cliente">${escaparHtml(cliente)}</span>` : ""}
       <span class="produto-nome">${escaparHtml(time.nome)}</span>
-      ${preco ? `<span class="produto-preco">${escaparHtml(preco)}</span>` : ""}
       <span class="produto-cta">${escaparHtml(acao)} →</span>
     </span>
   `;
