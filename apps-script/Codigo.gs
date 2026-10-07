@@ -1,19 +1,19 @@
 /**
- * Interclasse — Uploader de imagem da camiseta (Google Apps Script)
+ * Interclasse - Uploader de imagem da camiseta (Google Apps Script)
  *
  * Recebe uma imagem (base64) do site, salva no Google Drive numa pasta,
- * deixa o arquivo público (qualquer um com o link pode ver) e devolve a
- * URL para exibir no <img>. Também guarda os arquivos das artes de
- * produção (EPS, PNG em alta, fontes) e os devolve ao site (doGet). Serve como alternativa gratuita ao Firebase
+ * deixa o arquivo publico (qualquer um com o link pode ver) e devolve a
+ * URL para exibir no <img>. Tambem guarda os arquivos das artes de
+ * producao (EPS, PNG em alta, fontes) e os devolve ao site (doGet). Serve como alternativa gratuita ao Firebase
  * Storage (que exige plano pago).
  *
- * Mais abaixo, neste mesmo arquivo, fica o BACKUP DIÁRIO dos dados.
+ * Mais abaixo, neste mesmo arquivo, fica o BACKUP DIARIO dos dados.
  *
  * Como publicar: veja apps-script/README.md.
  */
 
-// Versão deste código. Abrindo a URL do app da Web (/exec) no navegador, ela
-// aparece na resposta — é o jeito de conferir se a implantação está atualizada.
+// Versao deste codigo. Abrindo a URL do app da Web (/exec) no navegador, ela
+// aparece na resposta - e o jeito de conferir se a implantacao esta atualizada.
 var VERSAO_SCRIPT = "2026-10-08-nuvem";
 
 // Nome da pasta no seu Drive onde as imagens ficam (criada automaticamente).
@@ -22,9 +22,9 @@ var NOME_PASTA = "Interclasse Camisetas";
 function doPost(e) {
   try {
     var dados = JSON.parse(e.postData.contents);
-    // Ações do backup (aba Backup do Super Admin) — ver a parte de backup, mais abaixo.
+    // Acoes do backup (aba Backup do Super Admin) - ver a parte de backup, mais abaixo.
     if (dados.acao && String(dados.acao).indexOf("backup") === 0) return json_(rotearBackup_(dados));
-    // Geração na nuvem (js/nuvem.js e a máquina do GitHub) — ver o fim do arquivo.
+    // Geracao na nuvem (js/nuvem.js e a maquina do GitHub) - ver o fim do arquivo.
     if (dados.acao === "nuvem") return json_(dispararNuvem_(dados));
     if (dados.acao === "sessaoUpload") return json_(sessaoUpload_(dados));
     if (dados.acao === "compartilhar") return json_(compartilhar_(dados));
@@ -44,15 +44,15 @@ function doPost(e) {
   }
 }
 
-// GET sem parâmetros: só confirma que o script está no ar.
-// GET ?acao=arquivo&id=ID: devolve o arquivo em base64. É assim que o site lê
+// GET sem parametros: so confirma que o script esta no ar.
+// GET ?acao=arquivo&id=ID: devolve o arquivo em base64. E assim que o site le
 // os bytes das artes (EPS, PNG em alta, fontes) para montar a folha de
-// impressão — o Drive não deixa o navegador baixar o arquivo direto (CORS).
-// Só entrega arquivos da pasta do site, nunca outro arquivo do seu Drive.
+// impressao - o Drive nao deixa o navegador baixar o arquivo direto (CORS).
+// So entrega arquivos da pasta do site, nunca outro arquivo do seu Drive.
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.acao !== "arquivo") {
-    // "versao" mostra qual código está publicado (abra a URL /exec no navegador).
+    // "versao" mostra qual codigo esta publicado (abra a URL /exec no navegador).
     return json_({ ok: true, msg: "Interclasse - uploader de imagem ativo.", versao: VERSAO_SCRIPT, backup: true });
   }
   try {
@@ -91,55 +91,55 @@ function json_(obj) {
 
 // ============================================================================
 // ============================================================================
-// BACKUP DIÁRIO
+// BACKUP DIARIO
 // ============================================================================
 // ============================================================================
 
 /**
- * Interclasse — Backup diário do Firestore (Google Apps Script)
+ * Interclasse - Backup diario do Firestore (Google Apps Script)
  *
- * Todo dia o script lê TODOS os dados do site no Firestore (times, camisetas,
- * clientes, configurações, levas de produção, cobranças...) e salva uma cópia
+ * Todo dia o script le TODOS os dados do site no Firestore (times, camisetas,
+ * clientes, configuracoes, levas de producao, cobrancas...) e salva uma copia
  * em JSON numa pasta PRIVADA do seu Google Drive ("Interclasse Backups").
  *
  * Regras de guarda:
- *   • o script NUNCA apaga um backup sozinho;
- *   • os backups dos últimos 30 dias são o histórico protegido: nem com
- *     confirmação eles podem ser apagados pelo site;
- *   • os mais antigos que 30 dias só saem quando o administrador confirma no
- *     Super Admin (aba Backup) — e vão para a LIXEIRA do Drive, onde ainda
- *     ficam recuperáveis por 30 dias. Enquanto houver backup antigo esperando
- *     confirmação, o script manda um e-mail de aviso (no máximo 1 por semana).
+ *   * o script NUNCA apaga um backup sozinho;
+ *   * os backups dos ultimos 30 dias sao o historico protegido: nem com
+ *     confirmacao eles podem ser apagados pelo site;
+ *   * os mais antigos que 30 dias so saem quando o administrador confirma no
+ *     Super Admin (aba Backup) - e vao para a LIXEIRA do Drive, onde ainda
+ *     ficam recuperaveis por 30 dias. Enquanto houver backup antigo esperando
+ *     confirmacao, o script manda um e-mail de aviso (no maximo 1 por semana).
  *
  * O acesso ao Firestore usa a SUA conta Google (a dona do projeto Firebase),
- * pelo token do próprio Apps Script — não há chave nem senha no código.
+ * pelo token do proprio Apps Script - nao ha chave nem senha no codigo.
  *
- * Como ativar: veja apps-script/README.md (seção "Backup diário").
+ * Como ativar: veja apps-script/README.md (secao "Backup diario").
  */
 
-// ---------------- Configuração ----------------
+// ---------------- Configuracao ----------------
 
 var BACKUP_PROJETO = "interclasse-e2854";              // projectId do Firebase (js/firebase-config.js)
-var BACKUP_API_KEY = "AIzaSyDK-jn3ksbaJiKrI6b_i0Yl0OUzSzBX2AY"; // apiKey do Firebase (é pública)
+var BACKUP_API_KEY = "AIzaSyDK-jn3ksbaJiKrI6b_i0Yl0OUzSzBX2AY"; // apiKey do Firebase (e publica)
 var BACKUP_EMAIL_ADMIN = "rafaelnf93@gmail.com";      // igual ao MASTER_EMAIL do site
 var BACKUP_PASTA = "Interclasse Backups";
 var BACKUP_DIAS_PROTEGIDOS = 30;
-var BACKUP_HORA_DIARIA = 3;                           // 3h da manhã (fuso do projeto)
+var BACKUP_HORA_DIARIA = 3;                           // 3h da manha (fuso do projeto)
 
 var BACKUP_BASE = "https://firestore.googleapis.com/v1/projects/" + BACKUP_PROJETO +
   "/databases/(default)/documents";
 
 // ============================================================
-// FUNÇÕES PARA RODAR NO EDITOR (menu ▶ Executar)
+// FUNCOES PARA RODAR NO EDITOR (menu > Executar)
 // ============================================================
 
-// Rode UMA vez para ligar o backup diário (e autorizar o acesso).
+// Rode UMA vez para ligar o backup diario (e autorizar o acesso).
 function instalarBackupDiario() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === "backupDiario") ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger("backupDiario").timeBased().everyDays(1).atHour(BACKUP_HORA_DIARIA).create();
-  Logger.log("Backup diário ligado (todo dia por volta das " + BACKUP_HORA_DIARIA + "h).");
+  Logger.log("Backup di\u00e1rio ligado (todo dia por volta das " + BACKUP_HORA_DIARIA + "h).");
 }
 
 // Faz um backup na hora (bom para testar).
@@ -148,27 +148,27 @@ function backupAgora() {
   Logger.log("Backup salvo: " + r.nome + " (" + r.totalDocumentos + " documentos)");
 }
 
-// EMERGÊNCIA — restaurar sem o site: escreva o nome do arquivo (como aparece
-// na pasta "Interclasse Backups") e rode esta função. Antes de restaurar, o
+// EMERGENCIA - restaurar sem o site: escreva o nome do arquivo (como aparece
+// na pasta "Interclasse Backups") e rode esta funcao. Antes de restaurar, o
 // script salva um backup "antes-de-restaurar" do estado atual.
 function restaurarPeloEditor() {
   var NOME_DO_ARQUIVO = ""; // ex.: "backup-interclasse-2026-09-25_0300-diario.json"
-  if (!NOME_DO_ARQUIVO) throw new Error("Preencha NOME_DO_ARQUIVO dentro da função restaurarPeloEditor.");
+  if (!NOME_DO_ARQUIVO) throw new Error("Preencha NOME_DO_ARQUIVO dentro da fun\u00e7\u00e3o restaurarPeloEditor.");
   var it = obterPastaBackup_().getFilesByName(NOME_DO_ARQUIVO);
-  if (!it.hasNext()) throw new Error("Arquivo não encontrado na pasta " + BACKUP_PASTA + ".");
+  if (!it.hasNext()) throw new Error("Arquivo n\u00e3o encontrado na pasta " + BACKUP_PASTA + ".");
   var r = restaurar_(lerBackupDoArquivo_(it.next()), "tudo");
-  Logger.log("Restaurados " + r.restaurados + " documentos. Backup de segurança: " + r.backupSeguranca);
+  Logger.log("Restaurados " + r.restaurados + " documentos. Backup de seguran\u00e7a: " + r.backupSeguranca);
 }
 
-// Chamada pelo gatilho diário.
+// Chamada pelo gatilho diario.
 function backupDiario() {
   try {
     fazerBackup_("diario");
   } catch (err) {
     avisarPorEmail_(
-      "⚠️ Backup do Interclasse FALHOU",
-      "O backup diário do site não foi feito.\n\nErro: " + err + "\n\n" +
-      "Abra o Apps Script e rode a função backupAgora para ver o detalhe."
+      "\u26a0\ufe0f Backup do Interclasse FALHOU",
+      "O backup di\u00e1rio do site n\u00e3o foi feito.\n\nErro: " + err + "\n\n" +
+      "Abra o Apps Script e rode a fun\u00e7\u00e3o backupAgora para ver o detalhe."
     );
     throw err;
   }
@@ -179,7 +179,7 @@ function backupDiario() {
 // ENDPOINTS (chamados pelo Super Admin, via doPost em Codigo.gs)
 // ============================================================
 
-// Toda ação de backup exige o token de login da conta administradora.
+// Toda acao de backup exige o token de login da conta administradora.
 function rotearBackup_(dados) {
   verificarAdmin_(dados.idToken);
   var acao = dados.acao;
@@ -201,7 +201,7 @@ function rotearBackup_(dados) {
     return { ok: true, resumo: resumoDetalhado_(lerBackupDoArquivo_(arquivoDeBackup_(dados.id))) };
   }
   if (acao === "backupRestaurar") {
-    if (dados.confirmacao !== "RESTAURAR") throw new Error("Restauração não confirmada.");
+    if (dados.confirmacao !== "RESTAURAR") throw new Error("Restaura\u00e7\u00e3o n\u00e3o confirmada.");
     var backup = dados.conteudo
       ? validarBackup_(JSON.parse(dados.conteudo))
       : lerBackupDoArquivo_(arquivoDeBackup_(dados.id));
@@ -209,15 +209,15 @@ function rotearBackup_(dados) {
     return { ok: true, restaurados: res.restaurados, backupSeguranca: res.backupSeguranca };
   }
   if (acao === "backupExcluirAntigos") {
-    if (dados.confirmacao !== "EXCLUIR") throw new Error("Exclusão não confirmada.");
+    if (dados.confirmacao !== "EXCLUIR") throw new Error("Exclus\u00e3o n\u00e3o confirmada.");
     return excluirAntigos_(dados.ids || []);
   }
-  throw new Error("Ação de backup desconhecida: " + acao);
+  throw new Error("A\u00e7\u00e3o de backup desconhecida: " + acao);
 }
 
 // Confere o token do Firebase Authentication e o e-mail da conta.
 function verificarAdmin_(idToken) {
-  if (!idToken) throw new Error("Faça login como administrador.");
+  if (!idToken) throw new Error("Fa\u00e7a login como administrador.");
   var r = UrlFetchApp.fetch(
     "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + BACKUP_API_KEY,
     { method: "post", contentType: "application/json", payload: JSON.stringify({ idToken: idToken }), muteHttpExceptions: true }
@@ -226,7 +226,7 @@ function verificarAdmin_(idToken) {
   var usuario = dados.users && dados.users[0];
   if (r.getResponseCode() !== 200 || !usuario ||
       String(usuario.email || "").toLowerCase() !== BACKUP_EMAIL_ADMIN.toLowerCase()) {
-    throw new Error("Acesso negado: só a conta administradora mexe nos backups.");
+    throw new Error("Acesso negado: s\u00f3 a conta administradora mexe nos backups.");
   }
 }
 
@@ -259,11 +259,11 @@ function fazerBackup_(tipo) {
   var nome = "backup-interclasse-" + Utilities.formatDate(agora, fuso, "yyyy-MM-dd_HHmm") + "-" + tipo + ".json";
   var blob = Utilities.newBlob(JSON.stringify(backup), "application/json", nome);
   var arquivo = obterPastaBackup_().createFile(blob);
-  arquivo.setDescription(tipo + " · " + documentos.length + " documentos");
+  arquivo.setDescription(tipo + " \u00b7 " + documentos.length + " documentos");
   return { nome: nome, id: arquivo.getId(), totalDocumentos: documentos.length };
 }
 
-// Lê recursivamente as coleções a partir de `pai` ("" = raiz).
+// Le recursivamente as colecoes a partir de `pai` ("" = raiz).
 function lerColecoes_(pai, profundidade, saida) {
   if (profundidade > 6) return;
   listarIdsDeColecoes_(pai).forEach(function (colecao) {
@@ -275,11 +275,11 @@ function lerColecoes_(pai, profundidade, saida) {
       var r = firestore_("get", url);
       (r.documents || []).forEach(function (doc) {
         var caminho = doc.name.split("/documents/")[1];
-        // Documento "fantasma" (só existe por ter subcoleção): não tem campos.
+        // Documento "fantasma" (so existe por ter subcolecao): nao tem campos.
         if (doc.fields || doc.createTime) {
           saida.push({ caminho: caminho, campos: doc.fields || {}, atualizadoEm: doc.updateTime || "" });
         }
-        // Cobranças não têm subcoleções: pular poupa centenas de chamadas.
+        // Cobrancas nao tem subcolecoes: pular poupa centenas de chamadas.
         if (colecao !== "cobrancas") lerColecoes_(caminho, profundidade + 1, saida);
       });
       token = r.nextPageToken || "";
@@ -299,9 +299,9 @@ function listarIdsDeColecoes_(pai) {
   return ids;
 }
 
-// Chamada à API REST do Firestore com a conta dona do script. A cota vai para
-// o projeto do Firebase (x-goog-user-project); se a conta não puder usar esse
-// cabeçalho, tenta de novo sem ele.
+// Chamada a API REST do Firestore com a conta dona do script. A cota vai para
+// o projeto do Firebase (x-goog-user-project); se a conta nao puder usar esse
+// cabecalho, tenta de novo sem ele.
 function firestore_(metodo, url, corpo, semProjeto) {
   var headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
   if (!semProjeto) headers["x-goog-user-project"] = BACKUP_PROJETO;
@@ -351,7 +351,7 @@ function arquivoDeBackup_(id) {
   while (pais.hasNext()) {
     if (pais.next().getName() === BACKUP_PASTA) return f;
   }
-  throw new Error("Esse arquivo não é um backup do Interclasse.");
+  throw new Error("Esse arquivo n\u00e3o \u00e9 um backup do Interclasse.");
 }
 
 function listarBackups_() {
@@ -375,8 +375,8 @@ function listarBackups_() {
   return { ok: true, diarioAtivo: diarioAtivo, diasProtegidos: BACKUP_DIAS_PROTEGIDOS, backups: backups };
 }
 
-// Só apaga (manda para a lixeira) backups com MAIS de 30 dias, e só os ids
-// que o administrador confirmou. Os do histórico protegido são recusados.
+// So apaga (manda para a lixeira) backups com MAIS de 30 dias, e so os ids
+// que o administrador confirmou. Os do historico protegido sao recusados.
 function excluirAntigos_(ids) {
   var excluidos = [];
   var recusados = [];
@@ -392,8 +392,8 @@ function excluirAntigos_(ids) {
   return { ok: true, excluidos: excluidos, recusados: recusados };
 }
 
-// E-mail (no máximo 1 por semana) quando há backups além dos 30 dias
-// esperando a confirmação do administrador.
+// E-mail (no maximo 1 por semana) quando ha backups alem dos 30 dias
+// esperando a confirmacao do administrador.
 function avisarBackupsAntigos_() {
   var antigos = arquivosDeBackup_().filter(function (f) { return idadeEmDias_(f) > BACKUP_DIAS_PROTEGIDOS; });
   if (antigos.length === 0) return;
@@ -402,9 +402,9 @@ function avisarBackupsAntigos_() {
   if (Date.now() - ultimo < 7 * 86400000) return;
   avisarPorEmail_(
     "Interclasse: " + antigos.length + " backup(s) com mais de " + BACKUP_DIAS_PROTEGIDOS + " dias",
-    "Há " + antigos.length + " backup(s) com mais de " + BACKUP_DIAS_PROTEGIDOS + " dias na pasta \"" + BACKUP_PASTA + "\".\n\n" +
-    "Eles NÃO foram apagados. Se quiser liberar espaço, confirme a exclusão no Super Admin → aba Backup.\n" +
-    "Se não fizer nada, eles continuam guardados."
+    "H\u00e1 " + antigos.length + " backup(s) com mais de " + BACKUP_DIAS_PROTEGIDOS + " dias na pasta \"" + BACKUP_PASTA + "\".\n\n" +
+    "Eles N\u00c3O foram apagados. Se quiser liberar espa\u00e7o, confirme a exclus\u00e3o no Super Admin \u2192 aba Backup.\n" +
+    "Se n\u00e3o fizer nada, eles continuam guardados."
   );
   props.setProperty("avisoAntigosEm", String(Date.now()));
 }
@@ -413,7 +413,7 @@ function avisarPorEmail_(assunto, texto) {
   try {
     MailApp.sendEmail(Session.getEffectiveUser().getEmail() || BACKUP_EMAIL_ADMIN, assunto, texto);
   } catch (e) {
-    Logger.log("Não foi possível enviar o e-mail de aviso: " + e);
+    Logger.log("N\u00e3o foi poss\u00edvel enviar o e-mail de aviso: " + e);
   }
 }
 
@@ -427,12 +427,12 @@ function lerBackupDoArquivo_(arquivo) {
 
 function validarBackup_(b) {
   if (!b || b.formato !== "interclasse-backup" || !Array.isArray(b.documentos)) {
-    throw new Error("Arquivo não é um backup do Interclasse.");
+    throw new Error("Arquivo n\u00e3o \u00e9 um backup do Interclasse.");
   }
   return b;
 }
 
-// O que tem no backup: contagem por coleção e a lista de times.
+// O que tem no backup: contagem por colecao e a lista de times.
 function resumoDetalhado_(b) {
   var alunosPorTime = {};
   var times = [];
@@ -455,8 +455,8 @@ function valorTexto_(v) {
 }
 
 // Grava de volta os documentos do backup (sobrescreve cada um). Documentos
-// criados depois do backup NÃO são apagados. Antes de tudo, salva um backup
-// "antes-de-restaurar" do estado atual — dá para desfazer a restauração.
+// criados depois do backup NAO sao apagados. Antes de tudo, salva um backup
+// "antes-de-restaurar" do estado atual - da para desfazer a restauracao.
 //   escopo: "tudo" | "time:<id>"
 function restaurar_(backup, escopo) {
   var docs = backup.documentos;
@@ -465,9 +465,9 @@ function restaurar_(backup, escopo) {
     docs = docs.filter(function (d) {
       return d.caminho === "turmas/" + id || d.caminho.indexOf("turmas/" + id + "/") === 0;
     });
-    if (docs.length === 0) throw new Error("Esse time não existe no backup.");
+    if (docs.length === 0) throw new Error("Esse time n\u00e3o existe no backup.");
   } else if (escopo !== "tudo") {
-    throw new Error("Escopo de restauração inválido.");
+    throw new Error("Escopo de restaura\u00e7\u00e3o inv\u00e1lido.");
   }
 
   var seguranca = fazerBackup_("antes-de-restaurar");
@@ -484,27 +484,27 @@ function restaurar_(backup, escopo) {
 
 // ============================================================================
 // ============================================================================
-// GERAÇÃO NA NUVEM (folhas de impressão)
+// GERACAO NA NUVEM (folhas de impressao)
 // ============================================================================
 // ============================================================================
 //
-// O site cria um pedido (Firestore, coleção "trabalhos") e chama a ação
+// O site cria um pedido (Firestore, colecao "trabalhos") e chama a acao
 // "nuvem": aqui o pedido vira um disparo do GitHub Actions (workflow
-// gerar-folhas.yml). A máquina do GitHub gera as folhas e, para cada arquivo,
+// gerar-folhas.yml). A maquina do GitHub gera as folhas e, para cada arquivo,
 // pede "sessaoUpload": este script cria a pasta
-// "Interclasse Camisetas/Impressão/<lote>" e abre um envio retomável no Drive;
-// a máquina manda os bytes direto ao Google (arquivos grandes demais para
+// "Interclasse Camisetas/Impressao/<lote>" e abre um envio retomavel no Drive;
+// a maquina manda os bytes direto ao Google (arquivos grandes demais para
 // passar por aqui). "sessaoUpload" e "compartilhar" exigem o WORKER_TOKEN.
 //
-// Propriedades do script (engrenagem → Propriedades do script):
-//   GITHUB_TOKEN  chave do GitHub (fine-grained, só o repositório, Actions: leitura e escrita)
-//   WORKER_TOKEN  senha da máquina — igual ao segredo WORKER_TOKEN do GitHub
-//   GITHUB_REPO   (opcional) dono/repositório — padrão rafanunesran/interclasse
-//   GITHUB_REF    (opcional) branch — padrão main
-// As chaves ficam SÓ nas Propriedades, nunca neste código.
+// Propriedades do script (engrenagem -> Propriedades do script):
+//   GITHUB_TOKEN  chave do GitHub (fine-grained, so o repositorio, Actions: leitura e escrita)
+//   WORKER_TOKEN  senha da maquina - igual ao segredo WORKER_TOKEN do GitHub
+//   GITHUB_REPO   (opcional) dono/repositorio - padrao rafanunesran/interclasse
+//   GITHUB_REF    (opcional) branch - padrao main
+// As chaves ficam SO nas Propriedades, nunca neste codigo.
 //
-// Depois de colar: rode testarNuvem (▶ Executar) e reimplante
-// (Implantar → Gerenciar implantações → Editar → Nova versão).
+// Depois de colar: rode testarNuvem (> Executar) e reimplante
+// (Implantar -> Gerenciar implantacoes -> Editar -> Nova versao).
 
 function propsNuvem_() {
   var p = PropertiesService.getScriptProperties();
@@ -524,14 +524,14 @@ function cabecalhosGithub_(token) {
   };
 }
 
-// Pedido do site: liga a máquina do GitHub para o trabalho informado.
+// Pedido do site: liga a maquina do GitHub para o trabalho informado.
 function dispararNuvem_(dados) {
   try {
     var id = String(dados.trabalhoId || "");
-    if (!/^[A-Za-z0-9_-]{6,60}$/.test(id)) return { ok: false, erro: "Trabalho inválido." };
+    if (!/^[A-Za-z0-9_-]{6,60}$/.test(id)) return { ok: false, erro: "Trabalho inv\u00e1lido." };
     var cfg = propsNuvem_();
     if (!cfg.githubToken) {
-      return { ok: false, erro: "Falta a propriedade GITHUB_TOKEN no Apps Script (engrenagem → Propriedades do script)." };
+      return { ok: false, erro: "Falta a propriedade GITHUB_TOKEN no Apps Script (engrenagem \u2192 Propriedades do script)." };
     }
     var resp = UrlFetchApp.fetch(
       "https://api.github.com/repos/" + cfg.repo + "/actions/workflows/gerar-folhas.yml/dispatches", {
@@ -559,17 +559,17 @@ function subpasta_(pai, nome) {
 function exigirWorker_(dados) {
   var cfg = propsNuvem_();
   if (!cfg.workerToken || String(dados.token || "") !== cfg.workerToken) {
-    throw new Error("Token da máquina inválido (confira o WORKER_TOKEN aqui e no GitHub).");
+    throw new Error("Token da m\u00e1quina inv\u00e1lido (confira o WORKER_TOKEN aqui e no GitHub).");
   }
 }
 
-// Pedido da máquina: abre o envio de um arquivo na pasta do lote.
+// Pedido da maquina: abre o envio de um arquivo na pasta do lote.
 function sessaoUpload_(dados) {
   try {
     exigirWorker_(dados);
     var lote = String(dados.lote || "lote").replace(/[\\/]/g, "-").slice(0, 120);
-    var pasta = subpasta_(subpasta_(obterPasta_(), "Impressão"), lote);
-    // Visível por link: as prévias em PNG aparecem no site.
+    var pasta = subpasta_(subpasta_(obterPasta_(), "Impress\u00e3o"), lote);
+    // Visivel por link: as previas em PNG aparecem no site.
     pasta.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     var mime = String(dados.mimeType || "application/octet-stream");
     var cab = { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "X-Upload-Content-Type": mime };
@@ -586,14 +586,14 @@ function sessaoUpload_(dados) {
     }
     var h = resp.getAllHeaders();
     var url = h.Location || h.location;
-    if (!url) return { ok: false, erro: "O Drive não devolveu o endereço do envio." };
+    if (!url) return { ok: false, erro: "O Drive n\u00e3o devolveu o endere\u00e7o do envio." };
     return { ok: true, uploadUrl: url, pastaId: pasta.getId(), pastaUrl: pasta.getUrl() };
   } catch (err) {
     return { ok: false, erro: String(err) };
   }
 }
 
-// Pedido da máquina: deixa os arquivos (prévias) visíveis por link.
+// Pedido da maquina: deixa os arquivos (previas) visiveis por link.
 function compartilhar_(dados) {
   try {
     exigirWorker_(dados);
@@ -606,14 +606,14 @@ function compartilhar_(dados) {
   }
 }
 
-// Rode no editor (▶ Executar → testarNuvem) depois de criar as Propriedades.
-// Não dispara nada: só confere se as chaves estão lá e se o GitHub aceita a
-// chave. O resultado aparece no "Registro de execução".
+// Rode no editor (> Executar -> testarNuvem) depois de criar as Propriedades.
+// Nao dispara nada: so confere se as chaves estao la e se o GitHub aceita a
+// chave. O resultado aparece no "Registro de execucao".
 function testarNuvem() {
   var cfg = propsNuvem_();
   Logger.log("GITHUB_TOKEN: " + (cfg.githubToken ? "ok" : "FALTANDO"));
   Logger.log("WORKER_TOKEN: " + (cfg.workerToken ? "ok (" + cfg.workerToken.length + " caracteres)" : "FALTANDO"));
-  Logger.log("Repositório: " + cfg.repo + " · branch: " + cfg.ref);
+  Logger.log("Reposit\u00f3rio: " + cfg.repo + " \u00b7 branch: " + cfg.ref);
   if (!cfg.githubToken) return;
   var resp = UrlFetchApp.fetch("https://api.github.com/repos/" + cfg.repo + "/actions/workflows", {
     headers: cabecalhosGithub_(cfg.githubToken),
@@ -621,13 +621,13 @@ function testarNuvem() {
   });
   var codigo = resp.getResponseCode();
   if (codigo !== 200) {
-    Logger.log("GitHub: ERRO " + codigo + " — confira a chave (repositório certo e Actions: Read and write). " +
+    Logger.log("GitHub: ERRO " + codigo + " \u2014 confira a chave (reposit\u00f3rio certo e Actions: Read and write). " +
       resp.getContentText().slice(0, 200));
     return;
   }
   var nomes = (JSON.parse(resp.getContentText()).workflows || []).map(function (w) { return w.path; });
   Logger.log("GitHub: chave ok. Workflows: " + nomes.join(", "));
   Logger.log(nomes.indexOf(".github/workflows/gerar-folhas.yml") >= 0
-    ? "gerar-folhas.yml encontrado — tudo pronto."
-    : "gerar-folhas.yml ainda não está no repositório (normal até a próxima atualização do site).");
+    ? "gerar-folhas.yml encontrado \u2014 tudo pronto."
+    : "gerar-folhas.yml ainda n\u00e3o est\u00e1 no reposit\u00f3rio (normal at\u00e9 a pr\u00f3xima atualiza\u00e7\u00e3o do site).");
 }
