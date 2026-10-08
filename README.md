@@ -832,6 +832,13 @@ Downloads, vêm num .zip por arquivo.
 Nesse modo o EPS é sempre "Compatível com o Corel". Esse formato repete a arte a cada peça, então o
 arquivo fica grande: o diálogo sugere 300 dpi e avisa quando passa de ~1,5 GB.
 
+**Cópia no Google Drive:** com **Guardar uma cópia no Google Drive** marcada (vem marcada), cada
+arquivo gerado aqui também é enviado inteiro para `Interclasse Camisetas/Impressão/<lote> - <data
+hora>`, além de ser baixado ou salvo na pasta. Os PNGs do modo colunas vão soltos. O card do lote
+mostra **💾 Cópia no Drive** com os links e a pasta, para baixar depois. Se a cópia falhar, aparece um
+aviso e o arquivo do computador continua valendo. Para isso, o Apps Script precisa estar na versão
+`2026-10-09-copia` ou mais nova.
+
 **Onde os arquivos ficam:** no Chrome e no Edge, o diálogo da geração tem **Salvar em → Escolher
 pasta…**. Os arquivos (e o PDF da costureira) passam a ser gravados direto nessa pasta, e com a
 opção marcada, numa subpasta com o nome do lote. A pasta fica lembrada neste computador; o navegador

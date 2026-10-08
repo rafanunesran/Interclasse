@@ -108,7 +108,7 @@ function htmlTrabalhoNuvem(t) {
   const op = t.op || {};
   const resumoOp = [`${t.nCamisetas || "?"} camiseta(s)`, (op.formato || "pdf").toUpperCase(), op.juntar ? "todos juntos" : "um por time", `${op.dpi || 600} dpi`].join(" · ");
   return `<div class="nuvem-trabalho st-${escAttr(st.replace(/\s/g, "-"))}" data-trabalho="${escAttr(t.id)}">
-    <div class="nuvem-trabalho-topo"><strong>☁️ ${escapeHtmlAdmin(ROTULO_STATUS_NUVEM[st] || st)}</strong>
+    <div class="nuvem-trabalho-topo"><strong>${t.origem === "local" ? "💾 Cópia no Drive" : "☁️ " + escapeHtmlAdmin(ROTULO_STATUS_NUVEM[st] || st)}</strong>
       <span class="pix-ajuda">${fmtDataHora(t.criadoEmMs)} · ${escapeHtmlAdmin(resumoOp)}</span>
       ${st === "rodando" ? "" : `<button type="button" class="secundario botao-remover" data-remover-trabalho="${escAttr(t.id)}" title="Tirar da lista (os arquivos no Drive continuam)">Remover</button>`}</div>
     ${corpo}${links ? `<p class="nuvem-links">${links}</p>` : ""}
@@ -121,7 +121,7 @@ function preencherTrabalhosDaLeva(el) {
   const levaId = el.dataset.nuvemLeva;
   const lista = Object.values(trabalhosNuvem).filter((t) => t.levaId === levaId)
     .sort((a, b) => (b.criadoEmMs || 0) - (a.criadoEmMs || 0)).slice(0, 5);
-  el.innerHTML = lista.length ? `<h4 class="nuvem-titulo">Geração na nuvem</h4>${lista.map(htmlTrabalhoNuvem).join("")}` : "";
+  el.innerHTML = lista.length ? `<h4 class="nuvem-titulo">Arquivos no Google Drive</h4>${lista.map(htmlTrabalhoNuvem).join("")}` : "";
   el.querySelectorAll("[data-remover-trabalho]").forEach((b) => {
     b.onclick = async () => {
       if (!confirm("Tirar este registro da lista? Os arquivos no Google Drive continuam.")) return;
@@ -197,4 +197,115 @@ async function executarTrabalhoNuvem(id, runUrl) {
   const fim = lerTela() || { etapa: "", avisos: [] };
   await ref.update({ etapa: "Enviando os arquivos para o Google Drive…", pct: 0.96, avisos: fim.avisos });
   return { avisos: fim.avisos, resumo: fim.etapa, nomeBase: t.nomeBase || "lote", larguraCm: (t.op || {}).larguraCm || 150 };
+}
+
+// ---------------- Cópia no Drive do que foi gerado aqui ----------------
+// "Gerar aqui" com "Guardar uma cópia no Google Drive": o arquivo vai inteiro
+// para Impressão/<lote> (envio retomável). O Apps Script abre a sessão (só o
+// admin, pelo token de login); os bytes vão direto ao Google em pedaços de
+// 16 MB — e, se o navegador bloquear, cada pedaço passa pelo Apps Script.
+
+const PEDACO_COPIA = 16 * 1024 * 1024; // múltiplo de 256 KB
+
+async function chamarScriptCopia(corpo) {
+  let ultimo;
+  for (let t = 1; t <= 3; t++) {
+    try {
+      const r = await fetch(driveScriptUrl, { method: "POST", body: JSON.stringify(corpo) });
+      const dados = await r.json();
+      if (dados && dados.ok) return dados;
+      ultimo = new Error((dados && dados.erro) || "o Apps Script não respondeu");
+      if (/login|negado|inv[aá]lid/i.test(ultimo.message)) break;
+    } catch (e) {
+      ultimo = e;
+    }
+    await new Promise((ok) => setTimeout(ok, 1500 * t));
+  }
+  throw ultimo;
+}
+
+function base64DoBlob(blob) {
+  return new Promise((ok, erro) => {
+    const l = new FileReader();
+    l.onload = () => ok(String(l.result).split(",")[1] || "");
+    l.onerror = () => erro(l.error);
+    l.readAsDataURL(blob);
+  });
+}
+
+// Devolve { id, pastaUrl }. `aoProgresso(fração)` é opcional.
+async function guardarCopiaNoDrive(nome, blob, lote, aoProgresso) {
+  if (!driveScriptUrl) throw new Error("URL do Apps Script não configurada.");
+  const idToken = await auth.currentUser.getIdToken();
+  const mime = blob.type || (/\.pdf$/i.test(nome) ? "application/pdf" : /\.png$/i.test(nome) ? "image/png"
+    : /\.zip$/i.test(nome) ? "application/zip" : "application/postscript");
+  const s = await chamarScriptCopia({ acao: "copiaSessao", idToken, nome, mimeType: mime, tamanho: blob.size, lote, origem: location.origin });
+  const total = blob.size;
+  let direto = true;
+  for (let inicio = 0; ;) {
+    const fim = Math.min(total, inicio + PEDACO_COPIA);
+    const pedaco = blob.slice(inicio, fim);
+    let res = null;
+    for (let t = 1; t <= 3 && !res; t++) {
+      try {
+        if (direto) {
+          const r = await fetch(s.uploadUrl, { method: "PUT", body: pedaco, headers: { "Content-Range": `bytes ${inicio}-${fim - 1}/${total}` } });
+          if (r.status === 308) res = { status: 308 };
+          else if (r.ok) res = { status: r.status, id: (await r.json()).id };
+          else if (r.status < 500) throw new Error(`Drive recusou (${r.status})`);
+        } else {
+          res = await chamarScriptCopia({ acao: "copiaPedaco", idToken, uploadUrl: s.uploadUrl, inicio, total, dataBase64: await base64DoBlob(pedaco) });
+        }
+      } catch (e) {
+        // Bloqueado pelo navegador (CORS/rede): segue pelo Apps Script.
+        if (direto && e instanceof TypeError) { direto = false; t--; continue; }
+        if (t >= 3) throw e;
+        await new Promise((ok) => setTimeout(ok, 2000 * t));
+      }
+    }
+    if (!res) throw new Error("o Drive não respondeu");
+    if (aoProgresso) aoProgresso(fim / (total || 1));
+    if (res.status !== 308) return { id: res.id, pastaUrl: s.pastaUrl };
+    inicio = fim;
+  }
+}
+
+// Registro da geração local no card do lote (mesmo painel da nuvem).
+// criarRegistroCopia(...) devolve { guardar(nome, blob, etapa, previa) } —
+// cada arquivo copiado entra na lista; falha vira aviso e não interrompe.
+function criarRegistroCopia(levaId, nomeBase, op, nCamisetas, prog) {
+  const d = new Date();
+  const z = (n) => String(n).padStart(2, "0");
+  const lote = `${nomeBase} - ${z(d.getDate())}-${z(d.getMonth() + 1)}-${d.getFullYear()} ${z(d.getHours())}h${z(d.getMinutes())}`;
+  const id = novoIdTrabalho();
+  const ref = db.collection(COL_TRABALHOS).doc(id);
+  const reg = { arquivos: [], previas: [], pastaUrl: "" };
+  let criado = null;
+  const salvarRegistro = async () => {
+    const dados = { ...reg, status: "pronto", origem: "local", pct: 1, etapa: `Cópia no Drive: pasta "Impressão/${lote}".`, fimMs: Date.now() };
+    try {
+      if (!criado) criado = ref.set({ levaId, nomeBase, nCamisetas, op, criadoEmMs: Date.now(), avisos: [], ...dados });
+      else { await criado; await ref.update(dados); }
+      await criado;
+    } catch (e) { console.warn("Registro da cópia:", e); }
+  };
+  const self = {
+    prog,
+    async guardar(nome, blob, etapa, previa) {
+      try {
+        const r = await guardarCopiaNoDrive(nome, blob, lote,
+          (f) => etapa && etapa(`guardando ${nome} no Drive… ${Math.round(f * 100)}%`));
+        if (r.pastaUrl) reg.pastaUrl = r.pastaUrl;
+        if (previa) reg.previas.push({ nome, id: r.id, rotulo: nome.replace(/\.png$/i, "") });
+        else reg.arquivos.push({ nome, id: r.id, bytes: blob.size });
+        await salvarRegistro();
+        return r;
+      } catch (e) {
+        console.error(e);
+        if (self.prog) self.prog.aviso(`Cópia de ${nome} no Drive não foi feita: ${e.message || e}. O arquivo do computador continua valendo.`);
+        return null;
+      }
+    }
+  };
+  return self;
 }

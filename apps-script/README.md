@@ -125,3 +125,10 @@ máquina gera as folhas e as salva em `Interclasse Camisetas/Impressão/<lote>` 
 4. **Implantar → Gerenciar implantações → ✏️ Editar → Versão: Nova versão → Implantar.** A URL
    continua a mesma.
 5. Abra a URL `/exec` no navegador: a resposta deve mostrar `"versao": "2026-10-08-nuvem"`.
+
+## Cópia no Drive do que é gerado no computador
+
+Com a caixa **Guardar uma cópia no Google Drive** (diálogo das folhas), o site usa as ações
+`copiaSessao` e `copiaPedaco`. Só a conta administradora pode usar, porque o site manda o token de
+login, como no backup. O arquivo vai inteiro para a pasta `Impressão/<lote>`. Depois de colar o
+`Codigo.gs` novo, reimplante (Nova versão).

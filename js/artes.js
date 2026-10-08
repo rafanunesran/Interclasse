@@ -3909,18 +3909,26 @@ function baixarBlob(nome, blob) {
 
 // Arquivo gerado: na pasta escolhida (Chrome/Edge, js/pasta-saida.js) ou,
 // sem ela, nos Downloads. Devolve onde ficou ("Folhas/leva-3" ou "").
-async function salvarArquivoGerado(destino, nome, blob, prog) {
+// Com "Guardar uma cópia no Google Drive" (copiaDriveAtual, js/nuvem.js),
+// o arquivo também vai para o Drive. opcoes: { previa, semCopia, etapa }.
+let copiaDriveAtual = null;
+async function salvarArquivoGerado(destino, nome, blob, prog, opcoes) {
+  const o = opcoes || {};
+  let onde = "";
+  let salvo = false;
   if (destino) {
     try {
       await PastaSaida.salvar(destino.handle, destino.subpasta, nome, blob);
-      return destino.rotulo;
+      onde = destino.rotulo;
+      salvo = true;
     } catch (e) {
       console.error(e);
       if (prog) prog.aviso(`Não consegui salvar ${nome} na pasta ${destino.rotulo} (${e.message || e}); baixei em Downloads.`);
     }
   }
-  baixarBlob(nome, blob);
-  return "";
+  if (!salvo) baixarBlob(nome, blob);
+  if (copiaDriveAtual && !o.semCopia) await copiaDriveAtual.guardar(nome, blob, o.etapa, o.previa);
+  return onde;
 }
 
 // Linha "Salvar em" dos diálogos de geração. No Firefox (sem a API), só a
@@ -3997,6 +4005,7 @@ function perguntarOpcoesEps(resumo, nomeLote) {
             <select name="formato"><option value="pdf">PDF (abre no Corel sem erros; depois Salvar como → CDR)</option><option value="eps">EPS</option></select></label>
           <label class="checkbox-inline" data-so-eps><input type="checkbox" name="corel" ${f.corel !== false ? "checked" : ""} /> Compatível com o Corel (EPS mais simples; a arte que se repete entra no arquivo a cada vez — fica maior)</label>
           ${htmlPastaSaida()}
+          <label class="checkbox-inline"><input type="checkbox" name="copiaDrive" ${f.copiaDrive !== false ? "checked" : ""} /> Guardar uma cópia no Google Drive (para baixar depois — fica no card do lote)</label>
           <div class="eps-botoes-gerar">
             <button type="submit" class="primario">Gerar aqui</button>
             <button type="submit" class="secundario" name="nuvem" value="1" title="Roda numa máquina na nuvem (GitHub Actions) e salva os arquivos e as prévias em PNG no seu Google Drive — não trava este computador">☁️ Gerar na nuvem (salva no Drive)</button>
@@ -4053,6 +4062,7 @@ function perguntarOpcoesEps(resumo, nomeLote) {
         etiqueta: form.etiqueta.checked,
         corel: form.juntar.value === "colunas" ? true : form.corel.checked,
         formato: form.juntar.value === "colunas" ? "eps" : form.formato.value,
+        copiaDrive: form.copiaDrive.checked,
         juntar: form.juntar.value === "colunas" ? "colunas" : form.juntar.value === "1",
         alturaColunaCm: Math.max(50, Number(form.alturaColunaCm.value) || 700),
         colunasPorArquivo: Math.max(1, Math.round(Number(form.colunasPorArquivo.value) || 10)),
@@ -4211,7 +4221,7 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
         saida = { nome: base + "-eps.zip", blob: await zip.generateAsync({ type: "blob", compression: "STORE" }) };
       }
     }
-    saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog);
+    saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog, { etapa: (t) => etapaFim(t) });
     }
     // Cada time: pronto (juntado); o arquivo aparece no último, com "Baixar de novo".
     prontos.forEach((i) => prog.time(i, "pronto", i === ultimo ? saida : "juntado"));
@@ -4261,7 +4271,7 @@ async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) 
     await esperarTela();
     const blob = await arquivoDaFolha(folha, rec, `Todos os times - colunas ${n0 + 1} a ${n0 + g.length}`, "eps", { corel: true }, (t) => etapaFim(t));
     saida = { nome, blob };
-    saida.onde = await salvarArquivoGerado(destino, nome, blob, prog);
+    saida.onde = await salvarArquivoGerado(destino, nome, blob, prog, { etapa: (t) => etapaFim(t) });
     if (saida.onde) ondeSalvou = saida.onde;
     // PNG de cada coluna (conferência). Nos Downloads, um .zip por arquivo.
     const pngs = [];
@@ -4277,13 +4287,15 @@ async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) 
     }
     nPng += pngs.length;
     if (destino) {
-      for (const p of pngs) await salvarArquivoGerado(destino, p.nome, p.blob, prog);
+      for (const p of pngs) await salvarArquivoGerado(destino, p.nome, p.blob, prog, { previa: true, etapa: (t) => etapaFim(t) });
     } else if (pngs.length) {
       const JSZip = await carregarLib("JSZip");
       const zip = new JSZip();
       pngs.forEach((p) => zip.file(p.nome, p.blob));
       await salvarArquivoGerado(null, `${base}${multi ? `-arquivo${gi + 1}` : ""}-conferencia-png.zip`,
-        await zip.generateAsync({ type: "blob", compression: "STORE" }), prog);
+        await zip.generateAsync({ type: "blob", compression: "STORE" }), prog, { semCopia: true });
+      // No Drive, os PNGs vão soltos (aparecem como prévias no card do lote).
+      if (copiaDriveAtual) for (const p of pngs) await copiaDriveAtual.guardar(p.nome, p.blob, (t) => etapaFim(t), true);
     }
   }
   return {
@@ -4456,6 +4468,14 @@ async function gravarMetragemDaLeva(levaId, porModelo, larguraCm) {
 // `opPronta`: opções já escolhidas (geração na nuvem, js/nuvem.js) — sem
 // diálogo; os arquivos saem como downloads.
 async function gerarFolhasEps(linhas, nomeBase, levaId, opPronta) {
+  try {
+    return await gerarFolhasEpsInterno(linhas, nomeBase, levaId, opPronta);
+  } finally {
+    copiaDriveAtual = null;
+  }
+}
+
+async function gerarFolhasEpsInterno(linhas, nomeBase, levaId, opPronta) {
   if (!driveScriptUrl) {
     alert("Configure a URL do Apps Script na aba Configurações (é de lá que vêm os arquivos).");
     return;
@@ -4480,6 +4500,9 @@ async function gerarFolhasEps(linhas, nomeBase, levaId, opPronta) {
     await pedirGeracaoNaNuvem(linhas, nomeBase, levaId, op);
     return;
   }
+  // Cópia no Drive (só gerando aqui; a máquina da nuvem já envia ao Drive).
+  copiaDriveAtual = !opPronta && op.copiaDrive && typeof criarRegistroCopia === "function"
+    ? criarRegistroCopia(levaId, nomeBase, op, linhas.length, null) : null;
 
   // Um arquivo por time, baixado assim que fica pronto (não junta tudo num
   // .zip no fim — mais leve para baixar e para a memória do navegador).
@@ -4490,12 +4513,14 @@ async function gerarFolhasEps(linhas, nomeBase, levaId, opPronta) {
     const progJ = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
       { dica: "Os times são carregados um a um; no fim sai um arquivo com todos juntos." });
     avisos.forEach((a) => progJ.aviso(a));
+    if (copiaDriveAtual) copiaDriveAtual.prog = progJ;
     await gerarFolhasJuntas(lista, op, destino, progJ, nomeBase, levaId);
     return;
   }
   const prog = abrirProgressoEps(lista.map((x) => ({ rotulo: x.rotulo, n: x.n })),
     destino ? { dica: `Cada time é salvo em ${destino.rotulo} assim que fica pronto.` } : undefined);
   avisos.forEach((a) => prog.aviso(a));
+  if (copiaDriveAtual) copiaDriveAtual.prog = prog;
   let gerados = 0;
   let ondeSalvou = "";
   const metragem = {}; // modelo → metros lineares das folhas geradas
@@ -4570,7 +4595,7 @@ async function gerarFolhasEps(linhas, nomeBase, levaId, opPronta) {
           blob: await zip.generateAsync({ type: "blob", compression: "STORE" })
         };
       }
-      saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog);
+      saida.onde = await salvarArquivoGerado(destino, saida.nome, saida.blob, prog, { etapa: (t) => etapa(t) });
       if (saida.onde) ondeSalvou = saida.onde;
       gerados++;
       prog.time(idx, "pronto", saida);

@@ -14,7 +14,7 @@
 
 // Versao deste codigo. Abrindo a URL do app da Web (/exec) no navegador, ela
 // aparece na resposta - e o jeito de conferir se a implantacao esta atualizada.
-var VERSAO_SCRIPT = "2026-10-08-nuvem";
+var VERSAO_SCRIPT = "2026-10-09-copia";
 
 // Nome da pasta no seu Drive onde as imagens ficam (criada automaticamente).
 var NOME_PASTA = "Interclasse Camisetas";
@@ -28,6 +28,9 @@ function doPost(e) {
     if (dados.acao === "nuvem") return json_(dispararNuvem_(dados));
     if (dados.acao === "sessaoUpload") return json_(sessaoUpload_(dados));
     if (dados.acao === "compartilhar") return json_(compartilhar_(dados));
+    // Copia no Drive do que foi gerado no computador (js/nuvem.js).
+    if (dados.acao === "copiaSessao") return json_(copiaSessao_(dados));
+    if (dados.acao === "copiaPedaco") return json_(copiaPedaco_(dados));
     if (!dados.dataBase64) return json_({ ok: false, erro: "Sem imagem." });
 
     var pasta = obterPasta_();
@@ -567,27 +570,76 @@ function exigirWorker_(dados) {
 function sessaoUpload_(dados) {
   try {
     exigirWorker_(dados);
-    var lote = String(dados.lote || "lote").replace(/[\\/]/g, "-").slice(0, 120);
-    var pasta = subpasta_(subpasta_(obterPasta_(), "Impress\u00e3o"), lote);
-    // Visivel por link: as previas em PNG aparecem no site.
-    pasta.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    var mime = String(dados.mimeType || "application/octet-stream");
-    var cab = { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "X-Upload-Content-Type": mime };
-    if (dados.tamanho) cab["X-Upload-Content-Length"] = String(dados.tamanho);
-    var resp = UrlFetchApp.fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id", {
-      method: "post",
-      contentType: "application/json; charset=UTF-8",
-      payload: JSON.stringify({ name: String(dados.nome || "arquivo"), parents: [pasta.getId()], mimeType: mime }),
-      headers: cab,
+    return abrirSessaoDrive_(dados.lote, dados.nome, dados.mimeType, dados.tamanho, "");
+  } catch (err) {
+    return { ok: false, erro: String(err) };
+  }
+}
+
+// Cria a pasta "Impressao/<lote>" e abre um envio retomavel no Drive.
+// `origem`: endereco do site, quando o proprio navegador manda os bytes
+// (o Google libera o envio direto so para a origem informada aqui).
+function abrirSessaoDrive_(lote, nome, mimeType, tamanho, origem) {
+  lote = String(lote || "lote").replace(/[\\/]/g, "-").slice(0, 120);
+  var pasta = subpasta_(subpasta_(obterPasta_(), "Impress\u00e3o"), lote);
+  // Visivel por link: as previas em PNG aparecem no site.
+  pasta.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var mime = String(mimeType || "application/octet-stream");
+  var cab = { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "X-Upload-Content-Type": mime };
+  if (tamanho) cab["X-Upload-Content-Length"] = String(tamanho);
+  if (origem) cab.Origin = String(origem);
+  var resp = UrlFetchApp.fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id", {
+    method: "post",
+    contentType: "application/json; charset=UTF-8",
+    payload: JSON.stringify({ name: String(nome || "arquivo"), parents: [pasta.getId()], mimeType: mime }),
+    headers: cab,
+    muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200) {
+    return { ok: false, erro: "Drive (" + resp.getResponseCode() + "): " + resp.getContentText().slice(0, 300) };
+  }
+  var h = resp.getAllHeaders();
+  var url = h.Location || h.location;
+  if (!url) return { ok: false, erro: "O Drive n\u00e3o devolveu o endere\u00e7o do envio." };
+  return { ok: true, uploadUrl: url, pastaId: pasta.getId(), pastaUrl: pasta.getUrl() };
+}
+
+// ---------------- Copia no Drive (geracao no computador) ----------------
+// O site gera o arquivo no navegador e guarda uma copia aqui. So o admin
+// (token de login do Firebase, como no backup). O navegador manda os bytes
+// direto ao Google; se o navegador bloquear, manda cada pedaco por aqui
+// (copiaPedaco), que repassa ao Google.
+
+function copiaSessao_(dados) {
+  try {
+    verificarAdmin_(dados.idToken);
+    var origem = String(dados.origem || "");
+    if (origem && !/^https?:\/\/[A-Za-z0-9.:-]+$/.test(origem)) origem = "";
+    return abrirSessaoDrive_(dados.lote, dados.nome, dados.mimeType, dados.tamanho, origem);
+  } catch (err) {
+    return { ok: false, erro: String(err) };
+  }
+}
+
+function copiaPedaco_(dados) {
+  try {
+    verificarAdmin_(dados.idToken);
+    var url = String(dados.uploadUrl || "");
+    if (url.indexOf("https://www.googleapis.com/upload/drive/") !== 0) throw new Error("Endere\u00e7o de envio inv\u00e1lido.");
+    var bytes = Utilities.base64Decode(dados.dataBase64 || "");
+    var inicio = Number(dados.inicio) || 0;
+    var total = Number(dados.total) || 0;
+    var resp = UrlFetchApp.fetch(url, {
+      method: "put",
+      contentType: "application/octet-stream",
+      payload: bytes,
+      headers: { "Content-Range": "bytes " + inicio + "-" + (inicio + bytes.length - 1) + "/" + total },
       muteHttpExceptions: true
     });
-    if (resp.getResponseCode() !== 200) {
-      return { ok: false, erro: "Drive (" + resp.getResponseCode() + "): " + resp.getContentText().slice(0, 300) };
-    }
-    var h = resp.getAllHeaders();
-    var url = h.Location || h.location;
-    if (!url) return { ok: false, erro: "O Drive n\u00e3o devolveu o endere\u00e7o do envio." };
-    return { ok: true, uploadUrl: url, pastaId: pasta.getId(), pastaUrl: pasta.getUrl() };
+    var codigo = resp.getResponseCode();
+    if (codigo === 308) return { ok: true, status: 308 };
+    if (codigo === 200 || codigo === 201) return { ok: true, status: codigo, id: JSON.parse(resp.getContentText() || "{}").id };
+    return { ok: false, erro: "Drive (" + codigo + "): " + resp.getContentText().slice(0, 300) };
   } catch (err) {
     return { ok: false, erro: String(err) };
   }
