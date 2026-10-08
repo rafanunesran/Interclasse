@@ -3995,9 +3995,9 @@ function perguntarOpcoesEps(resumo, nomeLote) {
           <label>Arquivos
             <select name="juntar"><option value="0">Um por time</option><option value="1">Todos os times juntos (peças misturadas)</option><option value="colunas">Colunas de 7 m — todos os times, EPS para o Corel</option></select></label>
           <div class="oculto eps-colunas" data-so-colunas>
-            <p class="pix-ajuda">Todos os times juntos, com as peças encaixadas em colunas da largura do rolo. Cada arquivo EPS traz as colunas lado a lado (abre no Corel → Salvar como CDR) e cada coluna ganha um PNG para conferência. Arquivo grande: prefira 300 dpi.</p>
+            <p class="pix-ajuda">Todos os times juntos, com as peças encaixadas em colunas da largura do rolo. O site calcula todas as colunas e gera os PNGs de conferência; depois você baixa os EPS (um por coluna) pelos botões, um de cada vez ou todos em sequência. Abra no Corel → Salvar como CDR. Prefira 300 dpi.</p>
             <label>Altura da coluna (cm)<input type="number" name="alturaColunaCm" min="50" step="10" value="${escAttr(f.alturaColunaCm || 700)}" /></label>
-            <label>Colunas por arquivo<input type="number" name="colunasPorArquivo" min="1" max="30" step="1" value="${escAttr(f.colunasPorArquivo || 10)}" /></label>
+            <label>Colunas por arquivo (1 = um EPS por coluna, o mais leve para o Corel)<input type="number" name="colunasPorArquivo" min="1" max="30" step="1" value="${escAttr(f.colunasPorEps || 1)}" /></label>
             <label>Espaço entre colunas (cm)<input type="number" name="espacoColunasCm" min="0" step="0.5" value="${escAttr(f.espacoColunasCm == null ? 5 : f.espacoColunasCm)}" /></label>
           </div>
           <p class="pix-ajuda oculto" data-so-juntar>Todos os times nas mesmas folhas, com as peças misturadas para gastar menos tecido (o marcador de cada peça diz o time). PDF: um arquivo com páginas de até 5 m. EPS: folhas de até 45 m (limite do Corel), juntas num .zip.</p>
@@ -4065,7 +4065,7 @@ function perguntarOpcoesEps(resumo, nomeLote) {
         copiaDrive: form.copiaDrive.checked,
         juntar: form.juntar.value === "colunas" ? "colunas" : form.juntar.value === "1",
         alturaColunaCm: Math.max(50, Number(form.alturaColunaCm.value) || 700),
-        colunasPorArquivo: Math.max(1, Math.round(Number(form.colunasPorArquivo.value) || 10)),
+        colunasPorEps: Math.max(1, Math.round(Number(form.colunasPorArquivo.value) || 1)),
         espacoColunasCm: Math.max(0, Number(form.espacoColunasCm.value) || 0)
       });
     };
@@ -4243,64 +4243,110 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
 }
 
 // Modo "colunas": cada folha encaixada (até a altura da coluna) é uma
-// coluna; até N colunas lado a lado viram um EPS (compatível com o Corel).
-// Cada coluna ganha um PNG de conferência. Devolve { saida, resumo }.
+// coluna. Primeiro calcula tudo e gera os PNGs de conferência; os EPS
+// (compatíveis com o Corel, N colunas por arquivo — padrão 1) saem pelos
+// botões da janela, um de cada vez, para não pesar a memória nem o Corel.
+// Devolve { saida, resumo }.
 async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) {
-  const porArq = Math.max(1, op.colunasPorArquivo || 10);
+  const porArq = Math.max(1, op.colunasPorEps || 1);
   const gap = Math.max(0, (op.espacoColunasCm == null ? 5 : op.espacoColunasCm) * 10);
   const L = op.larguraCm * 10;
+  const copia = copiaDriveAtual; // a geração termina antes dos cliques
   const grupos = [];
   for (let i = 0; i < colunas.length; i += porArq) grupos.push(colunas.slice(i, i + porArq));
   const altM = ((op.alturaColunaCm || 700) / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
-  prog.aviso(`${colunas.length} coluna(s) de até ${altM} m → ${grupos.length} arquivo(s) EPS com até ${porArq} coluna(s) cada.`);
-  const multi = grupos.length > 1;
-  let saida = null, ondeSalvou = "", nPng = 0;
-  for (let gi = 0; gi < grupos.length; gi++) {
-    const g = grupos[gi];
-    const n0 = gi * porArq; // nº da primeira coluna deste arquivo
-    const folha = {
-      larguraMm: g.length * L + (g.length - 1) * gap,
-      alturaMm: Math.max(...g.map((f) => f.alturaMm)),
-      blocos: []
-    };
-    g.forEach((f, j) => f.blocos.forEach((b) => folha.blocos.push({ ...b, x: b.x + j * (L + gap) })));
-    const nome = `${base}-colunas${multi ? `-arquivo${gi + 1}` : ""}.eps`;
-    const mb = EPS.estimarTamanho(folha, rec, { corel: true }) / 1e6;
-    if (mb > 1500) prog.aviso(`${nome}: ~${Math.round(mb)} MB — se o navegador travar, gere em 300 ou 150 dpi, ou com menos colunas por arquivo.`);
-    etapaFim(`escrevendo o EPS ${gi + 1} de ${grupos.length} (${g.length} coluna(s))…`, gi / grupos.length);
+  const fmtM = (mm) => (mm / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " m";
+  prog.aviso(`${colunas.length} coluna(s) de até ${altM} m → ${grupos.length} arquivo(s) EPS${porArq > 1 ? ` com até ${porArq} coluna(s) cada` : " (um por coluna)"}.`);
+
+  // 1. PNG de cada coluna (conferência).
+  const pngs = [];
+  for (let c = 0; c < colunas.length; c++) {
+    etapaFim(`prévia PNG da coluna ${c + 1} de ${colunas.length}…`, c / colunas.length);
     await esperarTela();
-    const blob = await arquivoDaFolha(folha, rec, `Todos os times - colunas ${n0 + 1} a ${n0 + g.length}`, "eps", { corel: true }, (t) => etapaFim(t));
-    saida = { nome, blob };
-    saida.onde = await salvarArquivoGerado(destino, nome, blob, prog, { etapa: (t) => etapaFim(t) });
-    if (saida.onde) ondeSalvou = saida.onde;
-    // PNG de cada coluna (conferência). Nos Downloads, um .zip por arquivo.
-    const pngs = [];
-    for (let j = 0; j < g.length; j++) {
-      etapaFim(`prévia PNG da coluna ${n0 + j + 1} de ${colunas.length}…`);
-      await esperarTela();
-      try {
-        pngs.push({ nome: `${base}${multi ? `-arquivo${gi + 1}` : ""}-coluna${n0 + j + 1}.png`, blob: await previaPngDaColuna(g[j], rec) });
-      } catch (e) {
-        console.error(e);
-        prog.aviso(`Prévia da coluna ${n0 + j + 1} não gerada: ${e.message || e}`);
-      }
-    }
-    nPng += pngs.length;
-    if (destino) {
-      for (const p of pngs) await salvarArquivoGerado(destino, p.nome, p.blob, prog, { previa: true, etapa: (t) => etapaFim(t) });
-    } else if (pngs.length) {
-      const JSZip = await carregarLib("JSZip");
-      const zip = new JSZip();
-      pngs.forEach((p) => zip.file(p.nome, p.blob));
-      await salvarArquivoGerado(null, `${base}${multi ? `-arquivo${gi + 1}` : ""}-conferencia-png.zip`,
-        await zip.generateAsync({ type: "blob", compression: "STORE" }), prog, { semCopia: true });
-      // No Drive, os PNGs vão soltos (aparecem como prévias no card do lote).
-      if (copiaDriveAtual) for (const p of pngs) await copiaDriveAtual.guardar(p.nome, p.blob, (t) => etapaFim(t), true);
+    try {
+      pngs.push({ nome: `${base}-coluna${c + 1}.png`, blob: await previaPngDaColuna(colunas[c], rec) });
+    } catch (e) {
+      console.error(e);
+      prog.aviso(`Prévia da coluna ${c + 1} não gerada: ${e.message || e}`);
     }
   }
+  let ondePng = "";
+  if (destino) {
+    for (const p of pngs) ondePng = await salvarArquivoGerado(destino, p.nome, p.blob, prog, { previa: true, etapa: (t) => etapaFim(t) }) || ondePng;
+  } else if (pngs.length) {
+    const JSZip = await carregarLib("JSZip");
+    const zip = new JSZip();
+    pngs.forEach((p) => zip.file(p.nome, p.blob));
+    await salvarArquivoGerado(null, `${base}-conferencia-png.zip`, await zip.generateAsync({ type: "blob", compression: "STORE" }), prog, { semCopia: true });
+    if (copia) for (const p of pngs) await copia.guardar(p.nome, p.blob, (t) => etapaFim(t), true);
+  }
+
+  // 2. Lista dos EPS para baixar (gerados na hora do clique).
+  const arquivos = grupos.map((g, gi) => {
+    const n0 = gi * porArq;
+    return {
+      g, n0,
+      nome: porArq === 1 ? `${base}-coluna${n0 + 1}.eps` : `${base}-colunas${n0 + 1}a${n0 + g.length}.eps`,
+      rotulo: porArq === 1 ? `Coluna ${n0 + 1}` : `Colunas ${n0 + 1} a ${n0 + g.length}`,
+      alturaMm: Math.max(...g.map((f) => f.alturaMm)),
+      mb: 0
+    };
+  });
+  const folhaDe = (a) => {
+    const folha = { larguraMm: a.g.length * L + (a.g.length - 1) * gap, alturaMm: a.alturaMm, blocos: [] };
+    a.g.forEach((f, j) => f.blocos.forEach((b) => folha.blocos.push({ ...b, x: b.x + j * (L + gap) })));
+    return folha;
+  };
+  arquivos.forEach((a) => { a.mb = EPS.estimarTamanho(folhaDe(a), rec, { corel: true }) / 1e6; });
+  const area = prog.extra();
+  area.innerHTML = `<div class="colunas-baixar">
+      <div class="colunas-baixar-topo"><strong>Arquivos EPS (${arquivos.length})</strong>
+        <button type="button" class="primario" data-col="todos">Baixar todos em sequência</button></div>
+      <ol>${arquivos.map((a, i) => `<li><span>${escapeHtmlAdmin(a.rotulo)} · ${fmtM(a.alturaMm)} · ~${Math.max(1, Math.round(a.mb))} MB</span>
+        <span class="colunas-baixar-st" data-st="${i}"></span>
+        <button type="button" class="secundario" data-col="${i}">Baixar EPS</button></li>`).join("")}</ol>
+    </div>`;
+  let ocupado = false;
+  const baixar = async (i) => {
+    const a = arquivos[i];
+    const st = area.querySelector(`[data-st="${i}"]`);
+    const btn = area.querySelector(`[data-col="${i}"]`);
+    btn.disabled = true;
+    st.textContent = "gerando…";
+    await esperarTela();
+    try {
+      const blob = await arquivoDaFolha(folhaDe(a), rec, `Todos os times - ${a.rotulo}`, "eps", { corel: true }, (t) => (st.textContent = t));
+      const onde = await salvarArquivoGerado(destino, a.nome, blob, null, { semCopia: true });
+      if (copia) await copia.guardar(a.nome, blob, (t) => (st.textContent = t), false);
+      st.textContent = `✓ ${(blob.size / 1e6).toFixed(1)} MB${onde ? ` · salvo em ${onde}` : ""}`;
+      btn.textContent = "Baixar de novo";
+    } catch (e) {
+      console.error(e);
+      st.textContent = `erro: ${e.message || e}`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  area.querySelectorAll("[data-col]").forEach((b) => {
+    b.onclick = async () => {
+      if (ocupado) return;
+      ocupado = true;
+      area.querySelectorAll("[data-col]").forEach((x) => (x.disabled = true));
+      try {
+        if (b.dataset.col === "todos") {
+          for (let i = 0; i < arquivos.length; i++) await baixar(i);
+        } else {
+          await baixar(Number(b.dataset.col));
+        }
+      } finally {
+        ocupado = false;
+        area.querySelectorAll("[data-col]").forEach((x) => (x.disabled = false));
+      }
+    };
+  });
   return {
-    saida,
-    resumo: `${grupos.length} arquivo(s) EPS com ${colunas.length} coluna(s) e ${nPng} PNG(s) de conferência${ondeSalvou ? `, salvos em ${ondeSalvou}` : ""}.`
+    saida: null,
+    resumo: `${colunas.length} coluna(s) calculada(s) e ${pngs.length} PNG(s) de conferência${destino && ondePng ? ` salvos em ${ondePng}` : ""}. Baixe os EPS pelos botões abaixo.`
   };
 }
 
@@ -4897,6 +4943,7 @@ function abrirProgressoEps(itens, op) {
       <ul class="progresso-eps-lista"></ul>
       ${o.dica != null ? (o.dica ? `<p class="pix-ajuda">${escapeHtmlAdmin(o.dica)}</p>` : "")
         : itens.length > 1 ? '<p class="pix-ajuda">Cada time é baixado num arquivo separado assim que fica pronto. Se o navegador perguntar, permita vários downloads.</p>' : ""}
+      <div class="progresso-eps-extra"></div>
       <details class="progresso-eps-avisos oculto"><summary></summary><ul></ul></details>
       <div class="progresso-eps-botoes">
         <button type="button" class="secundario" data-prog="cancelar">Cancelar</button>
@@ -4958,6 +5005,8 @@ function abrirProgressoEps(itens, op) {
       d.querySelector("summary").textContent = `${avisos.length} aviso(s)`;
       d.querySelector("ul").insertAdjacentHTML("beforeend", `<li>${escapeHtmlAdmin(t)}</li>`);
     },
+    // Área livre na janela (ex.: botões para baixar as colunas).
+    extra() { return q(".progresso-eps-extra"); },
     fim(gerados, resumo) {
       barra(".progresso-barra.geral", 1);
       barra(".progresso-barra.etapa", 1);

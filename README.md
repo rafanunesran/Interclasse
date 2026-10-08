@@ -825,6 +825,11 @@ junta todos os times e encaixa as peças em **colunas** da largura do rolo, com 
 Cada **arquivo EPS** traz até 10 colunas lado a lado: abra no Corel e salve como CDR. A altura da
 coluna, as colunas por arquivo e o espaço entre elas podem ser mudados no diálogo.
 
+O site **calcula todas as colunas primeiro** e gera os PNGs. Depois, a janela mostra a lista dos EPS
+(por padrão **um por coluna**, o mais leve para o Corel), com o tamanho de cada um. Clique em
+**Baixar EPS** em cada coluna ou em **Baixar todos em sequência**. Cada EPS só é montado na hora do
+clique, para não pesar a memória.
+
 Cada coluna ganha um **PNG de conferência**, com as peças nas mesmas posições, as artes, os nomes,
 os números e o marcador da costureira. Na pasta escolhida, os PNGs ficam ao lado dos EPS; nos
 Downloads, vêm num .zip por arquivo.
