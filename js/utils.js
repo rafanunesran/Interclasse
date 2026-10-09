@@ -1334,6 +1334,46 @@ async function revalidarItens(cfg, lista) {
   return { itens: validos, removidos };
 }
 
+// ---------------- Cobrança juntada (link mandado pela organização) ----------------
+// A organização junta camisetas de times diferentes (as dos professores, por
+// exemplo) e manda UM link. Ele leva só os ids — `?cobrar=time/aluno,time/aluno` —
+// e quem abre ganha essas camisetas no carrinho, já no pagamento. Nome, preço
+// e se ainda dá para pagar vêm do banco, pela reconferência de sempre.
+
+function textoCobranca(itens) {
+  return (itens || []).map((i) => chaveDoItem(i.timeId, i.alunoId)).join(",");
+}
+
+// Lê o `?cobrar=` de volta para itens de carrinho (só os ids). Ids do
+// Firestore não têm "/" nem ",", então a separação é segura.
+function itensDaCobranca(texto) {
+  const vistos = new Set();
+  return String(texto || "").split(",").map((par) => {
+    const [timeId, alunoId] = par.split("/").map((x) => (x || "").trim());
+    return timeId && alunoId ? { timeId, alunoId } : null;
+  }).filter((i) => {
+    if (!i) return false;
+    const chave = chaveDoItem(i.timeId, i.alunoId);
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
+
+// Endereço da cobrança: abre a página do time da 1ª camiseta (o pagamento
+// mora lá) já com a lista inteira, de qualquer time.
+function linkCobranca(itens, base) {
+  const lista = itens || [];
+  if (lista.length === 0) return "";
+  const caminho = "time.html?id=" + encodeURIComponent(lista[0].timeId) +
+    "&cobrar=" + encodeURIComponent(textoCobranca(lista));
+  try {
+    return new URL(caminho, base || window.location.href).href;
+  } catch (e) {
+    return caminho;
+  }
+}
+
 // ============================================================
 // IMAGEM DA CAMISETA (Google Drive via Apps Script)
 // ============================================================

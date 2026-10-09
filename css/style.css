@@ -3098,3 +3098,22 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .colunas-baixar li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 4px 0; border-top: 1px solid #f1f5f9; }
 .colunas-baixar li > span:first-child { flex: 1 1 180px; }
 .colunas-baixar-st { font-size: 0.85rem; color: #15803d; overflow-wrap: anywhere; }
+
+/* Financeiro → Juntar cobrança: várias camisetas (de times diferentes) numa cobrança só */
+.juntar-filtros { margin-top: 6px; }
+.juntar-resumo { margin: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+.juntar-envio { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; }
+.juntar-envio label { margin-top: 0; }
+.juntar-envio input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: var(--branco);
+}
+.juntar-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.juntar-acoes button { margin: 0; }
+.juntar-acoes select { width: auto; padding: 9px 10px; font-size: 0.9rem; }
+.juntar-tabela td:first-child, .juntar-tabela th:first-child { width: 32px; text-align: center; }
+.juntar-tabela tr.juntar-marcada td { background: #eff6ff; }

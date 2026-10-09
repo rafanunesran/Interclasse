@@ -97,6 +97,7 @@ async function iniciar() {
   atualizarBadge();
 
   carrinho = lerCarrinho();
+  aplicarCobrancaDoLink();
 
   // Se já desbloqueou nesta aba antes, não pede senha de novo.
   if (sessionStorage.getItem("desbloqueado-" + timeId) === "1") {
@@ -268,7 +269,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261113a";
+const VERSAO_MOCKUP3D = "20261114a";
 let botao3d = null;
 
 function texturas3D(goleiro) {
@@ -720,6 +721,12 @@ function sincronizarCarrinhoDoTime() {
   if (JSON.stringify(carrinho) !== antes) gravarCarrinho(carrinho);
 }
 
+// Item que saiu do carrinho, para o aviso. O que veio de um link de cobrança
+// só tem os ids; aí não dá para dizer o nome.
+function nomeDoItemRemovido(i) {
+  return i.nome ? `${i.nome}${i.time ? ` (${i.time})` : ""}` : "camiseta de outra lista";
+}
+
 // Reconfere no Firestore o que veio de outros times (e o resto junto).
 // Roda uma vez ao abrir a página e de novo antes de pagar.
 async function conferirCarrinho() {
@@ -727,7 +734,7 @@ async function conferirCarrinho() {
   carrinho = itens;
   carrinhoConferido = true;
   if (removidos.length > 0) {
-    const nomes = removidos.map((i) => `${i.nome || i.alunoId} (${i.time || i.timeId})`).join(", ");
+    const nomes = removidos.map(nomeDoItemRemovido).join(", ");
     alert(
       `Tiramos do carrinho ${removidos.length} camiseta(s) que não podem mais ser pagas ` +
       `(já pagas, com ajuste em aberto ou de um pedido que mudou de etapa):\n\n${nomes}`
@@ -1395,7 +1402,7 @@ async function abrirPagamento(itens) {
   // É aqui que camisetas de outros times são validadas de verdade.
   const { itens: validos, removidos } = await revalidarItens(configGeral, lista);
   if (removidos.length > 0) {
-    const nomes = removidos.map((i) => `${i.nome || i.alunoId} (${i.time || i.timeId})`).join(", ");
+    const nomes = removidos.map(nomeDoItemRemovido).join(", ");
     alert(
       `Não dá para pagar ${removidos.length} camiseta(s) agora — já pagas, com ajuste em ` +
       `aberto ou de um pedido que mudou de etapa:\n\n${nomes}`
@@ -1476,6 +1483,25 @@ async function abrirPagamento(itens) {
       : `Já paguei as ${validos.length} camisetas`;
   }
   gerarPagamentoEstatico(validos);
+}
+
+// Chegou por uma cobrança juntada pela organização (?cobrar=time/aluno,...):
+// o carrinho deste navegador vira exatamente aquela lista — quem recebeu o
+// link paga aquilo, nem mais nem menos — e o pagamento abre sozinho, como no
+// ?carrinho=1. A reconferência no banco completa nome e preço de cada uma.
+function aplicarCobrancaDoLink() {
+  const itens = itensDaCobranca(params.get("cobrar"));
+  if (itens.length === 0) return;
+  carrinho = itens;
+  gravarCarrinho(carrinho);
+  carrinhoConferido = false;
+  params.set("carrinho", "1");
+  // Tira o parâmetro para um F5 não refazer o carrinho por cima de mudanças.
+  try {
+    const limpa = new URL(window.location.href);
+    limpa.searchParams.delete("cobrar");
+    window.history.replaceState({}, "", limpa.toString());
+  } catch (e) { /* navegador antigo: segue sem limpar */ }
 }
 
 // Abre o carrinho já no pagamento quando a pessoa chegou pelo botão da tela

@@ -2181,6 +2181,7 @@ const FIN_VISOES = [
   { id: "extrato", label: "Extrato diário" },
   { id: "evolucao", label: "Evolução" },
   { id: "cobranca", label: "A receber" },
+  { id: "juntar", label: "Juntar cobrança" },
   { id: "resultado", label: "Resultado (DRE)" }
 ];
 
@@ -2603,6 +2604,7 @@ function renderizarVisaoFinanceira(f) {
   if (finVisao === "extrato") return finViewExtrato(alvo, f);
   if (finVisao === "evolucao") return finViewEvolucao(alvo, f);
   if (finVisao === "cobranca") return finViewCobranca(alvo, f);
+  if (finVisao === "juntar") return finViewJuntar(alvo, f);
   if (finVisao === "resultado") return finViewResultado(alvo, f);
   if (finVisao === "movimentacoes" && typeof finViewMovimentacoes === "function") return finViewMovimentacoes(alvo, f);
   if (finVisao === "lotes" && typeof finViewLotes === "function") return finViewLotes(alvo, f);
@@ -3081,6 +3083,272 @@ function finViewEvolucao(alvo, f) {
   `;
 
   finLigarFiltros(alvo, f);
+}
+
+// ---------------- Visão 5: juntar cobrança ----------------
+// Junta camisetas em aberto de times diferentes (as dos professores, por
+// exemplo) numa cobrança só: filtra, marca as que entram, e manda o total no
+// WhatsApp com o link de pagamento (que já abre o carrinho com elas) e o PIX
+// copia e cola da soma. Se pagarem fora do site, marca todas como pagas de
+// uma vez. A seleção sobrevive às atualizações em tempo real da lista.
+
+const juntarSel = new Set();  // "timeId/alunoId" das camisetas marcadas
+let juntarSoProf = true;      // começa nos professores, o caso mais comum
+let juntarBusca = "";
+let juntarNome = "";          // para quem vai a cobrança (saudação)
+let juntarTelefone = "";
+
+function juntarChave(p) {
+  return p.timeId + "/" + p.alunoId;
+}
+
+// Camisetas que podem entrar numa cobrança: as não pagas e sem aviso de
+// pagamento (essas estão na fila de conferência, em "A receber").
+function juntarCandidatas() {
+  const lista = [];
+  timesFiltrados().forEach(([timeId, { time, alunos }]) => {
+    alunos.forEach((a) => {
+      if (a.pago || a.pagamentoDeclarado) return;
+      lista.push({
+        timeId,
+        alunoId: a.id,
+        aluno: a.nome || "",
+        time: time.nome || timeId,
+        tamanho: a.tamanho || "",
+        numero: a.numero || "",
+        nomeCamiseta: a.nomeCamiseta || "",
+        prof: ehProf(a),
+        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        bloqueado: !!a.ajusteSolicitado,
+        // O link só cobra o que a página do pedido aceitaria pagar agora.
+        pagavel: podePagarAgora(time, a)
+      });
+    });
+  });
+  return lista.sort((x, y) =>
+    x.time.localeCompare(y.time, "pt-BR") || x.aluno.localeCompare(y.aluno, "pt-BR"));
+}
+
+function juntarVisiveis(todas) {
+  const termos = normalizarTexto(juntarBusca).split(/\s+/).filter(Boolean);
+  return todas.filter((p) => {
+    if (finTimeFiltro && p.timeId !== finTimeFiltro) return false;
+    if (juntarSoProf && !p.prof) return false;
+    if (termos.length === 0) return true;
+    const alvo = normalizarTexto([p.aluno, p.nomeCamiseta, p.numero, p.time].join(" "));
+    return termos.every((t) => alvo.includes(t));
+  });
+}
+
+// Texto que vai no WhatsApp: a lista, o total, o link e o PIX da soma.
+function juntarMensagem(sel) {
+  const total = sel.reduce((s, p) => s + p.valor, 0);
+  const pagaveis = sel.filter((p) => p.pagavel);
+  const primeiroNome = juntarNome.trim().split(/\s+/)[0] || "";
+  const linhas = sel.map((p) =>
+    `• ${p.aluno} — ${p.time} — ${p.tamanho || "-"}${p.valor > 0 ? " — " + formatarReais(p.valor) : ""}`);
+  let texto =
+    (primeiroNome ? `Olá, ${primeiroNome}! ` : "Olá! ") +
+    "Aqui é da organização do interclasse. Seguem as camisetas em aberto:\n\n" +
+    linhas.join("\n") +
+    `\n\n*Total: ${formatarReais(total)}* (${sel.length} camiseta(s))`;
+  if (pagaveis.length > 0) {
+    // Se parte não pode ser paga pelo site agora, o link diz quais leva.
+    texto += pagaveis.length === sel.length
+      ? "\n\nPara pagar tudo de uma vez pelo site:\n"
+      : `\n\nPelo site dá para pagar agora ${pagaveis.length} delas (${pagaveis.map((p) => p.aluno).join(", ")}):\n`;
+    texto += linkCobranca(pagaveis);
+  }
+  if (configGeralAtual.pixChave && total > 0) {
+    texto += (pagaveis.length > 0 ? "\n\nOu pelo PIX copia e cola:\n" : "\n\nPIX copia e cola:\n") +
+      pixCopiaECola({
+        chave: configGeralAtual.pixChave,
+        nome: configGeralAtual.pixNome,
+        cidade: configGeralAtual.pixCidade,
+        valor: total
+      });
+  }
+  return texto;
+}
+
+async function juntarCopiar(texto, botao, rotulo) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    botao.textContent = "Copiado ✓";
+    setTimeout(() => { botao.textContent = rotulo; }, 1800);
+  } catch (e) {
+    prompt("Copie:", texto);
+  }
+}
+
+function finViewJuntar(alvo) {
+  const todas = juntarCandidatas();
+  // Some da seleção o que foi pago (ou saiu da lista) desde a última vez.
+  const existentes = new Set(todas.map(juntarChave));
+  [...juntarSel].forEach((k) => { if (!existentes.has(k)) juntarSel.delete(k); });
+
+  const nProfs = todas.filter((p) => p.prof).length;
+
+  alvo.innerHTML = `
+    ${finBarraFiltrosHtml(false)}
+    <div class="fin-filtros juntar-filtros">
+      <div class="fin-chips">
+        <button type="button" class="fin-chip${juntarSoProf ? " ativa" : ""}" data-juntar-prof="1">${icone("graduation-cap")} Só professores (${nProfs})</button>
+        <button type="button" class="fin-chip${juntarSoProf ? "" : " ativa"}" data-juntar-prof="0">Todas em aberto (${todas.length})</button>
+      </div>
+      <div class="fin-filtros-linha">
+        <label for="juntarBusca">Buscar</label>
+        <input type="search" id="juntarBusca" placeholder="Nome, número ou time" value="${escapeHtmlAdmin(juntarBusca)}" />
+      </div>
+    </div>
+    <p class="fin-dica">Marque as camisetas que vão na mesma cobrança — podem ser de times diferentes. Só aparecem as não pagas e sem aviso de pagamento (as que avisaram estão em <em>A receber</em>).</p>
+
+    <div class="juntar-resumo" id="juntarResumo"></div>
+
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela juntar-tabela">
+        <thead><tr>
+          <th><input type="checkbox" id="juntarTodas" aria-label="Marcar todas as da lista" /></th>
+          <th>Nome</th><th>Time</th><th>Tam.</th><th>Nº / nas costas</th><th>Valor</th><th>Situação</th>
+        </tr></thead>
+        <tbody id="juntarCorpo"></tbody>
+      </table>
+    </div>
+  `;
+
+  finLigarFiltros(alvo, finUltimo);
+  alvo.querySelectorAll("[data-juntar-prof]").forEach((btn) => {
+    btn.onclick = () => { juntarSoProf = btn.dataset.juntarProf === "1"; finViewJuntar(alvo); };
+  });
+
+  const corpo = alvo.querySelector("#juntarCorpo");
+  const resumo = alvo.querySelector("#juntarResumo");
+  const todasBox = alvo.querySelector("#juntarTodas");
+
+  const desenhar = () => {
+    const visiveis = juntarVisiveis(todas);
+    corpo.innerHTML = visiveis.length === 0
+      ? `<tr><td colspan="7">${juntarSoProf ? "Nenhuma camiseta de professor em aberto." : "Nenhuma camiseta em aberto com esse filtro."}</td></tr>`
+      : visiveis.map((p) => {
+        const k = juntarChave(p);
+        const situacao = p.bloqueado
+          ? '<span class="badge aguardando">ajuste pendente</span>'
+          : p.pagavel
+            ? '<span class="badge pendente">pendente</span>'
+            : '<span class="badge fechado" title="O pedido não está na fase de pagamento: o link não cobra esta camiseta (o PIX da mensagem cobra)">fora do pagamento</span>';
+        return `<tr class="${juntarSel.has(k) ? "juntar-marcada" : ""}">
+          <td><input type="checkbox" data-juntar="${escapeHtmlAdmin(k)}"${juntarSel.has(k) ? " checked" : ""} aria-label="Juntar ${escapeHtmlAdmin(p.aluno)}" /></td>
+          <td>${escapeHtmlAdmin(p.aluno)}${p.prof ? " " + badgeProfHtml({ prof: true }) : ""}</td>
+          <td>${escapeHtmlAdmin(p.time)}</td>
+          <td>${escapeHtmlAdmin(p.tamanho)}</td>
+          <td>${escapeHtmlAdmin([p.numero, p.nomeCamiseta].filter(Boolean).join(" · ") || "-")}</td>
+          <td>${p.valor > 0 ? formatarReais(p.valor) : "-"}</td>
+          <td>${situacao}</td>
+        </tr>`;
+      }).join("");
+
+    const marcadasVisiveis = visiveis.filter((p) => juntarSel.has(juntarChave(p))).length;
+    todasBox.checked = visiveis.length > 0 && marcadasVisiveis === visiveis.length;
+    todasBox.indeterminate = marcadasVisiveis > 0 && marcadasVisiveis < visiveis.length;
+    todasBox.disabled = visiveis.length === 0;
+    todasBox.onchange = () => {
+      visiveis.forEach((p) => {
+        if (todasBox.checked) juntarSel.add(juntarChave(p)); else juntarSel.delete(juntarChave(p));
+      });
+      desenhar();
+    };
+    corpo.querySelectorAll("[data-juntar]").forEach((box) => {
+      box.onchange = () => {
+        if (box.checked) juntarSel.add(box.dataset.juntar); else juntarSel.delete(box.dataset.juntar);
+        desenhar();
+      };
+    });
+    desenharResumo();
+  };
+
+  const desenharResumo = () => {
+    // A seleção vale mesmo para o que o filtro esconde agora.
+    const sel = todas.filter((p) => juntarSel.has(juntarChave(p)));
+    if (sel.length === 0) {
+      resumo.innerHTML = '<p class="fin-dica">Nenhuma camiseta marcada ainda.</p>';
+      return;
+    }
+    const total = sel.reduce((s, p) => s + p.valor, 0);
+    const semPreco = sel.filter((p) => !(p.valor > 0)).length;
+    const foraDoLink = sel.filter((p) => !p.pagavel).length;
+    const times = [...new Set(sel.map((p) => p.time))];
+    const avisos = [];
+    if (semPreco > 0) avisos.push(`${semPreco} sem preço definido (fora do total)`);
+    if (foraDoLink > 0) avisos.push(`${foraDoLink} não entra(m) no link — pedido fora da fase de pagamento ou com ajuste em aberto; o PIX da mensagem cobra a soma de todas`);
+    if (!configGeralAtual.pixChave) avisos.push("sem chave PIX configurada: a mensagem vai só com o link");
+
+    resumo.innerHTML = `
+      <div class="fin-card fin-card-azul">
+        <span class="fin-rotulo">Cobrança juntada</span>
+        <span class="fin-valor fin-valor-md">${formatarReais(total)}</span>
+        <span class="fin-sub">${sel.length} camiseta(s) · ${times.length} time(s)</span>
+        ${avisos.length ? `<span class="fin-sub">⚠️ ${escapeHtmlAdmin(avisos.join(" · "))}</span>` : ""}
+      </div>
+      <div class="juntar-envio">
+        <label>Para quem (opcional)<input type="text" id="juntarNome" placeholder="Ex: Prof. Ana" value="${escapeHtmlAdmin(juntarNome)}" /></label>
+        <label>WhatsApp (opcional)<input type="tel" inputmode="tel" id="juntarTelefone" placeholder="(11) 91234-5678 — em branco, você escolhe o contato" value="${escapeHtmlAdmin(juntarTelefone)}" /></label>
+      </div>
+      <div class="juntar-acoes">
+        <button type="button" class="sucesso" data-juntar-acao="whats">${icone("message-circle")} Enviar no WhatsApp</button>
+        <button type="button" class="secundario" data-juntar-acao="mensagem">Copiar mensagem</button>
+        <button type="button" class="secundario" data-juntar-acao="link"${sel.some((p) => p.pagavel) ? "" : " disabled"}>Copiar link de pagamento</button>
+        <select data-juntar-acao="pagar" aria-label="Marcar as selecionadas como pagas">
+          <option value="">Marcar como pagas…</option>
+          <option value="pix">Pagas (PIX)</option>
+          <option value="dinheiro">Pagas (dinheiro)</option>
+        </select>
+        <button type="button" class="secundario" data-juntar-acao="limpar">Limpar seleção</button>
+      </div>
+    `;
+
+    resumo.querySelector("#juntarNome").oninput = (ev) => { juntarNome = ev.target.value; };
+    resumo.querySelector("#juntarTelefone").oninput = (ev) => { juntarTelefone = ev.target.value; };
+    resumo.querySelector('[data-juntar-acao="whats"]').onclick = () => {
+      const texto = juntarMensagem(sel);
+      // Sem número, o wa.me deixa escolher o contato (ou um grupo) na hora.
+      const url = juntarTelefone.trim()
+        ? linkWhatsapp(juntarTelefone, texto)
+        : "https://wa.me/?text=" + encodeURIComponent(texto);
+      if (!url) {
+        alert("O WhatsApp informado não é válido (use DDD). Deixe em branco para escolher o contato no WhatsApp.");
+        return;
+      }
+      window.open(url, "_blank");
+    };
+    const btnMsg = resumo.querySelector('[data-juntar-acao="mensagem"]');
+    btnMsg.onclick = () => juntarCopiar(juntarMensagem(sel), btnMsg, "Copiar mensagem");
+    const btnLink = resumo.querySelector('[data-juntar-acao="link"]');
+    btnLink.onclick = () => juntarCopiar(linkCobranca(sel.filter((p) => p.pagavel)), btnLink, "Copiar link de pagamento");
+    const selPagar = resumo.querySelector('[data-juntar-acao="pagar"]');
+    selPagar.onchange = () => {
+      const forma = selPagar.value;
+      selPagar.value = "";
+      if (!forma) return;
+      const rotulo = forma === "pix" ? "PIX" : "dinheiro";
+      if (!confirm(`Marcar ${sel.length} camiseta(s) como pagas (${rotulo}), somando ${formatarReais(total)}?`)) return;
+      sel.forEach((p) => {
+        atualizarPagamento(p.timeId, p.alunoId, forma);
+        juntarSel.delete(juntarChave(p));
+      });
+      desenhar();
+    };
+    resumo.querySelector('[data-juntar-acao="limpar"]').onclick = () => {
+      juntarSel.clear();
+      desenhar();
+    };
+  };
+
+  alvo.querySelector("#juntarBusca").oninput = (ev) => {
+    juntarBusca = ev.target.value;
+    desenhar();
+  };
+
+  desenhar();
 }
 
 // ---------------- Visão 4: a receber (cobrança e conciliação) ----------------

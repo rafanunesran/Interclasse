@@ -1068,6 +1068,32 @@ aparece também na tela inicial, com um botão que leva de volta ao pagamento.
 > (`firestore.rules`): só o backend escreve e lê nela, pelo Admin SDK. Cobranças criadas
 > antes desta versão continuam sendo reconhecidas.
 
+### Juntar cobrança (professores e outros pagamentos em grupo)
+
+Para cobrar **várias camisetas de uma vez** — as dos professores, espalhadas por vários times,
+por exemplo — use **Super Admin → Financeiro → Juntar cobrança**:
+
+1. **Filtre**: começa em *Só professores* (camisetas marcadas como 🎓 Prof); *Todas em aberto*
+   mostra todas as não pagas. Dá para escolher um time e buscar por nome, número ou time. Só
+   aparecem camisetas não pagas e sem aviso de pagamento (as que avisaram ficam em *A receber*).
+2. **Marque** as camisetas que vão na mesma cobrança (a caixinha do cabeçalho marca todas as da
+   lista). O quadro mostra o **total**, quantas camisetas e de quantos times. A seleção não se
+   perde ao trocar o filtro.
+3. **Envie**: *Enviar no WhatsApp* abre a conversa com a mensagem pronta — a lista, o total, o
+   **link de pagamento** e o **PIX copia e cola da soma**. Com o WhatsApp em branco, você escolhe
+   o contato (ou um grupo) no próprio WhatsApp. Também dá para só *Copiar mensagem* ou
+   *Copiar link de pagamento*.
+4. Se pagarem por fora (dinheiro, ou PIX direto pelo código da mensagem), **Marcar como
+   pagas…** registra todas as selecionadas de uma vez.
+
+O **link de pagamento** (`time.html?id=…&cobrar=time/camiseta,…`) abre o
+[carrinho](#carrinho-pagar-várias-camisetas-de-uma-vez) de quem recebeu já com exatamente
+essas camisetas e o pagamento aberto — PIX com o botão "Já paguei" ou Mercado Pago com
+confirmação automática, como qualquer carrinho. Ele leva só os ids: nome, preço e se ainda dá
+para pagar vêm do banco na hora. O link só leva camisetas de pedidos **na fase de pagamento** e
+sem ajuste em aberto; as outras ficam marcadas como *fora do pagamento* e a mensagem avisa quais
+o link cobra (o PIX copia e cola da mensagem cobra a soma de todas).
+
 ### Status de pagamento
 
 Cada aluno tem um status: **Pendente**, **Aguardando confirmação** ou **Pago (PIX/dinheiro)**.
