@@ -3117,3 +3117,9 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .juntar-acoes select { width: auto; padding: 9px 10px; font-size: 0.9rem; }
 .juntar-tabela td:first-child, .juntar-tabela th:first-child { width: 32px; text-align: center; }
 .juntar-tabela tr.juntar-marcada td { background: #eff6ff; }
+.juntar-desconto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.juntar-desconto label { margin: 0; }
+.juntar-desconto input { width: 110px; padding: 8px 10px; border: 1px solid var(--cinza-borda); border-radius: 6px; font-size: 0.95rem; }
+.juntar-desconto select { width: auto; padding: 8px; font-size: 0.9rem; }
+.juntar-desconto button { margin: 0; }
+.juntar-desconto-previa { font-weight: 600; font-size: 0.9rem; }

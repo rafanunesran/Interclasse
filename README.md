@@ -1086,6 +1086,14 @@ por exemplo — use **Super Admin → Financeiro → Juntar cobrança**:
 4. Se pagarem por fora (dinheiro, ou PIX direto pelo código da mensagem), **Marcar como
    pagas…** registra todas as selecionadas de uma vez.
 
+**Desconto manual:** com as camisetas marcadas, digite o desconto em **R$** ou **%** — a prévia
+mostra o total novo — e toque em **Aplicar desconto**. O desconto é repartido entre as marcadas
+na proporção do preço de cada uma (os centavos do arredondamento ficam na última) e gravado
+como o **preço especial** de cada camiseta, o mesmo campo *R$* da lista do time. Por isso ele
+vale em tudo: na mensagem, no link, no PIX, no Mercado Pago e no Financeiro. As camisetas com
+desconto aparecem com a marca *especial*; **Voltar ao preço normal** tira o preço especial das
+marcadas. Aplique o desconto **antes** de enviar a mensagem.
+
 O **link de pagamento** (`time.html?id=…&cobrar=time/camiseta,…`) abre o
 [carrinho](#carrinho-pagar-várias-camisetas-de-uma-vez) de quem recebeu já com exatamente
 essas camisetas e o pagamento aberto — PIX com o botão "Já paguei" ou Mercado Pago com

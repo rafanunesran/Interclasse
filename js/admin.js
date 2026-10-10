@@ -3097,6 +3097,38 @@ let juntarSoProf = true;      // começa nos professores, o caso mais comum
 let juntarBusca = "";
 let juntarNome = "";          // para quem vai a cobrança (saudação)
 let juntarTelefone = "";
+let juntarDesconto = "";      // valor digitado no campo de desconto
+let juntarDescontoTipo = "reais"; // "reais" | "pct"
+
+// Desconto digitado, em centavos, sobre um total também em centavos
+// (0 quando vazio; null quando inválido ou maior que o total).
+function juntarDescontoCentavos(totalCent) {
+  const bruto = String(juntarDesconto || "").trim().replace(",", ".");
+  if (!bruto) return 0;
+  const v = parseFloat(bruto);
+  if (isNaN(v) || v < 0) return null;
+  const cent = juntarDescontoTipo === "pct"
+    ? Math.round(totalCent * Math.min(v, 100) / 100)
+    : Math.round(v * 100);
+  return cent > totalCent ? null : cent;
+}
+
+// Reparte o desconto entre as camisetas na proporção do preço de cada uma
+// (a última leva a sobra dos arredondamentos) e grava o resultado como o
+// preço especial delas. Assim o link, o PIX, o Mercado Pago e o Financeiro
+// enxergam o mesmo valor, sem nada novo para cada um entender.
+function juntarRepartirDesconto(itens, descCent) {
+  const totalCent = itens.reduce((s, p) => s + Math.round(p.valor * 100), 0);
+  const alvoCent = totalCent - descCent;
+  let usado = 0;
+  return itens.map((p, i) => {
+    const cent = i === itens.length - 1
+      ? alvoCent - usado
+      : Math.round(Math.round(p.valor * 100) * alvoCent / totalCent);
+    usado += cent;
+    return { item: p, valor: Math.max(0, cent) / 100 };
+  });
+}
 
 function juntarChave(p) {
   return p.timeId + "/" + p.alunoId;
@@ -3119,6 +3151,7 @@ function juntarCandidatas() {
         nomeCamiseta: a.nomeCamiseta || "",
         prof: ehProf(a),
         valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        especial: precoEspecialDoAluno(configGeralAtual, timeId, a.id) != null,
         bloqueado: !!a.ajusteSolicitado,
         // O link só cobra o que a página do pedido aceitaria pagar agora.
         pagavel: podePagarAgora(time, a)
@@ -3242,7 +3275,7 @@ function finViewJuntar(alvo) {
           <td>${escapeHtmlAdmin(p.time)}</td>
           <td>${escapeHtmlAdmin(p.tamanho)}</td>
           <td>${escapeHtmlAdmin([p.numero, p.nomeCamiseta].filter(Boolean).join(" · ") || "-")}</td>
-          <td>${p.valor > 0 ? formatarReais(p.valor) : "-"}</td>
+          <td>${p.valor > 0 ? formatarReais(p.valor) : "-"}${p.especial ? ' <span class="fin-dica" title="Preço especial desta camiseta (desconto)">especial</span>' : ""}</td>
           <td>${situacao}</td>
         </tr>`;
       }).join("");
@@ -3289,6 +3322,18 @@ function finViewJuntar(alvo) {
         <span class="fin-sub">${sel.length} camiseta(s) · ${times.length} time(s)</span>
         ${avisos.length ? `<span class="fin-sub">⚠️ ${escapeHtmlAdmin(avisos.join(" · "))}</span>` : ""}
       </div>
+      <div class="juntar-desconto">
+        <label for="juntarDesconto">Desconto</label>
+        <input type="text" inputmode="decimal" id="juntarDesconto" placeholder="0,00" value="${escapeHtmlAdmin(juntarDesconto)}" />
+        <select id="juntarDescontoTipo" aria-label="Tipo de desconto">
+          <option value="reais"${juntarDescontoTipo === "reais" ? " selected" : ""}>R$</option>
+          <option value="pct"${juntarDescontoTipo === "pct" ? " selected" : ""}>%</option>
+        </select>
+        <span class="juntar-desconto-previa" id="juntarDescontoPrevia"></span>
+        <button type="button" class="primario" data-juntar-acao="desconto"${precosAdminErro ? " disabled" : ""}>Aplicar desconto</button>
+        ${sel.some((p) => p.especial) ? '<button type="button" class="secundario" data-juntar-acao="sem-desconto" title="Tira o preço especial das marcadas: voltam ao preço do tamanho">Voltar ao preço normal</button>' : ""}
+      </div>
+      <p class="fin-dica">O desconto é repartido entre as camisetas marcadas (na proporção do preço) e fica gravado como o preço especial de cada uma — vale no link, no PIX, no Mercado Pago e no Financeiro.</p>
       <div class="juntar-envio">
         <label>Para quem (opcional)<input type="text" id="juntarNome" placeholder="Ex: Prof. Ana" value="${escapeHtmlAdmin(juntarNome)}" /></label>
         <label>WhatsApp (opcional)<input type="tel" inputmode="tel" id="juntarTelefone" placeholder="(11) 91234-5678 — em branco, você escolhe o contato" value="${escapeHtmlAdmin(juntarTelefone)}" /></label>
@@ -3306,6 +3351,54 @@ function finViewJuntar(alvo) {
       </div>
     `;
 
+    const totalCent = Math.round(total * 100);
+    const comPreco = sel.filter((p) => p.valor > 0);
+    const previa = resumo.querySelector("#juntarDescontoPrevia");
+    const atualizarPrevia = () => {
+      const d = juntarDescontoCentavos(totalCent);
+      previa.textContent = d === null
+        ? "valor inválido (maior que o total?)"
+        : d > 0 ? `→ ${formatarReais((totalCent - d) / 100)} (−${formatarReais(d / 100)})` : "";
+      previa.classList.toggle("fin-vermelho", d === null);
+    };
+    atualizarPrevia();
+    resumo.querySelector("#juntarDesconto").oninput = (ev) => { juntarDesconto = ev.target.value; atualizarPrevia(); };
+    resumo.querySelector("#juntarDescontoTipo").onchange = (ev) => { juntarDescontoTipo = ev.target.value; atualizarPrevia(); };
+    const btnDesc = resumo.querySelector('[data-juntar-acao="desconto"]');
+    btnDesc.onclick = async () => {
+      const d = juntarDescontoCentavos(totalCent);
+      if (d === null) { alert("Informe um desconto válido, que não passe do total."); return; }
+      if (d === 0) { alert("Digite o valor do desconto."); return; }
+      if (comPreco.length === 0) { alert("Nenhuma das marcadas tem preço para descontar."); return; }
+      const novos = juntarRepartirDesconto(comPreco, d);
+      const linhas = novos.map((n) => `• ${n.item.aluno}: ${formatarReais(n.item.valor)} → ${formatarReais(n.valor)}`).join("\n");
+      if (!confirm(`Aplicar ${formatarReais(d / 100)} de desconto? O total passa a ${formatarReais((totalCent - d) / 100)}.\n\n${linhas}`)) return;
+      btnDesc.disabled = true;
+      try {
+        await Promise.all(novos.map((n) => gravarPrecoAluno(n.item.timeId, n.item.alunoId, n.valor)));
+        juntarDesconto = "";
+        // A lista se redesenha sozinha quando os preços novos chegam.
+      } catch (erro) {
+        console.error(erro);
+        btnDesc.disabled = false;
+        alert("Erro ao gravar o desconto. Confira se o firestore.rules atualizado foi publicado.");
+      }
+    };
+    const btnSemDesc = resumo.querySelector('[data-juntar-acao="sem-desconto"]');
+    if (btnSemDesc) {
+      btnSemDesc.onclick = async () => {
+        const comEspecial = sel.filter((p) => p.especial);
+        if (!confirm(`Tirar o preço especial (desconto) de ${comEspecial.length} camiseta(s)? Elas voltam ao preço do tamanho.`)) return;
+        btnSemDesc.disabled = true;
+        try {
+          await Promise.all(comEspecial.map((p) => gravarPrecoAluno(p.timeId, p.alunoId, null)));
+        } catch (erro) {
+          console.error(erro);
+          btnSemDesc.disabled = false;
+          alert("Erro ao voltar ao preço normal.");
+        }
+      };
+    }
     resumo.querySelector("#juntarNome").oninput = (ev) => { juntarNome = ev.target.value; };
     resumo.querySelector("#juntarTelefone").oninput = (ev) => { juntarTelefone = ev.target.value; };
     resumo.querySelector('[data-juntar-acao="whats"]').onclick = () => {
