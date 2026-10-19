@@ -7,4 +7,4 @@
   mas o `main` é o destino.
 - Antes de enviar, traga o `main` (`git fetch origin main`) e junte o que houver de novo.
 - A cada mudança em JS/CSS, suba a versão dos scripts (`?v=AAAAMMDDx` nos `.html` e
-  `VERSAO_MOCKUP3D` em `js/time.js` e `js/artes.js`) para o navegador não usar a cópia antiga.
+  `VERSAO_MOCKUP3D` em `js/time.js` e `js/artes.js`, `VERSAO` em `sw.js`) para o navegador não usar a cópia antiga.

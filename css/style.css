@@ -3123,3 +3123,17 @@ header.topo nav a { display: inline-flex; align-items: center; gap: 6px; }
 .juntar-desconto select { width: auto; padding: 8px; font-size: 0.9rem; }
 .juntar-desconto button { margin: 0; }
 .juntar-desconto-previa { font-weight: 600; font-size: 0.9rem; }
+
+/* Botão "Instalar app" (PWA) no topo — aparece só quando o navegador permite */
+header.topo nav .btn-instalar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0 16px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  background: var(--branco);
+  color: var(--azul);
+  border-radius: 999px;
+}
+header.topo nav .btn-instalar svg { width: 16px; height: 16px; }

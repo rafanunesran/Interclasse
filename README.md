@@ -103,6 +103,26 @@ para ver a lista, fazer um backup na hora, baixar e **restaurar** (tudo ou só u
 restaurar é feito um backup de segurança). Como ativar e restaurar em caso de emergência:
 [`apps-script/README.md`](apps-script/README.md#backup-diário-dos-dados).
 
+## Instalar como aplicativo (PWA)
+
+O site pode ser **instalado pelo navegador** e abre como um app, com ícone próprio e sem a
+barra do navegador:
+
+- **Computador (Chrome/Edge) e Android:** quando o navegador permite, aparece o botão
+  **Instalar app** no topo da página (também dá pelo ícone de instalar na barra de endereço
+  ou pelo menu ⋮ → *Instalar app* / *Adicionar à tela inicial*).
+- **iPhone/iPad:** abra no **Safari**, toque em **Compartilhar** e escolha **Adicionar à Tela
+  de Início** (o botão *Instalar app* mostra esse passo a passo).
+
+São dois apps: instalando pela **loja** (`index.html`, página do time) abre a loja; instalando
+pelo **Super Admin** (`superadmin.html` ou o login) abre direto o painel.
+
+Detalhes: `manifest.webmanifest` e `manifest-admin.webmanifest` descrevem os apps, os ícones
+ficam em `img/app/` e o `sw.js` (service worker) busca tudo **sempre da internet primeiro** —
+as atualizações chegam como antes, pelos `?v=` dos scripts. Sem internet, abre a última cópia
+guardada das telas, mas os pedidos e pagamentos precisam de conexão. O app instalado precisa
+do site em **HTTPS** (o GitHub Pages já é).
+
 ## Contato do representante (WhatsApp)
 
 Cada time pode guardar **quem responde por ele** — nome e WhatsApp — para a organização
