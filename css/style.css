@@ -1645,6 +1645,7 @@ body.com-carrinho { padding-bottom: 96px; }
 .prod-time > summary .pix-ajuda { display: block; margin: 2px 0 0; }
 .prod-atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .prod-atalhos button { margin: 0; padding: 5px 10px; font-size: 0.8rem; }
+.prod-marcar-todas { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 8px 12px; font-weight: 600; }
 .cel-marcar { width: 32px; text-align: center; }
 .cel-marcar input { width: auto; }
 tr.linha-marcada > td { background: #eff6ff; }

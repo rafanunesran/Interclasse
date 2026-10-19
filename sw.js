@@ -5,7 +5,7 @@
 // precisam de conexão. Só mexe em GET do próprio site; Firebase, Mercado Pago
 // e CDNs passam direto.
 
-const VERSAO = "20261116a";
+const VERSAO = "20261116b";
 const CACHE = "interclasse-" + VERSAO;
 const GUARDAR = /\.(html|js|css|png|svg|webp|webmanifest|ttf|woff2?)$/i;
 

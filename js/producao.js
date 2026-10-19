@@ -1040,11 +1040,14 @@ function renderizarSelecaoProducao() {
     .sort((a, b) => a[1].time.nome.localeCompare(b[1].time.nome, "pt-BR"));
 
   let totalVisivel = 0;
+  const chavesVisiveis = [];
+  let atualizarMarcarTodas = () => {};
 
   times.forEach(([timeId, { time, alunos }]) => {
     const visiveis = alunosVisiveis(timeId, alunos);
     if (visiveis.length === 0) return;
     totalVisivel += visiveis.length;
+    visiveis.forEach((a) => chavesVisiveis.push(chaveDoItem(timeId, a.id)));
 
     const det = document.createElement("details");
     det.className = "prod-time";
@@ -1105,6 +1108,7 @@ function renderizarSelecaoProducao() {
         if (chk.checked) selecaoProducao.add(chave);
         else selecaoProducao.delete(chave);
         tr.classList.toggle("linha-marcada", chk.checked);
+        atualizarMarcarTodas();
         renderizarBarraProducao();
       };
       tr.querySelector(".cel-marcar").appendChild(chk);
@@ -1119,7 +1123,34 @@ function renderizarSelecaoProducao() {
   if (totalVisivel === 0) {
     elSelecaoProducao.innerHTML =
       "<p>Nenhuma camiseta com os filtros de agora. Troque o cliente no topo, mude os filtros ou desmarque “esconder o que já está em alguma leva”.</p>";
+    return;
   }
+
+  // Marca/desmarca de uma vez tudo o que os filtros deixaram à mostra.
+  const todos = document.createElement("label");
+  todos.className = "checkbox-inline prod-marcar-todas";
+  const chkTodos = document.createElement("input");
+  chkTodos.type = "checkbox";
+  const textoTodos = document.createElement("span");
+  atualizarMarcarTodas = () => {
+    const nMarcadas = chavesVisiveis.filter((c) => selecaoProducao.has(c)).length;
+    chkTodos.checked = nMarcadas === chavesVisiveis.length;
+    chkTodos.indeterminate = nMarcadas > 0 && nMarcadas < chavesVisiveis.length;
+    textoTodos.textContent =
+      ` Selecionar todas as ${chavesVisiveis.length} camiseta(s) filtradas (${nMarcadas} marcada(s))`;
+  };
+  atualizarMarcarTodas();
+  chkTodos.onchange = () => {
+    chavesVisiveis.forEach((c) => {
+      if (chkTodos.checked) selecaoProducao.add(c);
+      else selecaoProducao.delete(c);
+    });
+    renderizarSelecaoProducao();
+    renderizarBarraProducao();
+  };
+  todos.appendChild(chkTodos);
+  todos.appendChild(textoTodos);
+  elSelecaoProducao.prepend(todos);
 }
 
 function criarAtalho(texto, acao) {
