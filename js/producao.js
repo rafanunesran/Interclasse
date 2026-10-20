@@ -1199,6 +1199,7 @@ function renderizarBarraProducao() {
     </label>
     <button type="button" class="primario" id="btnEnviarProducao">Enviar para a produção</button>
     <button type="button" class="secundario" id="btnLimparSelecao">Limpar seleção</button>
+    ${htmlCustosPrevistosDaSelecao()}
   `;
 
   const sel = elBarraProducao.querySelector("#prodDestino");
@@ -1210,6 +1211,37 @@ function renderizarBarraProducao() {
     selecaoProducao.clear();
     renderizarProducao();
   };
+}
+
+// Custo previsto das camisetas marcadas: a mesma projeção do Financeiro para o
+// que ainda não foi para a produção (custoProjetado em js/movimentacoes.js) —
+// o último lote com custo lançado corrige a tabela da aba Tamanhos; sem lote,
+// vale a tabela (Impressão + Costureira do grupo).
+function htmlCustosPrevistosDaSelecao() {
+  const lotes = typeof custosDosLotes === "function" ? custosDosLotes() : null;
+  const projetar = (k, tamanho) => typeof custoProjetado === "function"
+    ? custoProjetado(lotes, k, tamanho)
+    : (k === "impressao" ? custoImpressaoDoTamanho(tamanho) : k === "costureira" ? custoCostureiraDoTamanho(tamanho) : 0);
+  const c = { impressao: 0, costureira: 0, outros: 0 };
+  let n = 0;
+  selecaoProducao.forEach((chave) => {
+    const corte = chave.indexOf("/");
+    const estado = estadoTimes[chave.slice(0, corte)];
+    const aluno = estado && estado.alunos.find((a) => a.id === chave.slice(corte + 1));
+    if (!aluno) return;
+    n++;
+    Object.keys(c).forEach((k) => { c[k] += projetar(k, aluno.tamanho); });
+  });
+  if (n === 0) return "";
+  const total = c.impressao + c.costureira + c.outros;
+  const proj = (lotes && lotes.projecao) || {};
+  const fonte = (k) => proj[k] ? `histórico: ${escapeHtmlAdmin(proj[k].lote)}` : "tabela de Tamanhos";
+  return `<div class="prod-custos-previstos">Custos previstos: <strong>${formatarReais(total)}</strong>` +
+    ` &middot; <strong>${formatarReais(total / n)}</strong> por unidade` +
+    ` &middot; Impressão ${formatarReais(c.impressao)} <span class="pix-ajuda">(${fonte("impressao")})</span>` +
+    ` &middot; Costureira ${formatarReais(c.costureira)} <span class="pix-ajuda">(${fonte("costureira")})</span>` +
+    (c.outros > 0 ? ` &middot; Outros ${formatarReais(c.outros)} <span class="pix-ajuda">(malha, frete... — ${fonte("outros")})</span>` : "") +
+    "</div>";
 }
 
 async function enviarSelecaoParaProducao() {

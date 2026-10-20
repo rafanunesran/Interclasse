@@ -1632,6 +1632,14 @@ body.com-carrinho { padding-bottom: 96px; }
 }
 .barra-producao select { width: auto; margin: 0; padding: 6px 8px; font-size: 0.85rem; }
 .barra-producao button { margin: 0; padding: 8px 14px; }
+/* Linha de custos previstos da seleção, abaixo dos botões. */
+.prod-custos-previstos {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  padding-top: 8px;
+  border-top: 1px solid #bfdbfe;
+}
+.prod-custos-previstos .pix-ajuda { display: inline; margin: 0; font-size: 0.75rem; }
 
 /* Um time no seletor de camisetas. */
 .prod-time {
