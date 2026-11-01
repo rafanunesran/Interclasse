@@ -3146,3 +3146,14 @@ header.topo nav .btn-instalar {
   border-radius: 999px;
 }
 header.topo nav .btn-instalar svg { width: 16px; height: 16px; }
+
+/* Chave (ligar/desligar) no alto de cada espaço de arquivo e elementos extras. */
+.producao-slot-chave { margin: 0 0 2px; font-size: 0.78rem; color: var(--texto-suave); }
+.producao-time .producao-slot.desativado { border: 1px dashed #cbd5e1; background: #f8fafc; }
+.producao-slot.desativado > :not(.producao-slot-chave) { opacity: 0.5; }
+.producao-slot.desativado .producao-slot-previa img { filter: grayscale(1); }
+.producao-grupo-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.producao-mais { margin: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; font-size: 1.2rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.producao-extra-novo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding: 10px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; }
+.producao-extra-novo button, .producao-extra-novo label { margin: 0; }
+.tema-escuro .producao-time .producao-slot.desativado, .tema-escuro .producao-extra-novo { background: #1b1c21; border-color: #3a3b43; }

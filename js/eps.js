@@ -655,9 +655,28 @@ const EPS = (function () {
   function arteDaPeca(prod, pecaId) {
     const pecas = (prod && prod.pecas) || {};
     if (pecaId === "mangaDir" && !(prod.mangaDirDiferente && pecas.mangaDir)) {
-      return pecas.mangaEsq ? { arte: pecas.mangaEsq, chave: "arte:mangaEsq" } : null;
+      return pecas.mangaEsq && slotAtivo(prod, "arte:mangaEsq") ? { arte: pecas.mangaEsq, chave: "arte:mangaEsq" } : null;
     }
-    return pecas[pecaId] ? { arte: pecas[pecaId], chave: "arte:" + pecaId } : null;
+    return pecas[pecaId] && slotAtivo(prod, "arte:" + pecaId) ? { arte: pecas[pecaId], chave: "arte:" + pecaId } : null;
+  }
+
+  // Espaços desativados no time (producao.desativados[slot] = true): o time
+  // não tem aquele arquivo/elemento, então ele é ignorado na folha, na prévia
+  // e na lista de pendências. Os arquivos continuam guardados.
+  // Slots: "arte:<peça>", "brasao", "detalhe", "detalhe:dir", "fonte" e
+  // "extra:<id do elemento>" (imagens extras do time).
+  function slotAtivo(prod, slot) {
+    return !(prod && prod.desativados && prod.desativados[slot]);
+  }
+
+  // O espaço de arquivo que alimenta um elemento do layout (null = nenhum:
+  // o logo da empresa não depende do time).
+  function slotDoElemento(el, prod, pecaId) {
+    if (el.tipo === "logo") return null;
+    if (el.tipo === "brasao") return "brasao";
+    if (el.tipo === "detalhe") return pecaId === "mangaDir" && prod && prod.detalheDirDiferente ? "detalhe:dir" : "detalhe";
+    if (el.tipo === "imagem") return "extra:" + el.id;
+    return "fonte"; // texto: nome, número, etiqueta…
   }
 
   // Chave (em rec.eps / rec.imagens) do arquivo de um elemento de imagem.
@@ -668,9 +687,9 @@ const EPS = (function () {
   function detalheDaPeca(prod, pecaId) {
     if (!prod) return null;
     if (pecaId === "mangaDir" && prod.detalheDirDiferente && prod.detalheMangaDir) {
-      return { img: prod.detalheMangaDir, chave: "detalhe:dir" };
+      return slotAtivo(prod, "detalhe:dir") ? { img: prod.detalheMangaDir, chave: "detalhe:dir" } : null;
     }
-    return prod.detalheManga ? { img: prod.detalheManga, chave: "detalhe" } : null;
+    return prod.detalheManga && slotAtivo(prod, "detalhe") ? { img: prod.detalheManga, chave: "detalhe" } : null;
   }
 
   // ---------------- Marcador da costureira ----------------
@@ -898,7 +917,13 @@ const EPS = (function () {
   function elementosDaPecaNoTime(layout, prod, pecaId) {
     const gerais = ((((layout && layout.pecas) || {})[pecaId] || {}).elementos) || [];
     const extras = ((prod && prod.elementosExtras) || {})[pecaId] || [];
-    return extras.length ? gerais.concat(extras) : gerais;
+    const todos = extras.length ? gerais.concat(extras) : gerais;
+    if (!prod || !prod.desativados || !Object.keys(prod.desativados).length) return todos;
+    // Sem o arquivo do espaço desativado, o elemento que o usa fica de fora.
+    return todos.filter((el) => {
+      const slot = slotDoElemento(el, prod, pecaId);
+      return !slot || slotAtivo(prod, slot);
+    });
   }
 
   // ---------------- Peças virtuais (sem molde EPS) ----------------
@@ -1807,6 +1832,7 @@ const EPS = (function () {
     tamanhoMmDoBbox,
     layoutTexto,
     elementosDaPecaNoTime,
+    slotAtivo,
     textoDoElemento,
     caixaPorDigitos,
     digitosDoNumero,

@@ -483,7 +483,7 @@ function producaoGoleiroPropria(prod) {
 function temVarianteGoleiro(time) {
   const g = producaoGoleiroPropria(producaoDoTime(time));
   return !!(Object.keys(g.pecas || {}).length || g.brasao || g.fonte || g.detalheManga || g.detalheMangaDir ||
-    Object.keys(g.layoutAjustes || {}).length || Object.keys(g.elementosExtras || {}).length);
+    Object.keys(g.layoutAjustes || {}).length || Object.keys(g.elementosExtras || {}).length || Object.keys(g.desativados || {}).length);
 }
 
 // Ajuste do goleiro por cima do da comum: a posição vem inteira de um ou do
@@ -511,6 +511,8 @@ function producaoDoGoleiro(prod) {
   ["brasao", "fonte", "detalheManga", "detalheMangaDir"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
   // Elementos só do time: o goleiro pode ter a lista própria de uma peça.
   if (p.elementosExtras || g.elementosExtras) saida.elementosExtras = { ...(p.elementosExtras || {}), ...(g.elementosExtras || {}) };
+  // Espaços desativados: o do goleiro (true ou false) ganha sobre o da comum.
+  if (p.desativados || g.desativados) saida.desativados = { ...(p.desativados || {}), ...(g.desativados || {}) };
   const ajustes = {};
   const pecasAj = new Set([...Object.keys(p.layoutAjustes || {}), ...Object.keys(g.layoutAjustes || {})]);
   pecasAj.forEach((pecaId) => {
@@ -740,12 +742,13 @@ function usaNoTime(time, teste) {
 function requisitosProducao(time) {
   const p = producaoDoTime(time);
   const usa = (teste) => usaNoTime(time, teste);
-  const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id]).length;
+  const ativo = (slot) => EPS.slotAtivo(p, slot);
+  const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id] && ativo("arte:" + x.id)).length;
   return [
     { id: "artes", rotulo: "Artes das peças", necessario: true, tem: nArtes > 0, detalhe: `${nArtes} enviada(s)` },
-    { id: "fonte", rotulo: "Fonte", necessario: usa((e) => !ehCaixaImagem(e)), tem: !!p.fonte },
-    { id: "brasao", rotulo: "Brasão", necessario: usa((e) => e.tipo === "brasao"), tem: !!p.brasao },
-    { id: "detalhe", rotulo: "Detalhe da manga", necessario: usa((e) => e.tipo === "detalhe"), tem: !!p.detalheManga }
+    { id: "fonte", rotulo: "Fonte", necessario: usa((e) => !ehCaixaImagem(e)), tem: !!p.fonte && ativo("fonte") },
+    { id: "brasao", rotulo: "Brasão", necessario: usa((e) => e.tipo === "brasao"), tem: !!p.brasao && ativo("brasao") },
+    { id: "detalhe", rotulo: "Detalhe da manga", necessario: usa((e) => e.tipo === "detalhe"), tem: !!p.detalheManga && ativo("detalhe") }
   ];
 }
 
@@ -754,7 +757,7 @@ function requisitosProducao(time) {
 function pendenciasProducao(time) {
   const p = producaoDoTime(time);
   const falta = [];
-  const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id]);
+  const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id] && EPS.slotAtivo(p, "arte:" + x.id));
   if (!temArte) falta.push("arte das peças");
   const usaTexto = usaNoTime(time, (e) => !ehCaixaImagem(e));
   const usaBrasao = usaNoTime(time, (e) => e.tipo === "brasao");
@@ -844,6 +847,10 @@ function criarBlocoProducaoTime(timeId, time) {
   }
   slot(gradeExtras, "fonte", "Fonte", infoFonte(propria.fonte), infoFonte(comum.fonte), ".ttf / .otf");
 
+  // Elementos extras: imagens a mais (patrocinador, selo…) só deste time, com
+  // o "+" para acrescentar. Cada uma é um elemento de imagem do layout.
+  bloco.appendChild(criarGrupoExtrasProducao(timeId, prod, gol));
+
   // Mangas e detalhe diferentes em cada lado (padrão: um arquivo para as duas).
   // Valem para as duas variantes.
   const opcoes = document.createElement("div");
@@ -918,7 +925,10 @@ function amostraDaFonteHtml(time) {
 function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
   const gol = editandoGoleiro(timeId);
   const div = document.createElement("div");
-  div.className = "producao-slot" + (atual ? " ok" : " vazio") + (herdado ? " herdado" : "");
+  const timeAtual = estadoTimes[timeId] && estadoTimes[timeId].time;
+  const prodAtual = gol ? producaoDoGoleiro(producaoDoTime(timeAtual)) : producaoDoTime(timeAtual);
+  const desativado = !EPS.slotAtivo(prodAtual, slot);
+  div.className = "producao-slot" + (desativado ? " desativado" : atual ? " ok" : " vazio") + (herdado && !desativado ? " herdado" : "");
   const andamento = enviandoProducao[chaveEnvio(timeId, slot, gol)];
   if (andamento) div.classList.add("enviando");
   const mostrar = atual || herdado;
@@ -982,6 +992,16 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
     acoes.appendChild(rem);
   }
   div.appendChild(acoes);
+  div.prepend(criarChaveSlot(timeId, slot, !desativado, gol));
+  if (desativado) {
+    // Desativado: o time não tem este arquivo. Fica de fora da folha e das
+    // pendências (o arquivo, se houver, continua guardado).
+    div.querySelector(".producao-slot-info").textContent = atual || herdado
+      ? "Desativado — o arquivo fica guardado, mas não vai na folha"
+      : "Desativado — este time não tem";
+    acoes.remove();
+    return div;
+  }
 
   // Espaço vazio: clicar em qualquer lugar abre o seletor de arquivo.
   if (!atual && !andamento) {
@@ -1002,6 +1022,212 @@ function criarSlotProducao(timeId, slot, titulo, atual, formato, herdado) {
       if (file) enviarArquivoProducao(timeId, slot, gol, file);
     });
   }
+  return div;
+}
+
+// Chave (liga/desliga) no alto de um espaço: desativa quando o time não tem
+// aquele arquivo. Desativado, ele sai da folha, da prévia e das pendências.
+function criarChaveSlot(timeId, slot, ativo, gol) {
+  const l = document.createElement("label");
+  l.className = "interruptor producao-slot-chave";
+  l.title = ativo ? "Desativar: este time não tem" : "Ativar de novo";
+  l.innerHTML = `<input type="checkbox" ${ativo ? "checked" : ""} aria-label="Usar este espaço" /><span>${ativo ? "Ativo" : "Desativado"}</span>`;
+  l.onclick = (ev) => ev.stopPropagation();
+  l.querySelector("input").onchange = (ev) => alternarSlotProducao(timeId, slot, ev.target.checked, gol);
+  return l;
+}
+
+async function alternarSlotProducao(timeId, slot, ativo, gol) {
+  try {
+    const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
+    const alvo = gol ? (prod.goleiro = prod.goleiro || {}) : prod;
+    alvo.desativados = alvo.desativados || {};
+    // No goleiro só fica gravado o que difere da camiseta comum.
+    const valor = gol ? !ativo !== !!(prod.desativados || {})[slot] : !ativo;
+    if (valor) alvo.desativados[slot] = !ativo;
+    else delete alvo.desativados[slot];
+    if (!Object.keys(alvo.desativados).length) delete alvo.desativados;
+    limparGoleiroVazio(prod);
+    await gravarProducaoTime(timeId, prod);
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Não foi possível salvar.");
+  }
+}
+
+// ---------------- Elementos extras (imagens a mais do time) ----------------
+const extraNovoPeca = {}; // timeId -> peça escolhida enquanto o "+" está aberto
+
+// Muda a lista de extras de uma peça no nível aberto (comum ou goleiro) e grava.
+async function mudarExtrasProducao(timeId, gol, pecaId, mudar) {
+  const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
+  const alvo = gol ? (prod.goleiro = prod.goleiro || {}) : prod;
+  alvo.elementosExtras = alvo.elementosExtras || {};
+  if (!alvo.elementosExtras[pecaId]) {
+    // Goleiro mexendo pela primeira vez: parte da lista da camiseta comum.
+    alvo.elementosExtras[pecaId] = gol ? limparParaFirestore((prod.elementosExtras || {})[pecaId] || []) : [];
+  }
+  mudar(alvo.elementosExtras[pecaId], alvo);
+  if (!alvo.elementosExtras[pecaId].length && !gol) delete alvo.elementosExtras[pecaId];
+  if (!Object.keys(alvo.elementosExtras).length) delete alvo.elementosExtras;
+  if (alvo.desativados && !Object.keys(alvo.desativados).length) delete alvo.desativados;
+  limparGoleiroVazio(prod);
+  await gravarProducaoTime(timeId, prod);
+}
+
+// Peças que já têm molde (onde dá para pôr uma imagem extra).
+function pecasParaExtra() {
+  return PECAS_PRODUCAO.filter((p) => Object.keys(moldesConfig.pecas[p.id] || {}).length);
+}
+
+// Molde base da peça (mm), para dimensionar a imagem nova.
+function medidasBaseDaPeca(pecaId) {
+  const moldes = moldesConfig.pecas[pecaId] || {};
+  const molde = moldes[moldesConfig.tamanhoBase] || moldes[Object.keys(moldes)[0]];
+  return molde ? EPS.tamanhoMmDoBbox(molde.bbox) : null;
+}
+
+// Escolhe o arquivo e acrescenta a imagem como elemento extra da peça.
+async function adicionarElementoExtra(timeId, gol, pecaId) {
+  const b = medidasBaseDaPeca(pecaId);
+  if (!b) {
+    alert("Envie o molde de corte desta peça na aba Tamanhos primeiro.");
+    return;
+  }
+  const marcar = (t) => marcarEnvio(timeId, "extra-novo", t ? "Imagem extra: " + t : "", gol);
+  let arquivo;
+  try {
+    arquivo = await escolherImagemDeElemento(marcar);
+  } finally {
+    marcar("");
+  }
+  if (!arquivo) return;
+  const w = b.w * 0.3;
+  const caixa = { x: (b.w - w) / 2, y: b.h * 0.3, w, h: w * proporcaoDoArquivo(arquivo) };
+  ["x", "y", "w", "h"].forEach((k) => (caixa[k] = arred1(caixa[k])));
+  try {
+    await mudarExtrasProducao(timeId, gol, pecaId, (lista) => lista.push({ id: novoIdLayout("e"), tipo: "imagem", caixa, arquivo: limparParaFirestore(arquivo) }));
+    delete extraNovoPeca[timeId];
+    if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Não foi possível salvar a imagem extra.");
+  }
+}
+
+function criarGrupoExtrasProducao(timeId, prod, gol) {
+  const sec = document.createElement("section");
+  sec.className = "producao-grupo producao-extras";
+  const aberto = extraNovoPeca[timeId] !== undefined;
+  sec.innerHTML = `<div class="producao-grupo-cab">
+      <h4 class="producao-grupo-titulo">Elementos extras</h4>
+      <button type="button" class="producao-mais" data-extra-mais title="Adicionar elemento extra" aria-label="Adicionar elemento extra" aria-expanded="${aberto}">${aberto ? "×" : "+"}</button>
+    </div>
+    <p class="pix-ajuda">Imagens a mais só ${gol ? "da camiseta do goleiro" : "deste time"} (patrocinador, selo…), quando precisar. Cada uma entra na folha; ajuste a posição em “Editar arte”.</p>`;
+  const grade = document.createElement("div");
+  grade.className = "producao-grade";
+  const pecas = PECAS_PRODUCAO;
+  let n = 0;
+  pecas.forEach((peca) => {
+    (((prod.elementosExtras || {})[peca.id]) || []).filter((el) => el.tipo === "imagem").forEach((el) => {
+      grade.appendChild(criarSlotExtra(timeId, peca, el, prod, gol));
+      n++;
+    });
+  });
+  if (n) sec.appendChild(grade);
+
+  const progresso = enviandoProducao[chaveEnvio(timeId, "extra-novo", gol)];
+  if (aberto || progresso) {
+    const disp = pecasParaExtra();
+    const form = document.createElement("div");
+    form.className = "producao-extra-novo";
+    if (progresso) {
+      form.innerHTML = `<span class="producao-slot-andamento">${escapeHtmlAdmin(progresso)}</span>`;
+    } else if (!disp.length) {
+      form.innerHTML = '<span class="pix-ajuda">Envie o molde de corte de alguma peça na aba Tamanhos primeiro.</span>';
+    } else {
+      if (!disp.some((p) => p.id === extraNovoPeca[timeId])) extraNovoPeca[timeId] = disp[0].id;
+      form.innerHTML = `<label class="campo-inline">Em qual peça?
+          <select data-extra-peca>${disp.map((p) => `<option value="${escAttr(p.id)}"${p.id === extraNovoPeca[timeId] ? " selected" : ""}>${escapeHtmlAdmin(p.nome)}</option>`).join("")}</select></label>
+        <button type="button" class="primario" data-extra-arquivo>${icone("file-up")} Escolher arquivo</button>
+        <span class="pix-ajuda">PNG / TIFF (600 dpi) ou EPS</span>`;
+      form.querySelector("[data-extra-peca]").onchange = (ev) => { extraNovoPeca[timeId] = ev.target.value; };
+      form.querySelector("[data-extra-arquivo]").onclick = () => adicionarElementoExtra(timeId, gol, extraNovoPeca[timeId]);
+    }
+    sec.appendChild(form);
+  }
+  sec.querySelector("[data-extra-mais]").onclick = () => {
+    if (extraNovoPeca[timeId] !== undefined) delete extraNovoPeca[timeId];
+    else extraNovoPeca[timeId] = "";
+    if (typeof renderizarTimesAdmin === "function") renderizarTimesAdmin();
+  };
+  return sec;
+}
+
+function criarSlotExtra(timeId, peca, el, prod, gol) {
+  const slot = "extra:" + el.id;
+  const desativado = !EPS.slotAtivo(prod, slot);
+  const a = el.arquivo || {};
+  const div = document.createElement("div");
+  div.className = "producao-slot " + (desativado ? "desativado" : "ok");
+  const dim = a.formato === "eps" && a.bbox ? EPS.tamanhoMmDoBbox(a.bbox) : null;
+  const info = desativado ? "Desativado — este time não tem"
+    : a.formato === "eps" ? `EPS vetorial${dim ? ` · ${Math.round(dim.w)} × ${Math.round(dim.h)} mm` : ""}`
+      : a.larguraPx ? `${Math.round((a.larguraPx / (a.dpi || 600)) * 25.4)} × ${Math.round((a.alturaPx / (a.dpi || 600)) * 25.4)} mm · ${a.dpi || "?"} dpi` : "";
+  div.innerHTML = `
+    <div class="producao-slot-titulo"><span>${escapeHtmlAdmin(peca.nome)}</span>${desativado ? "" : '<span class="producao-slot-selo">✓</span>'}</div>
+    <div class="producao-slot-previa">${a.previaUrl ? `<img src="${escAttr(a.previaUrl)}" alt="" loading="lazy" />` : '<span class="producao-slot-ok">✓</span>'}</div>
+    <div class="producao-slot-info"><span class="producao-slot-nome" title="${escAttr(a.nomeArquivo || "")}">${escapeHtmlAdmin(a.nomeArquivo || "imagem")}</span><span>${escapeHtmlAdmin(info)}</span></div>`;
+  div.prepend(criarChaveSlot(timeId, slot, !desativado, gol));
+  if (desativado) return div;
+  const acoes = document.createElement("div");
+  acoes.className = "producao-slot-acoes";
+  const trocar = document.createElement("button");
+  trocar.type = "button";
+  trocar.className = "secundario";
+  trocar.textContent = "Trocar";
+  trocar.onclick = async (ev) => {
+    ev.stopPropagation();
+    if (!exigirDriveProducao()) return;
+    const marcar = (t) => marcarEnvio(timeId, "extra-novo", t ? "Imagem extra: " + t : "", gol);
+    let novo;
+    try {
+      novo = await escolherImagemDeElemento(marcar);
+    } finally {
+      marcar("");
+    }
+    if (!novo) return;
+    try {
+      await mudarExtrasProducao(timeId, gol, peca.id, (lista) => {
+        const e = lista.find((x) => x.id === el.id);
+        if (e) e.arquivo = limparParaFirestore(novo);
+      });
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Não foi possível trocar a imagem.");
+    }
+  };
+  const remover = document.createElement("button");
+  remover.type = "button";
+  remover.className = "secundario botao-remover";
+  remover.textContent = "Remover";
+  remover.onclick = async (ev) => {
+    ev.stopPropagation();
+    if (!confirm(`Remover esta imagem extra (${a.nomeArquivo || "imagem"}) ${gol ? "do goleiro" : "deste time"}?`)) return;
+    try {
+      await mudarExtrasProducao(timeId, gol, peca.id, (lista, alvo) => {
+        const i = lista.findIndex((x) => x.id === el.id);
+        if (i >= 0) lista.splice(i, 1);
+        if (alvo.desativados) delete alvo.desativados[slot];
+        if (alvo.layoutAjustes && alvo.layoutAjustes[peca.id]) delete alvo.layoutAjustes[peca.id][el.id];
+      });
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Não foi possível remover a imagem.");
+    }
+  };
+  acoes.append(trocar, remover);
+  div.appendChild(acoes);
   return div;
 }
 
@@ -1046,6 +1272,7 @@ function limparGoleiroVazio(prod) {
   if (g.pecas && !Object.keys(g.pecas).length) delete g.pecas;
   if (g.layoutAjustes && !Object.keys(g.layoutAjustes).length) delete g.layoutAjustes;
   if (g.elementosExtras && !Object.keys(g.elementosExtras).length) delete g.elementosExtras;
+  if (g.desativados && !Object.keys(g.desativados).length) delete g.desativados;
   if (!Object.keys(g).length) delete prod.goleiro;
 }
 
@@ -1496,7 +1723,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261116c";
+const VERSAO_MOCKUP3D = "20261116d";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -3102,7 +3329,7 @@ function gravarCaixaLayout(el, m, caixa) {
 }
 
 // Imagem própria de um elemento: PNG (600 dpi) ou EPS, enviado ao Drive.
-async function escolherImagemDeElemento() {
+async function escolherImagemDeElemento(progresso) {
   if (!exigirDriveProducao()) return null;
   const file = await escolherArquivos(".png,image/png,.tif,.tiff,image/tiff,.eps,.ps,application/postscript");
   if (!file) return null;
@@ -3113,7 +3340,7 @@ async function escolherImagemDeElemento() {
       if (d.semPrevia) alert("A imagem foi enviada, mas a prévia não pôde ser desenhada. Ela aparece como uma caixa no editor.");
       return { formato: "eps", partes: d.partes, epsId: d.epsId, bbox: d.bbox, previaUrl: d.previaUrl, nomeArquivo: d.nomeArquivo };
     }
-    const d = await enviarPngProducao(file, pref, (t) => estadoSalvarLayout(t ? "Imagem: " + t : ""));
+    const d = await enviarPngProducao(file, pref, progresso || ((t) => estadoSalvarLayout(t ? "Imagem: " + t : "")));
     return d ? { formato: "png", ...d } : null;
   } catch (e) {
     console.error(e);
@@ -3768,7 +3995,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
   // PNG de conferência das colunas.
   rec.previas = rec.previas || {};
   rec.inflar = pako.inflate; // recorte das imagens com transparência (EPS para o Corel)
-  if (prod.fonte && prod.fonte.partes && !rec.fonte) {
+  if (prod.fonte && prod.fonte.partes && !rec.fonte && EPS.slotAtivo(prod, "fonte")) {
     aviso("Carregando a fonte…");
     rec.fonte = await obterFonte(prod.fonte.partes);
   }
@@ -3793,7 +4020,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
   }
   if (logoEmpresa && logoEmpresa.previaUrl) rec.previas.logo = logoEmpresa.previaUrl;
   if (prod.brasao && prod.brasao.previaUrl) rec.previas.brasao = prod.brasao.previaUrl;
-  if (prod.brasao && !rec.eps.brasao) {
+  if (prod.brasao && !rec.eps.brasao && EPS.slotAtivo(prod, "brasao")) {
     aviso("Carregando o brasão…");
     rec.eps.brasao = await lerEps(prod.brasao.partes || prod.brasao.epsId, prod.brasao.bbox);
   }
