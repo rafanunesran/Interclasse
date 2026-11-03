@@ -249,7 +249,9 @@ function itemAtual(item) {
     // Camiseta de cor especial: manda o goleiro para um CSV próprio.
     goleiro: !!item.goleiro,
     // Camiseta de professor: marca só para organização.
-    prof: !!item.prof
+    prof: !!item.prof,
+    // Elementos tirados só desta camiseta: { brasao, nome, numero }.
+    sem: semElementos(item)
   };
   if (item.origem === "avulso") return base;
 
@@ -264,13 +266,15 @@ function itemAtual(item) {
     (aluno.nomeCamiseta || "") !== (item.nomeCamiseta || "") ||
     String(aluno.numero || "") !== String(item.numero || "") ||
     (aluno.tamanho || "") !== (item.tamanho || "") ||
-    ehGoleiro(aluno) !== !!item.goleiro;
+    ehGoleiro(aluno) !== !!item.goleiro ||
+    JSON.stringify(semElementos(aluno)) !== JSON.stringify(semElementos(item));
   base.nome = aluno.nome || "";
   base.nomeCamiseta = aluno.nomeCamiseta || "";
   base.numero = aluno.numero || "";
   base.tamanho = aluno.tamanho || "";
   base.goleiro = ehGoleiro(aluno);
   base.prof = ehProf(aluno);
+  base.sem = semElementos(aluno);
   base.pago = !!aluno.pago;
   base.pagamentoForma = aluno.pagamentoForma || "";
   base.timeNome = (estado.time && estado.time.nome) || item.timeNome || "";
@@ -568,7 +572,7 @@ function criarBlocoModelo(leva, grupo) {
         : "");
 
     tr.innerHTML = `
-      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${badgeProfHtml(atual)}${avisos}
+      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${badgeProfHtml(atual)}${badgeSemElementosHtml(atual)}${avisos}
           ${!atual.avulso && atual.nome && atual.nomeCamiseta
             ? `<br><small class="pix-ajuda">${escapeHtmlAdmin(atual.nome)}</small>` : ""}</td>
       <td>${escapeHtmlAdmin(atual.numero || "-")}</td>
@@ -1091,7 +1095,7 @@ function renderizarSelecaoProducao() {
 
       tr.innerHTML = `
         <td class="cel-marcar"></td>
-        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}${badgeProfHtml(aluno)}</td>
+        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}${badgeProfHtml(aluno)}${badgeSemElementosHtml(aluno)}</td>
         <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
         <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
         <td>${escapeHtmlAdmin(aluno.tamanho || "-")}</td>
@@ -1321,6 +1325,7 @@ async function enviarSelecaoParaProducao() {
             tamanho: aluno.tamanho || "",
             goleiro: ehGoleiro(aluno),
             prof: ehProf(aluno),
+            sem: semElementos(aluno),
             criadoEmMs: Date.now()
           },
           { merge: true }
@@ -1373,7 +1378,7 @@ function baixarCsvsDaLeva(leva, grupos) {
 
 // Conferência da leva inteira: um arquivo só, com o modelo em cada linha.
 function exportarConferenciaLeva(leva, grupos) {
-  const linhas = [["Leva", "Modelo", "Cliente", "Time", "Origem", "Nome do Estudante", "Nome na Camiseta", "Numero", "Tamanho", "Goleiro", "Pago", "Forma Pagto", "Situacao"]];
+  const linhas = [["Leva", "Modelo", "Cliente", "Time", "Origem", "Nome do Estudante", "Nome na Camiseta", "Numero", "Tamanho", "Goleiro", "Sem", "Pago", "Forma Pagto", "Situacao"]];
   grupos.forEach((g) => {
     g.linhas.forEach(({ atual }) => {
       linhas.push([
@@ -1387,6 +1392,7 @@ function exportarConferenciaLeva(leva, grupos) {
         atual.numero || "",
         atual.tamanho || "",
         atual.goleiro ? "Sim" : "Nao",
+        ELEMENTOS_TIRAVEIS.filter((e) => (atual.sem || {})[e.id]).map((e) => e.rotulo).join(" + "),
         atual.avulso ? "-" : (atual.pago ? "Sim" : "Nao"),
         atual.avulso ? "" : (atual.pagamentoForma || ""),
         atual.removido ? "Fora do pedido" : (atual.mudou ? "Alterada apos entrar" : "OK")

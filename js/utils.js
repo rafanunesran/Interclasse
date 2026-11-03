@@ -664,6 +664,62 @@ function badgeProfHtml(aluno) {
     : "";
 }
 
+// ---------------- Elementos tirados de UMA camiseta ----------------
+// No pedido, a organização pode tirar o brasão, o nome ou o número de uma
+// camiseta só (aluno.sem = { brasao: true, nome: true, numero: true }). A
+// folha de impressão sai sem esses elementos para ela; o resto do time segue
+// o layout normal.
+const ELEMENTOS_TIRAVEIS = [
+  { id: "brasao", rotulo: "Brasão", curto: "brasão", icone: "shield" },
+  { id: "nome", rotulo: "Nome", curto: "nome", icone: "type" },
+  { id: "numero", rotulo: "Número", curto: "nº", icone: "hash" }
+];
+
+// { brasao, nome, numero } só com os que estão tirados (true).
+function semElementos(aluno) {
+  const s = (aluno && aluno.sem) || {};
+  const saida = {};
+  ELEMENTOS_TIRAVEIS.forEach((e) => { if (s[e.id]) saida[e.id] = true; });
+  return saida;
+}
+
+function badgeSemElementosHtml(aluno) {
+  const s = semElementos(aluno);
+  const tirados = ELEMENTOS_TIRAVEIS.filter((e) => s[e.id]);
+  if (!tirados.length) return "";
+  return '<span class="badge sem-elementos" title="Esta camiseta sai sem: ' +
+    tirados.map((e) => e.rotulo.toLowerCase()).join(", ") + '">sem ' +
+    tirados.map((e) => e.curto).join(", ") + "</span>";
+}
+
+// Três botões de liga/desliga (brasão, nome, número) para uma camiseta.
+// aoMudar(id, tirar, botao) grava; o botão já troca de estado na hora.
+function criarChavesSemElementos(aluno, aoMudar) {
+  const caixa = document.createElement("span");
+  caixa.className = "chaves-sem";
+  const s = semElementos(aluno);
+  ELEMENTOS_TIRAVEIS.forEach((e) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chave-sem" + (s[e.id] ? " tirado" : "");
+    const pintar = () => {
+      const tirado = b.classList.contains("tirado");
+      b.title = tirado ? `Sem ${e.rotulo.toLowerCase()} — clique para pôr de volta` : `Tirar o ${e.rotulo.toLowerCase()} desta camiseta`;
+      b.setAttribute("aria-pressed", tirado ? "true" : "false");
+      b.setAttribute("aria-label", (tirado ? "Pôr de volta o " : "Tirar o ") + e.rotulo.toLowerCase() + " de " + ((aluno && aluno.nome) || "esta camiseta"));
+    };
+    b.innerHTML = iconeOu(e.icone, "") + `<span class="chave-sem-texto">${e.rotulo}</span>`;
+    pintar();
+    b.onclick = () => {
+      b.classList.toggle("tirado");
+      pintar();
+      if (aoMudar) aoMudar(e.id, b.classList.contains("tirado"), b);
+    };
+    caixa.appendChild(b);
+  });
+  return caixa;
+}
+
 function criarCheckProf(aluno, aoMudar) {
   return criarCheckMarca(aluno, {
     classe: "check-prof",
@@ -719,7 +775,9 @@ function baixarCSVProducaoSeparado(nomeArquivo, alunos) {
 
 // Uma linha do CSV de produção: nome na camiseta (A), número (B), tamanho (C).
 function linhaProducaoDe(item) {
-  return [nomeNaCamiseta(item), (item && item.numero) || "", (item && item.tamanho) || ""];
+  // Nome ou número tirados desta camiseta (no pedido) vão em branco.
+  const sem = semElementos(item);
+  return [sem.nome ? "" : nomeNaCamiseta(item), sem.numero ? "" : (item && item.numero) || "", (item && item.tamanho) || ""];
 }
 
 // CSV no padrão do programa de impressão a partir de itens JÁ escolhidos, sem

@@ -1723,7 +1723,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261116d";
+const VERSAO_MOCKUP3D = "20261116e";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -5128,7 +5128,10 @@ async function gerarPdfCostureira(linhas, nomeBase) {
     cams.forEach((c) => {
       if (yl > H - 14) { rodape(); cabecalhoLista(true); }
       const ind = c._alunoId && temArteIndividual(timeComum, c._alunoId) ? " *" : "";
-      const vals = [rotulo, c.tamanho || "", c.numero == null ? "" : String(c.numero), (c.nomeCamiseta || "") + ind, c.nome || ""];
+      // Tirado só desta camiseta (no pedido): a lista avisa a costureira.
+      const sem = c.sem || {};
+      const apelido = (sem.nome ? "(sem nome)" : c.nomeCamiseta || "") + (sem.brasao ? " · sem brasão" : "");
+      const vals = [rotulo, c.tamanho || "", sem.numero ? "sem" : c.numero == null ? "" : String(c.numero), apelido + ind, c.nome || ""];
       const larg = [56, 12, 12, 48, W - 2 * M - 138];
       cols.forEach(([, x], k) => texto(doc.splitTextToSize(vals[k], larg[k])[0] || "", M + 2 + x, yl, { tam: 8.5, bold: k === 1 }));
       yl += 5.5;

@@ -1316,7 +1316,7 @@ function renderizarListaDoTime(timeId) {
   tabela.className = "tabela-responsiva";
   tabela.innerHTML = `
     <thead>
-      <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Prof</th><th>Pagamento</th><th>Ações</th></tr>
+      <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Prof</th><th title="Tirar o brasão, o nome ou o número só desta camiseta">Sem</th><th>Pagamento</th><th>Ações</th></tr>
     </thead>
     <tbody></tbody>
   `;
@@ -1324,7 +1324,7 @@ function renderizarListaDoTime(timeId) {
   const alunosDaTabela = soResultados ? achado.alunos : alunos;
   // Mesmo agrupamento da página do time: em aberto em cima, lotes embaixo.
   preencherListaAgrupada(tbody, alunosDaTabela, {
-    colunas: 8,
+    colunas: 9,
     ajudaAberto: "Ainda não entraram em nenhum lote de produção.",
     criarLinha: (aluno) => criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados)
   });
@@ -1360,6 +1360,7 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
     <td data-label="Nome na camiseta">${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
     <td data-label="Goleiro" class="cel-goleiro"></td>
     <td data-label="Prof" class="cel-prof"></td>
+    <td data-label="Sem" class="cel-sem"></td>
     <td data-label="Pagamento" class="cel-pagamento"></td>
     <td data-label="" class="acoes-linha"></td>
   `;
@@ -1369,6 +1370,8 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
   preencherCelulaGoleiroAdmin(tr.querySelector(".cel-goleiro"), timeId, aluno);
   // Prof: camiseta de professor, marca só para organização.
   preencherCelulaProfAdmin(tr.querySelector(".cel-prof"), timeId, aluno);
+  // Sem brasão / nome / número: só nesta camiseta, a folha sai sem eles.
+  preencherCelulaSemAdmin(tr.querySelector(".cel-sem"), timeId, aluno);
 
   // Coluna de pagamento: badge + seletor para registrar o pagamento.
   const tdPag = tr.querySelector(".cel-pagamento");
@@ -4172,6 +4175,24 @@ function preencherCelulaProfAdmin(td, timeId, aluno) {
   }));
 }
 
+// Tirar o brasão, o nome ou o número de uma camiseta (aluno.sem).
+function preencherCelulaSemAdmin(td, timeId, aluno) {
+  if (!td) return;
+  td.innerHTML = "";
+  td.appendChild(criarChavesSemElementos(aluno, (id, tirar, botao) => {
+    botao.disabled = true;
+    const firestore = firebase.firestore;
+    db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
+      .update({ ["sem." + id]: tirar ? true : firestore.FieldValue.delete() })
+      .catch((erro) => {
+        console.error(erro);
+        alert("Não foi possível salvar. Tente novamente.");
+        renderizarTimesAdmin();
+      })
+      .finally(() => { botao.disabled = false; });
+  }));
+}
+
 // Edição inline de um aluno no Super Admin (permite corrigir a linha mesmo
 // com o pedido fechado). Ao salvar, resolve o pedido de ajuste, se houver.
 function editarAlunoAdmin(tr, timeId, aluno) {
@@ -4256,9 +4277,10 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   tdAcoes.appendChild(btnSalvar);
   tdAcoes.appendChild(btnCancelar);
 
+  const tdSem = document.createElement("td"); // sem brasão/nome/número (fora da edição)
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
   [[tdNome, "Nome"], [tdTamanho, "Tamanho"], [tdNumero, "Número"], [tdCostas, "Nome na camiseta"],
-    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdPagamento, ""], [tdAcoes, ""]]
+    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdSem, ""], [tdPagamento, ""], [tdAcoes, ""]]
     .forEach(([td, rotulo]) => (td.dataset.label = rotulo));
   tr.classList.add("linha-editando");
 
@@ -4268,6 +4290,7 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   tr.appendChild(tdCostas);
   tr.appendChild(tdGoleiro);
   tr.appendChild(tdProf);
+  tr.appendChild(tdSem);
   tr.appendChild(tdPagamento);
   tr.appendChild(tdAcoes);
 }

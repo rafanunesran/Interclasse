@@ -926,6 +926,29 @@ const EPS = (function () {
     });
   }
 
+  // Elementos tirados de UMA camiseta (camiseta.sem = { brasao, nome,
+  // numero }, marcado no pedido): o elemento desse tipo fica de fora das
+  // peças só nela (a etiqueta de tamanho não muda). Nome vale para o
+  // apelido e o nome completo.
+  function elementoTiradoDaCamiseta(el, camiseta) {
+    const sem = camiseta && camiseta.sem;
+    if (!sem || !el) return false;
+    if (sem.brasao && el.tipo === "brasao") return true;
+    if (sem.numero && ehElementoNumero(el)) return true;
+    // Texto de nome: o que não é número nem imagem e não mostra tamanho,
+    // nome do time ou texto fixo (ver textoDoCampo).
+    if (sem.nome && !ehElementoNumero(el) &&
+        !["brasao", "logo", "detalhe", "imagem"].includes(el.tipo) &&
+        !["tamanho", "time", "fixo"].includes(el.campo)) return true;
+    return false;
+  }
+
+  function elementosDaCamiseta(elementos, camiseta) {
+    const sem = camiseta && camiseta.sem;
+    if (!sem || !Object.keys(sem).length) return elementos;
+    return elementos.filter((el) => !elementoTiradoDaCamiseta(el, camiseta));
+  }
+
   // ---------------- Peças virtuais (sem molde EPS) ----------------
   // Retângulos que vão na folha junto das peças de cada camiseta:
   //   • reforcoOmbro — retalho de reforço de ombro, 25 mm de largura e o
@@ -1046,8 +1069,10 @@ const EPS = (function () {
         const molde = virtual ? moldeVirtual(moldes, layout, pecaId, cam.tamanho) : moldesPeca[cam.tamanho];
         const ad = virtual ? null : arteDaPeca(prod, pecaId);
         const arte = ad && ad.arte;
-        const elementos = elementosDaPecaNoTime(layout, prod, pecaId);
-        if (!virtual && !arte && !elementos.length) return; // peça sem nada deste time
+        // O que foi tirado desta camiseta sai das peças; a etiqueta fica igual.
+        const doTime = elementosDaPecaNoTime(layout, prod, pecaId);
+        const elementos = virtual ? doTime : elementosDaCamiseta(doTime, cam);
+        if (!virtual && !arte && !elementos.length) return; // peça sem nada deste time (ou desta camiseta)
         if (!molde || !molde.bbox) {
           avisar(pecaId === "reforcoOmbro"
             ? `Sem o comprimento do reforço de ombro para o tamanho ${cam.tamanho || "(vazio)"} (sem molde das costas com contorno nesse tamanho e sem valor na aba Tamanhos) — o reforço ficou de fora.`
@@ -1832,6 +1857,7 @@ const EPS = (function () {
     tamanhoMmDoBbox,
     layoutTexto,
     elementosDaPecaNoTime,
+    elementosDaCamiseta,
     slotAtivo,
     textoDoElemento,
     caixaPorDigitos,

@@ -1252,6 +1252,26 @@ body.com-carrinho { padding-bottom: 96px; }
 }
 .linha-no-carrinho > td { background: #eff6ff; }
 
+/* Tirar brasão, nome ou número de UMA camiseta (lista do time no admin). */
+.chaves-sem { display: inline-flex; gap: 4px; flex-wrap: nowrap; }
+.chave-sem {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; margin: 0; width: auto;
+  border: 1px solid #cbd5e1; border-radius: 999px;
+  background: #fff; color: #334155;
+  font-size: 0.75rem; font-weight: 600; line-height: 1.2;
+  cursor: pointer; white-space: nowrap;
+}
+.chave-sem .ico { width: 1em; height: 1em; }
+.chave-sem:hover { border-color: #94a3b8; }
+.chave-sem.tirado { background: #fee2e2; border-color: #fca5a5; color: #991b1b; text-decoration: line-through; }
+.badge.sem-elementos { background: #fee2e2; color: #991b1b; }
+@media (max-width: 640px) {
+  .chave-sem-texto { display: none; }
+}
+.tema-escuro .chave-sem { background: #25262b; border-color: #44464f; color: #d1d5db; }
+.tema-escuro .chave-sem.tirado, .tema-escuro .badge.sem-elementos { background: #3f1d1d; border-color: #7f1d1d; color: #fca5a5; }
+
 /* Lista das camisetas dentro do modal de pagamento. */
 .pix-itens {
   margin: 0 0 10px;

@@ -55,12 +55,20 @@ function ciPecasDaCamiseta(item, atual, cache) {
   const timeId = timeDaLinha(item);
   if (!timeId || !estadoTimes[timeId]) return null;
   const chave = timeId + (atual.goleiro ? "|g" : "");
+  const time = typeof timeNaVariante === "function"
+    ? timeNaVariante(estadoTimes[timeId].time, atual.goleiro) : estadoTimes[timeId].time;
   let ids = cache && cache.get(chave);
   if (!ids) {
-    const time = typeof timeNaVariante === "function"
-      ? timeNaVariante(estadoTimes[timeId].time, atual.goleiro) : estadoTimes[timeId].time;
     ids = pecasDoTime(time);
     if (cache) cache.set(chave, ids);
+  }
+  // Sem brasão/nome/número nesta camiseta: a peça que só tinha isso (sem
+  // arte) não vai para a folha, então também não entra no custo.
+  if (atual.sem && Object.keys(atual.sem).length && typeof producaoDoTime === "function") {
+    const prod = producaoDoTime(time);
+    const lay = layoutDoTime(time);
+    ids = ids.filter((pecaId) => EPS.PECAS_VIRTUAIS[pecaId] || EPS.arteDaPeca(prod, pecaId) ||
+      EPS.elementosDaCamiseta(EPS.elementosDaPecaNoTime(lay, prod, pecaId), atual).length);
   }
   return ids.map((pecaId) => ({
     pecaId,
