@@ -1266,6 +1266,8 @@ body.com-carrinho { padding-bottom: 96px; }
 .chave-sem:hover { border-color: #94a3b8; }
 .chave-sem.tirado { background: #fee2e2; border-color: #fca5a5; color: #991b1b; text-decoration: line-through; }
 .badge.sem-elementos { background: #fee2e2; color: #991b1b; }
+.tirado-lista { color: #991b1b; font-style: italic; font-size: 0.85em; }
+.tema-escuro .tirado-lista { color: #fca5a5; }
 @media (max-width: 640px) {
   .chave-sem-texto { display: none; }
 }

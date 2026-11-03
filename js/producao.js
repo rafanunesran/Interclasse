@@ -572,10 +572,10 @@ function criarBlocoModelo(leva, grupo) {
         : "");
 
     tr.innerHTML = `
-      <td>${escapeHtmlAdmin(nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${badgeProfHtml(atual)}${badgeSemElementosHtml(atual)}${avisos}
+      <td>${nomeCamisetaDaListaHtml(atual, nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${badgeProfHtml(atual)}${badgeSemElementosHtml(atual)}${avisos}
           ${!atual.avulso && atual.nome && atual.nomeCamiseta
             ? `<br><small class="pix-ajuda">${escapeHtmlAdmin(atual.nome)}</small>` : ""}</td>
-      <td>${escapeHtmlAdmin(atual.numero || "-")}</td>
+      <td>${numeroDaListaHtml(atual)}</td>
       <td>${escapeHtmlAdmin(atual.tamanho || "-")}</td>
       <td>${origem}</td>
       <td>${atual.avulso ? '<span class="badge interno">—</span>' : badgePagamentoHtml(atual)}</td>
@@ -1096,8 +1096,8 @@ function renderizarSelecaoProducao() {
       tr.innerHTML = `
         <td class="cel-marcar"></td>
         <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}${badgeProfHtml(aluno)}${badgeSemElementosHtml(aluno)}</td>
-        <td>${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
-        <td>${escapeHtmlAdmin(aluno.numero || "-")}</td>
+        <td>${nomeCamisetaDaListaHtml(aluno)}</td>
+        <td>${numeroDaListaHtml(aluno)}</td>
         <td>${escapeHtmlAdmin(aluno.tamanho || "-")}</td>
         <td>${badgePagamentoHtml(aluno)}</td>
         <td>${jaEm.length

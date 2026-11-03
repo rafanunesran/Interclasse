@@ -269,7 +269,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261116f";
+const VERSAO_MOCKUP3D = "20261116g";
 let botao3d = null;
 
 function texturas3D(goleiro) {
@@ -872,8 +872,8 @@ function criarLinhaAluno(aluno, podeEditar, duplicados) {
   tr.innerHTML = `
     <td data-label="Nome" class="cel-nome">${marca}${escapeHtml(aluno.nome)}${propostaAjusteHtml(aluno)}${historicoAjusteHtml(aluno)}</td>
     <td data-label="Tamanho">${escapeHtml(aluno.tamanho)}</td>
-    <td data-label="Número">${escapeHtml(aluno.numero || "-")}</td>
-    <td data-label="Nome na camiseta">${escapeHtml(aluno.nomeCamiseta || "-")}</td>
+    <td data-label="Número">${numeroDaListaHtml(aluno)}</td>
+    <td data-label="Nome na camiseta">${nomeCamisetaDaListaHtml(aluno)}</td>
     <td data-label="Goleiro" class="cel-goleiro"></td>
     <td data-label="Prof" class="cel-prof"></td>
     <td data-label="Sem" class="cel-sem"></td>

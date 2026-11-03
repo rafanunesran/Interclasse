@@ -692,6 +692,22 @@ function badgeSemElementosHtml(aluno) {
     tirados.map((e) => e.curto).join(", ") + "</span>";
 }
 
+// Número e nome na camiseta como aparecem nas listas: tirados desta
+// camiseta, viram "sem nº" / "sem nome" (o valor guardado não se perde).
+function escapeListaHtml(texto) {
+  const div = document.createElement("div");
+  div.textContent = texto ?? "";
+  return div.innerHTML;
+}
+function numeroDaListaHtml(aluno) {
+  if (semElementos(aluno).numero) return '<span class="tirado-lista" title="Número tirado desta camiseta">sem nº</span>';
+  return escapeListaHtml(String((aluno && aluno.numero) || "-"));
+}
+function nomeCamisetaDaListaHtml(aluno, valor) {
+  if (semElementos(aluno).nome) return '<span class="tirado-lista" title="Nome tirado desta camiseta">sem nome</span>';
+  return escapeListaHtml(String(valor != null ? valor : (aluno && aluno.nomeCamiseta) || "-"));
+}
+
 // Três botões de liga/desliga (brasão, nome, número) para uma camiseta.
 // aoMudar(id, tirar, botao) grava; o botão já troca de estado na hora.
 function criarChavesSemElementos(aluno, aoMudar) {

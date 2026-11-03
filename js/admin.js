@@ -1356,8 +1356,8 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
     <td data-label="Nome">${marca}${escapeHtmlAdmin(aluno.nome)}${typeof temArteIndividual === "function" && temArteIndividual(time, aluno.id)
       ? ' <span class="badge selo-do-time" title="Esta camiseta tem arte própria (aba Editar arte → Uma camiseta)">arte própria</span>' : ""}${proposta}${motivo}${historicoAjusteHtml(aluno)}</td>
     <td data-label="Tamanho">${escapeHtmlAdmin(aluno.tamanho)}</td>
-    <td data-label="Número">${escapeHtmlAdmin(aluno.numero || "-")}</td>
-    <td data-label="Nome na camiseta">${escapeHtmlAdmin(aluno.nomeCamiseta || "-")}</td>
+    <td data-label="Número">${numeroDaListaHtml(aluno)}</td>
+    <td data-label="Nome na camiseta">${nomeCamisetaDaListaHtml(aluno)}</td>
     <td data-label="Goleiro" class="cel-goleiro"></td>
     <td data-label="Prof" class="cel-prof"></td>
     <td data-label="Sem" class="cel-sem"></td>
