@@ -269,7 +269,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261116e";
+const VERSAO_MOCKUP3D = "20261116f";
 let botao3d = null;
 
 function texturas3D(goleiro) {
@@ -847,7 +847,7 @@ function renderizarTabela() {
   // sua barra de etapas.
   elTabelaCorpo.innerHTML = "";
   preencherListaAgrupada(elTabelaCorpo, visiveis, {
-    colunas: 9,
+    colunas: 10,
     ajudaAberto: pedidoAceitaPagamento(timeAtual)
       ? "Ainda não entraram na produção. Pague para garantir a camiseta no lote."
       : "Ainda não entraram na produção.",
@@ -876,6 +876,7 @@ function criarLinhaAluno(aluno, podeEditar, duplicados) {
     <td data-label="Nome na camiseta">${escapeHtml(aluno.nomeCamiseta || "-")}</td>
     <td data-label="Goleiro" class="cel-goleiro"></td>
     <td data-label="Prof" class="cel-prof"></td>
+    <td data-label="Sem" class="cel-sem"></td>
     <td data-label="Pagamento">${badgePagamentoHtml(aluno)}</td>
     <td data-label="Carrinho" class="cel-carrinho"></td>
     <td data-label="" class="acoes-linha"></td>
@@ -886,6 +887,8 @@ function criarLinhaAluno(aluno, podeEditar, duplicados) {
   preencherCelulaGoleiro(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
   // Prof: camiseta de professor, marca só para organização.
   preencherCelulaProf(tr.querySelector(".cel-prof"), aluno, podeEditar);
+  // Sem brasão / nome / número: só nesta camiseta.
+  preencherCelulaSem(tr.querySelector(".cel-sem"), aluno, podeEditar);
 
   // Carrinho: marque quantas quiser e pague todas de uma vez lá embaixo.
   const tdCarrinho = tr.querySelector(".cel-carrinho");
@@ -1021,6 +1024,28 @@ function preencherCelulaProf(td, aluno, podeEditar) {
         renderizarTabela();
       })
       .finally(() => { chk.disabled = false; });
+  }));
+}
+
+// Tirar o brasão, o nome ou o número de UMA camiseta (aluno.sem). Quem entrou
+// com a senha liga e desliga; quem só olha vê o que foi tirado.
+function preencherCelulaSem(td, aluno, podeEditar) {
+  if (!td) return;
+  td.innerHTML = "";
+  if (!podeEditar) {
+    td.innerHTML = badgeSemElementosHtml(aluno) || '<span class="pix-ajuda">-</span>';
+    return;
+  }
+  td.appendChild(criarChavesSemElementos(aluno, (id, tirar, botao) => {
+    botao.disabled = true;
+    db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
+      .update({ ["sem." + id]: tirar ? true : firebase.firestore.FieldValue.delete() })
+      .catch((erro) => {
+        console.error(erro);
+        alert("Não foi possível salvar. Tente novamente.");
+        renderizarTabela();
+      })
+      .finally(() => { botao.disabled = false; });
   }));
 }
 
@@ -1216,10 +1241,11 @@ function editarLinha(tr, aluno) {
   tdAcoes.appendChild(btnSalvar);
   tdAcoes.appendChild(btnCancelar);
 
+  const tdSem = document.createElement("td");       // sem brasão/nome/número (fora da edição)
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
   const tdCarrinho = document.createElement("td");  // coluna do carrinho (vazia na edição)
   [[tdNome, "Nome"], [tdTamanho, "Tamanho"], [tdNumero, "Número"], [tdCostas, "Nome na camiseta"],
-    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdPagamento, ""], [tdCarrinho, ""], [tdAcoes, ""]]
+    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdSem, ""], [tdPagamento, ""], [tdCarrinho, ""], [tdAcoes, ""]]
     .forEach(([td, rotulo]) => (td.dataset.label = rotulo));
   tr.classList.add("linha-editando");
 
@@ -1229,6 +1255,7 @@ function editarLinha(tr, aluno) {
   tr.appendChild(tdCostas);
   tr.appendChild(tdGoleiro);
   tr.appendChild(tdProf);
+  tr.appendChild(tdSem);
   tr.appendChild(tdPagamento);
   tr.appendChild(tdCarrinho);
   tr.appendChild(tdAcoes);
