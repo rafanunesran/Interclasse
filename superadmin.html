@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Interclasse" />
-<link rel="stylesheet" href="css/style.css?v=20261116g" />
+<link rel="stylesheet" href="css/style.css?v=20261116h" />
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
 </head>
 <body>
@@ -67,7 +67,10 @@
           <h2>Times</h2>
           <p class="pix-ajuda">Clique num time para abrir o pedido: lista, configuração e arquivos de produção.</p>
         </div>
-        <button type="button" id="btnNovoTime" class="primario"><i data-icone="plus"></i> Novo time</button>
+        <div class="cabecalho-botoes">
+          <button type="button" id="btnNomeEmPedido" class="secundario" title="Cadastrar uma camiseta num pedido, escolhendo o modelo"><i data-icone="user-plus"></i> Adicionar nome</button>
+          <button type="button" id="btnNovoTime" class="primario"><i data-icone="plus"></i> Novo time</button>
+        </div>
       </div>
 
       <div class="card oculto so-lista" id="cardCriarTime">
@@ -349,6 +352,19 @@
     <p id="novaCamisetaAviso" class="aviso oculto"></p>
 
     <form id="formNovaCamiseta">
+      <!-- Só aparece quando o pop-up é aberto pela lista de times: aí é
+           preciso dizer em qual modelo (e, se o modelo tiver mais de um
+           time, em qual pedido) a camiseta entra. -->
+      <div id="novaCamisetaEscolha" class="oculto">
+        <label for="novaCamisetaModelo">Modelo da camiseta</label>
+        <select id="novaCamisetaModelo"></select>
+
+        <div id="novaCamisetaPedidoBloco" class="oculto">
+          <label for="novaCamisetaPedido">Pedido (time)</label>
+          <select id="novaCamisetaPedido"></select>
+        </div>
+      </div>
+
       <label for="novaCamisetaNome">Nome do estudante</label>
       <input type="text" id="novaCamisetaNome" autocomplete="off" required />
 
@@ -400,25 +416,25 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
-<script src="js/firebase-init.js?v=20261116g"></script>
-<script src="js/icones.js?v=20261116g"></script>
-<script src="js/utils.js?v=20261116g"></script>
-<script src="js/auth-admin.js?v=20261116g"></script>
-<script src="js/admin.js?v=20261116g"></script>
-<script src="js/movimentacoes.js?v=20261116g"></script>
-<script src="js/producao.js?v=20261116g"></script>
-<script src="js/eps.js?v=20261116g"></script>
-<script src="js/png-stream.js?v=20261116g"></script>
-<script src="js/tiff-stream.js?v=20261116g"></script>
-<script src="js/cor-icc.js?v=20261116g"></script>
-<script src="js/previa-eps.js?v=20261116g"></script>
-<script src="js/moldes.js?v=20261116g"></script>
-<script src="js/pasta-saida.js?v=20261116g"></script>
-<script src="js/artes.js?v=20261116g"></script>
-<script src="js/nuvem.js?v=20261116g"></script>
-<script src="js/custo-impressao.js?v=20261116g"></script>
-<script src="js/mockup.js?v=20261116g"></script>
-<script src="js/backup.js?v=20261116g"></script>
-<script src="js/pwa.js?v=20261116g"></script>
+<script src="js/firebase-init.js?v=20261116h"></script>
+<script src="js/icones.js?v=20261116h"></script>
+<script src="js/utils.js?v=20261116h"></script>
+<script src="js/auth-admin.js?v=20261116h"></script>
+<script src="js/admin.js?v=20261116h"></script>
+<script src="js/movimentacoes.js?v=20261116h"></script>
+<script src="js/producao.js?v=20261116h"></script>
+<script src="js/eps.js?v=20261116h"></script>
+<script src="js/png-stream.js?v=20261116h"></script>
+<script src="js/tiff-stream.js?v=20261116h"></script>
+<script src="js/cor-icc.js?v=20261116h"></script>
+<script src="js/previa-eps.js?v=20261116h"></script>
+<script src="js/moldes.js?v=20261116h"></script>
+<script src="js/pasta-saida.js?v=20261116h"></script>
+<script src="js/artes.js?v=20261116h"></script>
+<script src="js/nuvem.js?v=20261116h"></script>
+<script src="js/custo-impressao.js?v=20261116h"></script>
+<script src="js/mockup.js?v=20261116h"></script>
+<script src="js/backup.js?v=20261116h"></script>
+<script src="js/pwa.js?v=20261116h"></script>
 </body>
 </html>

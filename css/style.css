@@ -2230,6 +2230,7 @@ main.loja { max-width: 1120px; }
 .cabecalho-secao h2 { margin: 0; }
 .cabecalho-secao p { margin: 2px 0 0; }
 .cabecalho-secao button { margin: 0; }
+.cabecalho-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
 #aba-inicial.com-time-aberto .so-lista { display: none !important; }
 
 .grupo-times-titulo {

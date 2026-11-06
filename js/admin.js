@@ -4001,24 +4001,105 @@ const elNovaCamisetaProf = document.getElementById("novaCamisetaProf");
 const elMsgNovaCamiseta = document.getElementById("msgNovaCamiseta");
 const elNovaCamisetaDuplicado = document.getElementById("novaCamisetaDuplicado");
 
-function abrirNovaCamiseta(timeId) {
-  const estado = estadoTimes[timeId];
-  if (!estado || !elModalNovaCamiseta) return;
+const elNovaCamisetaEscolha = document.getElementById("novaCamisetaEscolha");
+const elNovaCamisetaModelo = document.getElementById("novaCamisetaModelo");
+const elNovaCamisetaPedidoBloco = document.getElementById("novaCamisetaPedidoBloco");
+const elNovaCamisetaPedido = document.getElementById("novaCamisetaPedido");
 
-  novaCamisetaTimeId = timeId;
-  const time = estado.time;
+// Aberto de dentro de um pedido: o time já está escolhido.
+function abrirNovaCamiseta(timeId) {
+  if (!estadoTimes[timeId] || !elModalNovaCamiseta) return;
+  if (elNovaCamisetaEscolha) elNovaCamisetaEscolha.classList.add("oculto");
+  mostrarModalNovaCamiseta(timeId);
+  if (elNovaCamisetaNome) elNovaCamisetaNome.focus();
+}
+
+// Aberto pela lista de times ("Adicionar nome"): o mesmo pop-up, com o campo
+// a mais do modelo. O modelo é a arte (Configuração do time); quando mais de
+// um pedido usa a mesma arte, aparece também a escolha do pedido.
+function abrirNovaCamisetaPorModelo() {
+  if (!elModalNovaCamiseta || !elNovaCamisetaModelo) return;
+  const modelos = modelosParaNovaCamiseta();
+  if (!modelos.length) {
+    alert("Nenhum pedido cadastrado ainda. Crie um time primeiro.");
+    return;
+  }
+  const anterior = elNovaCamisetaModelo.value;
+  elNovaCamisetaModelo.innerHTML = '<option value="">Selecione...</option>' +
+    modelos.map((m) => `<option value="${escapeHtmlAdmin(m)}">${escapeHtmlAdmin(m)}</option>`).join("");
+  // Reabrir logo depois costuma ser para o mesmo modelo: mantém a escolha.
+  elNovaCamisetaModelo.value = modelos.includes(anterior) ? anterior : (modelos.length === 1 ? modelos[0] : "");
+  if (elNovaCamisetaEscolha) elNovaCamisetaEscolha.classList.remove("oculto");
+  atualizarPedidosDoModelo();
+  if (elNovaCamisetaModelo.value) {
+    if (elNovaCamisetaNome) elNovaCamisetaNome.focus();
+  } else {
+    elNovaCamisetaModelo.focus();
+  }
+}
+
+// Times que aceitam o nome novo: os do cliente escolhido no topo, menos os
+// pedidos já finalizados (arquivados).
+function timesParaNovaCamiseta() {
+  return timesFiltrados()
+    .filter(([, e]) => !pedidoFinalizado(e.time))
+    .sort((a, b) => String(a[1].time.nome || "").localeCompare(String(b[1].time.nome || ""), "pt-BR"));
+}
+
+function modelosParaNovaCamiseta() {
+  const nomes = new Set(timesParaNovaCamiseta().map(([, e]) => modeloDoTime(e.time)));
+  return [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+// Troca de modelo: refaz a lista de pedidos dele. Com um só, ele já fica
+// escolhido e o seletor nem aparece.
+function atualizarPedidosDoModelo() {
+  const modelo = elNovaCamisetaModelo ? elNovaCamisetaModelo.value : "";
+  const times = modelo ? timesParaNovaCamiseta().filter(([, e]) => modeloDoTime(e.time) === modelo) : [];
+  const anterior = elNovaCamisetaPedido ? elNovaCamisetaPedido.value : "";
+
+  if (elNovaCamisetaPedido) {
+    elNovaCamisetaPedido.innerHTML = (times.length > 1 ? '<option value="">Selecione...</option>' : "") +
+      times.map(([id, e]) =>
+        `<option value="${escapeHtmlAdmin(id)}">${escapeHtmlAdmin(e.time.nome)} · ${escapeHtmlAdmin(nomeClienteDoTime(e.time))}</option>`
+      ).join("");
+    if (times.some(([id]) => id === anterior)) elNovaCamisetaPedido.value = anterior;
+  }
+  if (elNovaCamisetaPedidoBloco) elNovaCamisetaPedidoBloco.classList.toggle("oculto", times.length < 2);
+
+  const timeId = times.length === 1 ? times[0][0] : (elNovaCamisetaPedido ? elNovaCamisetaPedido.value : "");
+  mostrarModalNovaCamiseta(timeId || null);
+}
+
+if (elNovaCamisetaModelo) elNovaCamisetaModelo.addEventListener("change", atualizarPedidosDoModelo);
+if (elNovaCamisetaPedido) {
+  elNovaCamisetaPedido.addEventListener("change", () => mostrarModalNovaCamiseta(elNovaCamisetaPedido.value || null));
+}
+
+const elBtnNomeEmPedido = document.getElementById("btnNomeEmPedido");
+if (elBtnNomeEmPedido) elBtnNomeEmPedido.addEventListener("click", abrirNovaCamisetaPorModelo);
+
+// Mostra o pop-up apontado para o time (ou para nenhum, enquanto o modelo ou
+// o pedido não foi escolhido). Trocar de time no meio não apaga o que já foi
+// digitado; abrir de novo, sim.
+function mostrarModalNovaCamiseta(timeId) {
+  const estado = timeId ? estadoTimes[timeId] : null;
+  const jaAberto = !elModalNovaCamiseta.classList.contains("oculto");
+  novaCamisetaTimeId = estado ? timeId : null;
+  const time = estado ? estado.time : null;
 
   if (elNovaCamisetaTime) {
-    elNovaCamisetaTime.innerHTML =
-      `Time <strong>${escapeHtmlAdmin(time.nome)}</strong> &middot; ${escapeHtmlAdmin(nomeClienteDoTime(time))}`;
+    elNovaCamisetaTime.innerHTML = time
+      ? `Time <strong>${escapeHtmlAdmin(time.nome)}</strong> &middot; ${escapeHtmlAdmin(nomeClienteDoTime(time))}`
+      : "Escolha o modelo da camiseta para saber em qual pedido o nome entra.";
   }
 
   // O pedido já andou? A camiseta nova entra fora do que já foi exportado —
   // melhor dizer isso antes de cadastrar do que descobrir na gráfica.
   if (elNovaCamisetaAviso) {
-    const statusId = statusPedidoDe(time);
+    const statusId = time ? statusPedidoDe(time) : "aberto";
     let aviso = "";
-    if (pedidoEmProducao(time)) {
+    if (time && pedidoEmProducao(time)) {
       aviso = `${icone("triangle-alert")} Este pedido já está em <strong>${escapeHtmlAdmin(labelStatus(statusId))}</strong>: ` +
         "a camiseta nova entra como pendente e não está nos CSVs já exportados. " +
         "Confirme o pagamento e leve no próximo lote.";
@@ -4030,12 +4111,14 @@ function abrirNovaCamiseta(timeId) {
     elNovaCamisetaAviso.classList.toggle("oculto", !aviso);
   }
 
+  if (jaAberto) {
+    conferirNumeroRepetido();
+    return;
+  }
   preencherSelectTamanhos(elNovaCamisetaTamanho);
   limparNovaCamiseta();
   if (elMsgNovaCamiseta) esconderMensagem(elMsgNovaCamiseta);
-
   elModalNovaCamiseta.classList.remove("oculto");
-  if (elNovaCamisetaNome) elNovaCamisetaNome.focus();
 }
 
 // Número repetido dentro do time é problema conhecido (a página do time já
@@ -4080,7 +4163,12 @@ if (elFormNovaCamiseta) {
   elFormNovaCamiseta.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const timeId = novaCamisetaTimeId;
-    if (!timeId || !estadoTimes[timeId]) return;
+    if (!timeId || !estadoTimes[timeId]) {
+      mostrarMensagem(elMsgNovaCamiseta, elNovaCamisetaModelo && !elNovaCamisetaModelo.value
+        ? "Escolha o modelo da camiseta."
+        : "Escolha o pedido (time) em que o nome entra.", "erro");
+      return;
+    }
 
     const nome = elNovaCamisetaNome.value.trim();
     const tamanho = elNovaCamisetaTamanho.value;
