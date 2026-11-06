@@ -819,6 +819,17 @@ const EPS = (function () {
   const LINHA_CORTE_MM = 3;
   const MARCADOR_MARGEM_MM = 1;
 
+  // Nome e número de uma camiseta com elementos tirados, para o marcador e a
+  // lista da costureira ("" quando nada foi tirado). Usa os valores do
+  // cadastro mesmo que não saiam impressos.
+  function identificacaoDaCamiseta(cam) {
+    const sem = cam && cam.sem;
+    if (!sem || !Object.keys(sem).filter((k) => sem[k]).length) return "";
+    const nome = String(cam.nomeCamiseta || cam.nome || "").trim();
+    const num = String(cam.numero == null ? "" : cam.numero).trim();
+    return [nome, num].filter(Boolean).join(" ");
+  }
+
   function textoDoMarcador(nomeTime, tamanho, nomePeca) {
     return [nomeTime, tamanho, nomePeca].map((v) => String(v || "").trim()).filter(Boolean).join("-");
   }
@@ -1294,11 +1305,17 @@ const EPS = (function () {
 
         // Marcador para a costureira, DENTRO da área de impressão:
         // "Time-Tamanho-Peça" (ex.: 7B-P-Frente), ver marcadorDaPeca().
-        if (op.etiqueta !== false && !rec.fonteEtiqueta && pecaId !== "etiquetaTam") {
+        // Camiseta com algo tirado (sem nome/número/brasão): na frente e nas
+        // costas o marcador ganha o nome e o número dela, para a costureira
+        // juntar as duas peças certas na montagem. Esse sai mesmo com os
+        // marcadores desligados.
+        const ident = (pecaId === "frente" || pecaId === "costas") ? identificacaoDaCamiseta(cam) : "";
+        const comMarcador = (op.etiqueta !== false || ident) && pecaId !== "etiquetaTam";
+        if (comMarcador && !rec.fonteEtiqueta) {
           avisar("Sem a fonte do marcador — as peças saíram sem a marcação da costureira.");
         }
-        if (op.etiqueta !== false && rec.fonteEtiqueta && pecaId !== "etiquetaTam") {
-          const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId);
+        if (comMarcador && rec.fonteEtiqueta) {
+          const texto = textoDoMarcador(op.nomeTime, cam.tamanho, op.nomePeca ? op.nomePeca(pecaId) : pecaId) + (ident ? "-" + ident : "");
           const cmds = marcadorDaPeca(rec.fonteEtiqueta, texto, tam.w, tam.h, pecaId === "gola",
             molde.contorno ? comandosDoContorno(molde.contorno) : null);
           if (cmds.length) {
@@ -1976,6 +1993,7 @@ const EPS = (function () {
     layoutTexto,
     elementosDaPecaNoTime,
     elementosDaCamiseta,
+    identificacaoDaCamiseta,
     slotAtivo,
     textoDoElemento,
     caixaPorDigitos,

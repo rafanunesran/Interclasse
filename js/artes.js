@@ -4948,6 +4948,13 @@ function observacoesDeMontagem(timeComum, time, g) {
   }
   const ind = g.camisetas.filter((c) => c._alunoId && temArteIndividual(timeComum, c._alunoId));
   if (ind.length) obs.push(`${ind.length} camiseta(s) com arte própria (diferente das outras): ${ind.map((c) => c.nomeCamiseta || c.nome).join(", ")} — marcadas com * na lista do fim.`);
+  const tiradas = g.camisetas.filter((c) => EPS.identificacaoDaCamiseta(c));
+  if (tiradas.length) {
+    obs.push(`${tiradas.length} camiseta(s) sem nome, número ou brasão: ${tiradas.map((c) => {
+      const t = ELEMENTOS_TIRAVEIS.filter((e) => (c.sem || {})[e.id]).map((e) => e.curto).join(", ");
+      return `${EPS.identificacaoDaCamiseta(c)} ${c.tamanho || ""} (sem ${t})`;
+    }).join("; ")}. A frente e as costas delas trazem o nome e o número no marcador (ex.: Time-Tam-Frente-NOME 10) — junte pelas duas.`);
+  }
   return obs;
 }
 
@@ -5129,8 +5136,12 @@ async function gerarPdfCostureira(linhas, nomeBase) {
       if (yl > H - 14) { rodape(); cabecalhoLista(true); }
       const ind = c._alunoId && temArteIndividual(timeComum, c._alunoId) ? " *" : "";
       // Tirado só desta camiseta (no pedido): a lista avisa a costureira.
+      // Ela vem com o nome e o número no marcador da frente e das costas.
       const sem = c.sem || {};
-      const apelido = (sem.nome ? "(sem nome)" : c.nomeCamiseta || "") + (sem.brasao ? " · sem brasão" : "");
+      const tirados = ELEMENTOS_TIRAVEIS.filter((e) => sem[e.id]).map((e) => e.curto);
+      const apelido = tirados.length
+        ? `${EPS.identificacaoDaCamiseta(c)} (sem ${tirados.join(", ")}) **`
+        : c.nomeCamiseta || "";
       const vals = [rotulo, c.tamanho || "", sem.numero ? "sem" : c.numero == null ? "" : String(c.numero), apelido + ind, c.nome || ""];
       const larg = [56, 12, 12, 48, W - 2 * M - 138];
       cols.forEach(([, x], k) => texto(doc.splitTextToSize(vals[k], larg[k])[0] || "", M + 2 + x, yl, { tam: 8.5, bold: k === 1 }));
@@ -5140,7 +5151,7 @@ async function gerarPdfCostureira(linhas, nomeBase) {
     doc.setDrawColor(gi < noPdf.length - 1 ? 180 : 230); doc.line(M, yl - 3.5, W - M, yl - 3.5);
     yl += 1;
   });
-  texto("* camiseta com arte própria (diferente das outras do modelo)", M, H - 10, { tam: 7.5 });
+  texto("* camiseta com arte própria (diferente das outras do modelo)   ** sem nome/número/brasão: o nome e o nº vêm no marcador da frente e das costas", M, H - 10, { tam: 7.5 });
   rodape();
 
   const blob = doc.output("blob");
