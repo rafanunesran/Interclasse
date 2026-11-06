@@ -1723,7 +1723,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261116h";
+const VERSAO_MOCKUP3D = "20261116i";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -4940,7 +4940,7 @@ function observacoesDeMontagem(timeComum, time, g) {
       const c = EPS.comprimentoReforco(moldesConfig, t);
       return c ? `${t} ${c.mm} mm` : `${t} (sem medida)`;
     }).join(" · ");
-    obs.push(`Reforço de ombro: 1 tira de ${EPS.REFORCO_LARGURA_MM} mm por camiseta — comprimento: ${comp}.`);
+    obs.push(`Reforço de ombro: sai numa tira única de ${EPS.REFORCO_LARGURA_MM} mm, em pé, na lateral direita da folha (a soma dos reforços + 2 m; se não couber, em tiras lado a lado) — cortar por camiseta: ${comp}.`);
   }
   if (virt.includes("etiquetaTam")) {
     const m = EPS.medidasEtiqueta(layoutDoTime(time));

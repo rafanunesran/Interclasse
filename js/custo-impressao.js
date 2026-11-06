@@ -124,7 +124,8 @@ function simularEncaixeLote(levaId, op) {
       const area = ciAreaMoldeMm2(molde);
       areaPecas += area;
       pt.area += area;
-      blocos.push({ w: t.w, h: t.h, borda: comFaca && molde.contorno ? 3 : 0, rotulo: `${pecaId} ${tam}` });
+      blocos.push({ w: t.w, h: t.h, borda: comFaca && molde.contorno ? 3 : 0, rotulo: `${pecaId} ${tam}`,
+        tira: pecaId === "reforcoOmbro" ? { faca: comFaca } : undefined });
     });
   });
 

@@ -368,6 +368,121 @@ const EPS = (function () {
   // altura cresce conforme precisa; com altura máxima, abre outra folha.
 
   function empacotar(blocos, opcoes) {
+    // Reforço de ombro: os retalhos de cada camiseta viram uma TIRA única,
+    // em pé, na coluna da direita da folha (a sobra do canto) — ver
+    // empacotarComTiras.
+    if (blocos.some((b) => b.tira)) return empacotarComTiras(blocos, opcoes);
+    return empacotarSimples(blocos, opcoes);
+  }
+
+  // Sobra de comprimento da tira do reforço, além da soma dos retalhos.
+  const TIRA_FOLGA_MM = 2000;
+  // Pedaço mínimo de tira que vale a pena começar no fim de uma coluna.
+  const TIRA_MIN_MM = 150;
+
+  // Uma tira (em pé) de reforço: fundo de cor sólida e a faca em volta.
+  function blocoDaTira(tira, comprimento, bd, rotulo) {
+    const w = REFORCO_LARGURA_MM, h = comprimento;
+    const ret = [{ type: "M", x: 0, y: 0 }, { type: "L", x: w, y: 0 }, { type: "L", x: w, y: h }, { type: "L", x: 0, y: h }, { type: "Z" }];
+    const ops = [];
+    if (tira.cmyk && tira.cmyk.some((v) => Number(v) > 0)) {
+      ops.push({ tipo: "caminho", recortar: true, cmyk: tira.cmyk,
+        comandos: [{ type: "M", x: -5, y: -5 }, { type: "L", x: w + 5, y: -5 }, { type: "L", x: w + 5, y: h + 5 }, { type: "L", x: -5, y: h + 5 }, { type: "Z" }] });
+    }
+    if (tira.faca) ops.push({ tipo: "linha", comandos: deslocarContorno(ret, LINHA_CORTE_MM / 2), cmyk: [0, 0, 0, 100], mm: LINHA_CORTE_MM });
+    const s = 2;
+    const contorno = [{ type: "M", x: -s, y: -s }, { type: "L", x: w + s, y: -s }, { type: "L", x: w + s, y: h + s }, { type: "L", x: -s, y: h + s }, { type: "Z" }];
+    return { w, h, ops, contorno, borda: bd, rotulo, tiraReforco: true };
+  }
+
+  // As outras peças são encaixadas numa largura menor, deixando à direita
+  // `n` colunas de tira (25 mm + faca + espaço). A tira de cada cor tem a
+  // soma dos comprimentos dos retalhos + 2 m e corre de cima a baixo da
+  // folha; quando não cabe numa coluna, continua na do lado (e nas folhas
+  // seguintes). Se nem com as colunas todas couber, a última folha cresce.
+  function empacotarComTiras(blocos, opcoes) {
+    const larguraMm = opcoes.larguraMm;
+    const espaco = Math.max(0, opcoes.espacoMm || 0);
+    const gira90 = opcoes.rotacao === "90";
+    const outros = blocos.filter((b) => !b.tira);
+    const retalhos = blocos.filter((b) => b.tira);
+    // Uma tira por cor (cada time pode ter a sua).
+    const grupos = new Map();
+    retalhos.forEach((b) => {
+      const k = JSON.stringify(b.tira.cmyk || null);
+      if (!grupos.has(k)) grupos.set(k, { tira: { cmyk: b.tira.cmyk || null, faca: false }, mm: TIRA_FOLGA_MM, bd: 0 });
+      const g = grupos.get(k);
+      g.mm += Math.max(b.w, b.h);
+      if (b.tira.faca) g.tira.faca = true;
+      g.bd = Math.max(g.bd, b.borda || 0);
+    });
+    const lista = [...grupos.values()];
+    const bd = Math.max(...lista.map((g) => g.bd));
+    const passoCol = REFORCO_LARGURA_MM + 2 * bd + espaco;
+    // A coluna não pode apertar as outras peças a ponto de não caberem.
+    const precisa = outros.reduce((m, b) => {
+      const d = Math.max(0, b.borda || 0);
+      const bw = b.w + 2 * d, bh = b.h + 2 * d;
+      return Math.max(m, (gira90 ? Math.min(bw, bh) : bw) + 2 * espaco);
+    }, 0);
+    const nMax = !outros.length ? 1 : Math.max(1, Math.floor((larguraMm - Math.max(precisa, espaco)) / passoCol));
+
+    // Distribui as tiras nas colunas das folhas; devolve o que sobrou (mm).
+    const distribuir = (folhas, n, x0) => {
+      const pecas = [];
+      let gi = 0, resta = lista.length ? lista[0].mm : 0;
+      for (let fi = 0; fi < folhas.length && gi < lista.length; fi++) {
+        const f = folhas[fi];
+        for (let c = 0; c < n && gi < lista.length; c++) {
+          let y = espaco;
+          while (gi < lista.length) {
+            const livre = f.alturaMm - y - espaco - 2 * bd;
+            if (livre < Math.min(TIRA_MIN_MM, resta)) break;
+            const p = Math.min(livre, resta);
+            pecas.push({ fi, x: x0 + c * passoCol + bd, y: y + bd, h: p, g: lista[gi] });
+            y += p + 2 * bd + espaco;
+            resta -= p;
+            if (resta <= 1e-6) { gi++; resta = gi < lista.length ? lista[gi].mm : 0; }
+          }
+        }
+      }
+      const sobra = resta + lista.slice(gi + 1).reduce((t, g) => t + g.mm, 0);
+      return { pecas, sobra: gi < lista.length ? sobra : 0 };
+    };
+
+    let n = 1, r = null, d = null;
+    for (; n <= nMax; n++) {
+      const larg = larguraMm - n * passoCol;
+      r = empacotarSimples(outros, { ...opcoes, larguraMm: larg });
+      if (!r.folhas.length) r.folhas.push({ larguraMm, alturaMm: espaco, blocos: [] });
+      d = distribuir(r.folhas, n, larg);
+      if (!d.sobra) break;
+    }
+    if (n > nMax) {
+      // Nem com todas as colunas: a última folha cresce até caber.
+      n = nMax;
+      const f = r.folhas[r.folhas.length - 1];
+      for (let i = 0; i < 50 && d.sobra > 0; i++) {
+        f.alturaMm += Math.ceil(d.sobra / n) + 2 * bd + espaco;
+        d = distribuir(r.folhas, n, larguraMm - n * passoCol);
+      }
+    }
+    r.folhas.forEach((f) => { f.larguraMm = larguraMm; });
+    const totais = new Map();
+    d.pecas.forEach((p) => totais.set(p.g, (totais.get(p.g) || 0) + 1));
+    const conta = new Map();
+    d.pecas.forEach((p) => {
+      const k = (conta.get(p.g) || 0) + 1;
+      conta.set(p.g, k);
+      const tot = totais.get(p.g);
+      const rot = `Reforço de ombro${tot > 1 ? ` (tira ${k} de ${tot})` : ""}`;
+      const bloco = blocoDaTira(p.g.tira, p.h, bd, rot);
+      r.folhas[p.fi].blocos.push({ bloco, x: p.x, y: p.y, w: bloco.w, h: bloco.h, rot: 0 });
+    });
+    return { folhas: r.folhas, avisos: r.avisos };
+  }
+
+  function empacotarSimples(blocos, opcoes) {
     const larguraMm = opcoes.larguraMm;
     const espaco = Math.max(0, opcoes.espacoMm || 0);
     const alturaMax = opcoes.alturaMaxMm > 0 ? opcoes.alturaMaxMm : 1e7;
@@ -1204,7 +1319,10 @@ const EPS = (function () {
           : null;
         // `borda`: a faca passa do molde; o encaixe reserva essa folga em volta.
         const borda = posMolde !== "nenhum" && molde.contorno ? LINHA_CORTE_MM : 0;
-        blocos.push({ w: tam.w, h, ops, contorno, borda, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
+        // Reforço de ombro: o retalho só dá o comprimento — no encaixe, os
+        // de todas as camisetas viram uma tira única (empacotarComTiras).
+        const tira = pecaId === "reforcoOmbro" ? { cmyk: fundo || null, faca: posMolde !== "nenhum" } : undefined;
+        blocos.push({ w: tam.w, h, ops, contorno, borda, tira, rotulo: `${op.nomePeca ? op.nomePeca(pecaId) : pecaId} ${cam.tamanho}` });
       });
     });
     return { blocos, avisos };
