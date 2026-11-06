@@ -4000,6 +4000,19 @@ const elNovaCamisetaGoleiro = document.getElementById("novaCamisetaGoleiro");
 const elNovaCamisetaProf = document.getElementById("novaCamisetaProf");
 const elMsgNovaCamiseta = document.getElementById("msgNovaCamiseta");
 const elNovaCamisetaDuplicado = document.getElementById("novaCamisetaDuplicado");
+const elNovaCamisetaSem = document.getElementById("novaCamisetaSem");
+// Sem brasão / nome / número escolhidos no pop-up (só os tirados ficam aqui).
+let novaCamisetaSem = {};
+
+function montarChavesNovaCamiseta() {
+  novaCamisetaSem = {};
+  if (!elNovaCamisetaSem) return;
+  elNovaCamisetaSem.innerHTML = "";
+  elNovaCamisetaSem.appendChild(criarChavesSemElementos(null, (id, tirar) => {
+    if (tirar) novaCamisetaSem[id] = true;
+    else delete novaCamisetaSem[id];
+  }));
+}
 
 const elNovaCamisetaEscolha = document.getElementById("novaCamisetaEscolha");
 const elNovaCamisetaModelo = document.getElementById("novaCamisetaModelo");
@@ -4148,6 +4161,7 @@ function limparNovaCamiseta() {
   if (elNovaCamisetaQtd) elNovaCamisetaQtd.value = "1";
   if (elNovaCamisetaGoleiro) elNovaCamisetaGoleiro.checked = false;
   if (elNovaCamisetaProf) elNovaCamisetaProf.checked = false;
+  montarChavesNovaCamiseta();
   // O tamanho também volta ao "Selecione...": cadastrar o próximo com o
   // tamanho do anterior por descuido é erro caro (camiseta errada).
   if (elNovaCamisetaTamanho) elNovaCamisetaTamanho.value = "";
@@ -4191,7 +4205,9 @@ if (elFormNovaCamiseta) {
         // Em branco, o que vai estampado é o nome do estudante.
         nomeCamiseta: elNovaCamisetaCostas.value.trim() || nome,
         goleiro: !!(elNovaCamisetaGoleiro && elNovaCamisetaGoleiro.checked),
-        prof: !!(elNovaCamisetaProf && elNovaCamisetaProf.checked)
+        prof: !!(elNovaCamisetaProf && elNovaCamisetaProf.checked),
+        // Mesmo formato das chaves da lista: só os tirados, como `sem.<id>: true`.
+        ...(Object.keys(novaCamisetaSem).length ? { sem: { ...novaCamisetaSem } } : {})
       }, quantidade);
 
       // Deixa a lista do time aberta para a camiseta nova aparecer ao fechar.
