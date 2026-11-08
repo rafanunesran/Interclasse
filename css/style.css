@@ -3180,3 +3180,26 @@ header.topo nav .btn-instalar svg { width: 16px; height: 16px; }
 .producao-extra-novo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding: 10px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; }
 .producao-extra-novo button, .producao-extra-novo label { margin: 0; }
 .tema-escuro .producao-time .producao-slot.desativado, .tema-escuro .producao-extra-novo { background: #1b1c21; border-color: #3a3b43; }
+
+/* Pagamento previsto: dia que o pagante combinou de pagar (lembrete de cobrança) */
+.previsto-aluno {
+  display: flex; align-items: center; gap: 4px; margin: 6px 0 0;
+  font-size: 0.8rem; color: #6b7280;
+}
+.previsto-aluno input { width: auto; margin: 0; padding: 3px 6px; font-size: 0.82rem; }
+.previsto-aluno.ativo input { border-color: #d97706; background: #fffbeb; font-weight: 700; }
+.aba-contador {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px;
+  border-radius: 9px; background: #dc2626; color: #fff;
+  font-size: 0.72rem; font-weight: 700; line-height: 1;
+}
+.fin-tabela tr.previsto-hoje td { background: #fffbeb; }
+.fin-tabela tr.previsto-atrasado td { background: #fef2f2; }
+.previsto-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.previsto-acoes input { width: auto; margin: 0; padding: 4px 6px; font-size: 0.85rem; }
+.previsto-acoes button { margin: 0; padding: 5px 10px; }
+.juntar-desconto input[type="date"] { width: auto; }
+.tema-escuro .previsto-aluno.ativo input { background: #3b2f12; color: #fcd34d; }
+.tema-escuro .fin-tabela tr.previsto-hoje td { background: #3b2f12; }
+.tema-escuro .fin-tabela tr.previsto-atrasado td { background: #3f1d1d; }

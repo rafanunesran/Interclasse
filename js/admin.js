@@ -833,6 +833,7 @@ elListaTimesAdmin.addEventListener("focusout", () => {
 // Telas que dependem da mesma lista de times (redesenhadas junto).
 function renderizarTelasDosTimes() {
   renderizarResumoPagamentos();
+  atualizarAvisoPrevistos();
   renderizarKanban();
   renderizarFinanceiro();
   // A aba Clientes conta os times de cada um, então acompanha a lista.
@@ -1431,6 +1432,30 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
     };
     lbl.appendChild(inp);
     tdPag.appendChild(lbl);
+  }
+  // Dia que o pagante combinou de pagar (lembrete em Financeiro → A receber).
+  if (!aluno.pago && !ehInterno(aluno)) {
+    const previsto = previstoDe(aluno);
+    const lblPrev = document.createElement("label");
+    lblPrev.className = "previsto-aluno" + (previsto ? " ativo" : "");
+    lblPrev.title = "Pagamento previsto: o dia que combinaram de pagar. No dia, aparece para cobrar em Financeiro → A receber.";
+    lblPrev.innerHTML = "<span>📅</span>";
+    const inpPrev = document.createElement("input");
+    inpPrev.type = "date";
+    inpPrev.value = previsto;
+    inpPrev.setAttribute("aria-label", "Pagamento previsto de " + aluno.nome);
+    inpPrev.onchange = async () => {
+      if (inpPrev.value === previsto) return;
+      try {
+        await gravarPagamentoPrevisto(timeId, aluno.id, inpPrev.value);
+      } catch (erro) {
+        console.error(erro);
+        inpPrev.value = previsto;
+        alert("Erro ao salvar o pagamento previsto.");
+      }
+    };
+    lblPrev.appendChild(inpPrev);
+    tdPag.appendChild(lblPrev);
   }
   if (aluno.pagamentoDeclarado && !aluno.pago) {
     const nota = document.createElement("small");
@@ -2075,6 +2100,71 @@ function atualizarPagamento(timeId, alunoId, valor) {
   }
 }
 
+// ---------------- Pagamento previsto ----------------
+// Quando o pagante combina um dia para pagar ("pago dia 10"), a data fica na
+// camiseta (pagamentoPrevisto = "AAAA-MM-DD"). No dia, ela aparece em
+// Financeiro → A receber como "cobrar hoje", e a aba Financeiro ganha um
+// contador com o que vence hoje ou já passou. Só vale enquanto não está paga.
+
+function previstoDe(aluno) {
+  const v = aluno && aluno.pagamentoPrevisto;
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+}
+
+// Dias da data prevista até hoje: 0 = hoje, negativo = já passou.
+function previstoDiasAte(chave) {
+  const hoje = finDataDaChave(finChaveDia(new Date()));
+  return Math.round((finDataDaChave(chave) - hoje) / 86400000);
+}
+
+function previstoRotulo(chave) {
+  return finDataDaChave(chave).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function previstoBadgeHtml(chave) {
+  if (!chave) return "";
+  const d = previstoDiasAte(chave);
+  if (d === 0) return '<span class="badge aguardando" title="Pagamento combinado para hoje">📅 cobrar hoje</span>';
+  if (d < 0) return `<span class="badge fechado" title="Combinado para ${previstoRotulo(chave)}">📅 atrasado ${-d} dia(s)</span>`;
+  return `<span class="badge pendente" title="Pagamento combinado">📅 ${previstoRotulo(chave)}${d === 1 ? " (amanhã)" : ""}</span>`;
+}
+
+function gravarPagamentoPrevisto(timeId, alunoId, chave) {
+  const ref = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
+  return ref.update(chave
+    ? { pagamentoPrevisto: chave, pagamentoPrevistoEm: firebase.firestore.FieldValue.serverTimestamp() }
+    : { pagamentoPrevisto: firebase.firestore.FieldValue.delete(), pagamentoPrevistoEm: firebase.firestore.FieldValue.delete() });
+}
+
+// Camisetas em aberto com data combinada para hoje ou que já passou.
+function previstosVencidos() {
+  const lista = [];
+  timesFiltrados().forEach(([, { alunos }]) => {
+    alunos.forEach((a) => {
+      if (a.pago || a.pagamentoDeclarado) return;
+      const p = previstoDe(a);
+      if (p && previstoDiasAte(p) <= 0) lista.push(a);
+    });
+  });
+  return lista;
+}
+
+// Contador na aba Financeiro: o lembrete que aparece de qualquer tela.
+function atualizarAvisoPrevistos() {
+  const aba = document.querySelector('.aba[data-aba="financeiro"]');
+  if (!aba) return;
+  const n = previstosVencidos().length;
+  let marca = aba.querySelector(".aba-contador");
+  if (n === 0) { if (marca) marca.remove(); return; }
+  if (!marca) {
+    marca = document.createElement("span");
+    marca.className = "aba-contador";
+    aba.appendChild(marca);
+  }
+  marca.textContent = n;
+  marca.title = `${n} cobrança(s) combinada(s) para hoje ou atrasada(s) — veja em A receber`;
+}
+
 // Resumo geral de pagamentos (aba Pagamentos).
 function renderizarResumoPagamentos() {
   const el = document.getElementById("resumoPagamentos");
@@ -2485,6 +2575,7 @@ function finPendencias() {
         contato: a.ajusteContato || "",
         desde,
         dias: finDiasDesde(desde),
+        previsto: previstoDe(a),
         limite,
         atrasado: !!(limite && limite.getTime() < Date.now()),
         status: statusPedidoDe(time)
@@ -2582,8 +2673,9 @@ function renderizarFinanceiro() {
     return;
   }
 
+  const nVencidos = previstosVencidos().length;
   const abas = FIN_VISOES.map((v) =>
-    `<button type="button" class="fin-subaba${v.id === finVisao ? " ativa" : ""}" data-fin-visao="${v.id}">${v.label}</button>`
+    `<button type="button" class="fin-subaba${v.id === finVisao ? " ativa" : ""}" data-fin-visao="${v.id}">${v.label}${v.id === "cobranca" && nVencidos > 0 ? ` <span class="aba-contador" title="Cobranças combinadas para hoje ou atrasadas">${nVencidos}</span>` : ""}</button>`
   ).join("");
 
   el.innerHTML = `
@@ -3133,6 +3225,12 @@ function juntarRepartirDesconto(itens, descCent) {
   });
 }
 
+// Data já marcada em todas as selecionadas (para o campo vir preenchido).
+function juntarPrevistoComum(sel) {
+  const datas = [...new Set(sel.map((p) => p.previsto))];
+  return datas.length === 1 ? datas[0] : "";
+}
+
 function juntarChave(p) {
   return p.timeId + "/" + p.alunoId;
 }
@@ -3156,6 +3254,7 @@ function juntarCandidatas() {
         valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
         especial: precoEspecialDoAluno(configGeralAtual, timeId, a.id) != null,
         bloqueado: !!a.ajusteSolicitado,
+        previsto: previstoDe(a),
         // O link só cobra o que a página do pedido aceitaria pagar agora.
         pagavel: podePagarAgora(time, a)
       });
@@ -3245,7 +3344,7 @@ function finViewJuntar(alvo) {
       <table class="fin-tabela juntar-tabela">
         <thead><tr>
           <th><input type="checkbox" id="juntarTodas" aria-label="Marcar todas as da lista" /></th>
-          <th>Nome</th><th>Time</th><th>Tam.</th><th>Nº / nas costas</th><th>Valor</th><th>Situação</th>
+          <th>Nome</th><th>Time</th><th>Tam.</th><th>Nº / nas costas</th><th>Valor</th><th>Situação</th><th>Previsto</th>
         </tr></thead>
         <tbody id="juntarCorpo"></tbody>
       </table>
@@ -3264,7 +3363,7 @@ function finViewJuntar(alvo) {
   const desenhar = () => {
     const visiveis = juntarVisiveis(todas);
     corpo.innerHTML = visiveis.length === 0
-      ? `<tr><td colspan="7">${juntarSoProf ? "Nenhuma camiseta de professor em aberto." : "Nenhuma camiseta em aberto com esse filtro."}</td></tr>`
+      ? `<tr><td colspan="8">${juntarSoProf ? "Nenhuma camiseta de professor em aberto." : "Nenhuma camiseta em aberto com esse filtro."}</td></tr>`
       : visiveis.map((p) => {
         const k = juntarChave(p);
         const situacao = p.bloqueado
@@ -3280,6 +3379,7 @@ function finViewJuntar(alvo) {
           <td>${escapeHtmlAdmin([p.numero, p.nomeCamiseta].filter(Boolean).join(" · ") || "-")}</td>
           <td>${p.valor > 0 ? formatarReais(p.valor) : "-"}${p.especial ? ' <span class="fin-dica" title="Preço especial desta camiseta (desconto)">especial</span>' : ""}</td>
           <td>${situacao}</td>
+          <td>${previstoBadgeHtml(p.previsto) || "-"}</td>
         </tr>`;
       }).join("");
 
@@ -3341,6 +3441,13 @@ function finViewJuntar(alvo) {
         <label>Para quem (opcional)<input type="text" id="juntarNome" placeholder="Ex: Prof. Ana" value="${escapeHtmlAdmin(juntarNome)}" /></label>
         <label>WhatsApp (opcional)<input type="tel" inputmode="tel" id="juntarTelefone" placeholder="(11) 91234-5678 — em branco, você escolhe o contato" value="${escapeHtmlAdmin(juntarTelefone)}" /></label>
       </div>
+      <div class="juntar-desconto">
+        <label for="juntarPrevisto">Pagamento previsto</label>
+        <input type="date" id="juntarPrevisto" value="${escapeHtmlAdmin(juntarPrevistoComum(sel))}" />
+        <button type="button" class="secundario" data-juntar-acao="previsto">Marcar data nas ${sel.length}</button>
+        ${sel.some((p) => p.previsto) ? '<button type="button" class="secundario" data-juntar-acao="sem-previsto">Tirar data</button>' : ""}
+      </div>
+      <p class="fin-dica">Combinaram de pagar num dia? Marque a data: no dia, elas aparecem em <em>A receber</em> para cobrar, e a aba Financeiro mostra o lembrete.</p>
       <div class="juntar-acoes">
         <button type="button" class="sucesso" data-juntar-acao="whats">${icone("message-circle")} Enviar no WhatsApp</button>
         <button type="button" class="secundario" data-juntar-acao="mensagem">Copiar mensagem</button>
@@ -3402,6 +3509,32 @@ function finViewJuntar(alvo) {
         }
       };
     }
+    const btnPrev = resumo.querySelector('[data-juntar-acao="previsto"]');
+    btnPrev.onclick = async () => {
+      const chave = resumo.querySelector("#juntarPrevisto").value;
+      if (!chave) { alert("Escolha a data combinada para o pagamento."); return; }
+      btnPrev.disabled = true;
+      try {
+        await Promise.all(sel.map((p) => gravarPagamentoPrevisto(p.timeId, p.alunoId, chave)));
+      } catch (erro) {
+        console.error(erro);
+        btnPrev.disabled = false;
+        alert("Erro ao salvar o pagamento previsto.");
+      }
+    };
+    const btnSemPrev = resumo.querySelector('[data-juntar-acao="sem-previsto"]');
+    if (btnSemPrev) {
+      btnSemPrev.onclick = async () => {
+        btnSemPrev.disabled = true;
+        try {
+          await Promise.all(sel.filter((p) => p.previsto).map((p) => gravarPagamentoPrevisto(p.timeId, p.alunoId, "")));
+        } catch (erro) {
+          console.error(erro);
+          btnSemPrev.disabled = false;
+          alert("Erro ao tirar o pagamento previsto.");
+        }
+      };
+    }
     resumo.querySelector("#juntarNome").oninput = (ev) => { juntarNome = ev.target.value; };
     resumo.querySelector("#juntarTelefone").oninput = (ev) => { juntarTelefone = ev.target.value; };
     resumo.querySelector('[data-juntar-acao="whats"]').onclick = () => {
@@ -3457,6 +3590,38 @@ function finViewCobranca(alvo, f) {
 
   const valAguardando = aguardando.reduce((s, p) => s + p.valor, 0);
   const valPendente = pendentes.reduce((s, p) => s + p.valor, 0);
+
+  // Pagamentos combinados para um dia: hoje e atrasados primeiro, depois os próximos.
+  const previstos = pendentes.filter((p) => p.previsto)
+    .map((p) => ({ ...p, faltam: previstoDiasAte(p.previsto) }))
+    .sort((a, b) => a.faltam - b.faltam || a.aluno.localeCompare(b.aluno, "pt-BR"));
+  const vencidos = previstos.filter((p) => p.faltam <= 0);
+  const proximos = previstos.filter((p) => p.faltam > 0);
+  const linhaPrevisto = (p) => `
+    <tr class="${p.faltam < 0 ? "previsto-atrasado" : p.faltam === 0 ? "previsto-hoje" : ""}">
+      <td>${escapeHtmlAdmin(p.aluno)}</td>
+      <td>${escapeHtmlAdmin(p.time)}</td>
+      <td>${formatarReais(p.valor)}</td>
+      <td>${previstoBadgeHtml(p.previsto)}</td>
+      <td class="previsto-acoes">
+        <input type="date" value="${p.previsto}" data-prev-time="${p.timeId}" data-prev-aluno="${p.alunoId}" aria-label="Mudar a data prevista de ${escapeHtmlAdmin(p.aluno)}" />
+        <button type="button" class="secundario" data-prev-tirar="${p.timeId}/${p.alunoId}" title="Tirar a data prevista">✕</button>
+        <button type="button" class="sucesso" data-prev-cobrar="${p.timeId}/${p.alunoId}" title="Abre Juntar cobrança com esta camiseta marcada">Cobrar</button>
+      </td>
+    </tr>`;
+  const tabelaPrevistos = (lista) => `
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Aluno</th><th>Time</th><th>Valor</th><th>Combinado</th><th></th></tr></thead>
+        <tbody>${lista.map(linhaPrevisto).join("")}</tbody>
+      </table>
+    </div>`;
+  const blocoPrevistos = previstos.length === 0
+    ? `<h3 class="fin-titulo">📅 Pagamentos previstos</h3>
+       <p class="fin-dica">Nenhuma data combinada. Quando alguém disser o dia que vai pagar, marque em <em>Juntar cobrança</em> (ou no 📅 da linha da camiseta, no time): no dia, ela aparece aqui para cobrar.</p>`
+    : `<h3 class="fin-titulo">📅 Cobrar hoje (combinados para hoje ou atrasados)</h3>
+       ${vencidos.length === 0 ? "<p>Nada combinado para hoje. 👍</p>" : tabelaPrevistos(vencidos)}
+       ${proximos.length === 0 ? "" : `<h3 class="fin-titulo">Próximos pagamentos combinados</h3>${tabelaPrevistos(proximos)}`}`;
 
   // Envelhecimento: quanto tempo cada pendência está em aberto.
   const faixas = [
@@ -3533,6 +3698,8 @@ function finViewCobranca(alvo, f) {
       </div>
     </div>
 
+    ${blocoPrevistos}
+
     <h3 class="fin-titulo">Fila de conferência (avisaram que pagaram)</h3>
     ${aguardando.length === 0
       ? "<p>Nada para conferir agora.</p>"
@@ -3575,6 +3742,41 @@ function finViewCobranca(alvo, f) {
   `;
 
   finLigarFiltros(alvo, f);
+  alvo.querySelectorAll("[data-prev-time]").forEach((inp) => {
+    inp.onchange = async () => {
+      try {
+        await gravarPagamentoPrevisto(inp.dataset.prevTime, inp.dataset.prevAluno, inp.value);
+      } catch (erro) {
+        console.error(erro);
+        alert("Erro ao salvar o pagamento previsto.");
+      }
+    };
+  });
+  alvo.querySelectorAll("[data-prev-tirar]").forEach((btn) => {
+    btn.onclick = async () => {
+      const [timeId, alunoId] = btn.dataset.prevTirar.split("/");
+      btn.disabled = true;
+      try {
+        await gravarPagamentoPrevisto(timeId, alunoId, "");
+      } catch (erro) {
+        console.error(erro);
+        btn.disabled = false;
+        alert("Erro ao tirar o pagamento previsto.");
+      }
+    };
+  });
+  alvo.querySelectorAll("[data-prev-cobrar]").forEach((btn) => {
+    btn.onclick = () => {
+      const p = previstos.find((x) => juntarChave(x) === btn.dataset.prevCobrar);
+      juntarSel.clear();
+      juntarSel.add(btn.dataset.prevCobrar);
+      juntarSoProf = false;
+      juntarBusca = "";
+      if (p) juntarNome = p.aluno;
+      finVisao = "juntar";
+      renderizarFinanceiro();
+    };
+  });
   alvo.querySelectorAll(".fin-btn-confirmar").forEach((btn) => {
     btn.onclick = () => {
       if (!confirm("Confirmar o recebimento por PIX desta camiseta?")) return;
