@@ -3217,3 +3217,5 @@ header.topo nav .btn-instalar svg { width: 16px; height: 16px; }
 .sinal-aluno.ativo input { border-color: #2563eb; background: #eff6ff; font-weight: 700; }
 .tema-escuro .sinal-aluno.ativo input { background: #1e2a4a; color: #93c5fd; }
 .sinal-falta { display: block; font-size: 0.78rem; color: #b91c1c; font-weight: 600; }
+.badge.esperando-lote { background: #dcfce7; color: #166534; }
+.tema-escuro .badge.esperando-lote { background: #14301f; color: #86efac; }
