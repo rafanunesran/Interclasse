@@ -479,6 +479,13 @@ function formatarReais(valor) {
 }
 
 // Retorna o HTML do badge de status de pagamento de um aluno.
+// Sinal: parte do valor que o pagante já deu (pagamentoSinal, em reais). A
+// camiseta continua em aberto até ser marcada como paga; falta o restante.
+function sinalDe(aluno) {
+  const v = Number(aluno && aluno.pagamentoSinal);
+  return isNaN(v) || v <= 0 ? 0 : Math.round(v * 100) / 100;
+}
+
 function badgePagamentoHtml(aluno) {
   // Camiseta interna (produção própria): custo entra no financeiro, sem receita.
   if (aluno.pago && aluno.pagamentoForma === "interno") {
@@ -492,6 +499,9 @@ function badgePagamentoHtml(aluno) {
   }
   if (aluno.pagamentoDeclarado) {
     return '<span class="badge aguardando">Aguardando confirmação</span>';
+  }
+  if (sinalDe(aluno) > 0) {
+    return `<span class="badge sinal" title="Pagou um sinal; falta o restante">Sinal ${formatarReais(sinalDe(aluno))}</span>`;
   }
   return '<span class="badge pendente">Pendente</span>';
 }
@@ -1333,6 +1343,9 @@ function carrinhoTimes(itens) {
 function podePagarAgora(time, aluno) {
   if (!time || pedidoTravado(time) || !pedidoAceitaPagamento(time)) return false;
   if (!aluno || aluno.excluido || aluno.pago || aluno.ajusteSolicitado) return false;
+  // Com sinal, o restante é cobrado pela organização (o site cobraria o
+  // preço cheio).
+  if (sinalDe(aluno) > 0) return false;
   return true;
 }
 

@@ -35,8 +35,11 @@ let prodFiltroPagamento = "";   // "" | "pagos" | "liberadas" | "pendentes"
 function comPrevisto(a) {
   return !a.pago && typeof previstoDe === "function" && !!previstoDe(a);
 }
+function comSinal(a) {
+  return !a.pago && typeof sinalDe === "function" && sinalDe(a) > 0;
+}
 function liberadaProducao(a) {
-  return !!a.pago || comPrevisto(a);
+  return !!a.pago || comPrevisto(a) || comSinal(a);
 }
 let prodFiltroTamanho = "";     // "" = todos
 let prodBusca = "";             // busca por nome / nome na camiseta / número
@@ -987,7 +990,7 @@ function renderizarFiltrosProducao() {
         <select id="prodFiltroPagamento">
           <option value="">Pagas e não pagas</option>
           <option value="pagos">Só as pagas</option>
-          <option value="liberadas">Pagas + com pagamento previsto</option>
+          <option value="liberadas">Pagas + sinal + pagamento previsto</option>
           <option value="pendentes">Só as não pagas</option>
         </select>
       </label>
@@ -1075,12 +1078,12 @@ function renderizarSelecaoProducao() {
 
     const sum = document.createElement("summary");
     const nPagos = visiveis.filter((a) => a.pago).length;
-    const nPrevistas = visiveis.filter(comPrevisto).length;
+    const nPrevistas = visiveis.filter((a) => comPrevisto(a) || comSinal(a)).length;
     sum.innerHTML =
       `<strong>${escapeHtmlAdmin(time.nome)}</strong> ` +
       `<span class="badge ${classeBadgeStatus(statusPedidoDe(time))}">${escapeHtmlAdmin(labelStatus(statusPedidoDe(time)))}</span> ` +
       `<span class="pix-ajuda">${escapeHtmlAdmin(nomeClienteDoTime(time))} &middot; modelo “${escapeHtmlAdmin(modeloDoTime(time))}” ` +
-      `&middot; ${visiveis.length} camiseta(s), ${nPagos} paga(s)${nPrevistas ? `, ${nPrevistas} com pagamento previsto` : ""}</span>`;
+      `&middot; ${visiveis.length} camiseta(s), ${nPagos} paga(s)${nPrevistas ? `, ${nPrevistas} com sinal ou pagamento previsto` : ""}</span>`;
     det.appendChild(sum);
 
     const atalhos = document.createElement("div");
@@ -1088,7 +1091,7 @@ function renderizarSelecaoProducao() {
     atalhos.appendChild(criarAtalho("Marcar todas", () => marcarLista(timeId, visiveis, true)));
     atalhos.appendChild(criarAtalho("Marcar só as pagas", () => marcarLista(timeId, visiveis.filter((a) => a.pago), true)));
     if (nPrevistas > 0) {
-      atalhos.appendChild(criarAtalho("Marcar pagas + com pagamento previsto", () => marcarLista(timeId, visiveis.filter(liberadaProducao), true)));
+      atalhos.appendChild(criarAtalho("Marcar pagas + sinal + pagamento previsto", () => marcarLista(timeId, visiveis.filter(liberadaProducao), true)));
     }
     atalhos.appendChild(criarAtalho("Desmarcar todas", () => marcarLista(timeId, visiveis, false)));
     det.appendChild(atalhos);
@@ -1311,9 +1314,9 @@ async function enviarSelecaoParaProducao() {
   const avisos = [];
   if (repetidas > 0) avisos.push(`${repetidas} já está(ão) nesta leva e será(ão) apenas atualizada(s).`);
   if (perdidas > 0) avisos.push(`${perdidas} não existe(m) mais no cadastro e ficará(ão) de fora.`);
-  const previstas = itens.filter((i) => comPrevisto(i.aluno)).length;
+  const previstas = itens.filter((i) => comPrevisto(i.aluno) || comSinal(i.aluno)).length;
   const naoPagas = itens.filter((i) => !liberadaProducao(i.aluno)).length;
-  if (previstas > 0) avisos.push(`${previstas} ainda não foi(ram) paga(s), mas tem(têm) pagamento previsto — o lembrete de cobrança continua em Financeiro → A receber.`);
+  if (previstas > 0) avisos.push(`${previstas} ainda não foi(ram) paga(s), mas tem(têm) sinal ou pagamento previsto — o lembrete de cobrança continua em Financeiro → A receber.`);
   if (naoPagas > 0) avisos.push(`${naoPagas} não foi(ram) paga(s) nem tem(têm) data combinada — vão assim mesmo, é a produção adiantada.`);
 
   if (!confirm(

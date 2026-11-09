@@ -1433,6 +1433,61 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
     lbl.appendChild(inp);
     tdPag.appendChild(lbl);
   }
+  // Sinal: parte já paga (a camiseta segue em aberto, falta o restante).
+  if (!aluno.pago && !ehInterno(aluno)) {
+    const sinal = sinalDe(aluno);
+    const precoCheio = Number(precoDoAluno(configGeralAtual, timeId, aluno.id, aluno.tamanho) || 0);
+    const lblSinal = document.createElement("label");
+    lblSinal.className = "sinal-aluno" + (sinal > 0 ? " ativo" : "");
+    lblSinal.title = "Sinal: quanto já pagou. A camiseta continua em aberto até você marcar como paga.";
+    lblSinal.innerHTML = "<span>Sinal R$</span>";
+    const inpSinal = document.createElement("input");
+    inpSinal.type = "number";
+    inpSinal.step = "0.01";
+    inpSinal.min = "0";
+    inpSinal.inputMode = "decimal";
+    inpSinal.placeholder = "0,00";
+    inpSinal.value = sinal > 0 ? sinal : "";
+    inpSinal.setAttribute("aria-label", "Sinal pago por " + aluno.nome);
+    const selSinal = document.createElement("select");
+    selSinal.setAttribute("aria-label", "Forma do sinal");
+    selSinal.innerHTML = '<option value="pix">PIX</option><option value="dinheiro">dinheiro</option>';
+    selSinal.value = aluno.pagamentoSinalForma === "dinheiro" ? "dinheiro" : "pix";
+    const salvarSinal = async () => {
+      const bruto = inpSinal.value.trim().replace(",", ".");
+      const v = bruto === "" ? 0 : Math.round(parseFloat(bruto) * 100) / 100;
+      if (isNaN(v) || v < 0) {
+        alert("Informe um valor válido ou deixe em branco.");
+        inpSinal.value = sinal > 0 ? sinal : "";
+        return;
+      }
+      if (precoCheio > 0 && v >= precoCheio) {
+        alert(`O sinal (${formatarReais(v)}) cobre o preço todo (${formatarReais(precoCheio)}). Marque a camiseta como paga.`);
+        inpSinal.value = sinal > 0 ? sinal : "";
+        return;
+      }
+      if (v === sinal && (v === 0 || selSinal.value === (aluno.pagamentoSinalForma || "pix"))) return;
+      inpSinal.disabled = selSinal.disabled = true;
+      try {
+        await gravarSinal(timeId, aluno.id, v, selSinal.value);
+      } catch (erro) {
+        console.error(erro);
+        inpSinal.disabled = selSinal.disabled = false;
+        alert("Erro ao salvar o sinal.");
+      }
+    };
+    inpSinal.onchange = salvarSinal;
+    selSinal.onchange = salvarSinal;
+    lblSinal.appendChild(inpSinal);
+    lblSinal.appendChild(selSinal);
+    tdPag.appendChild(lblSinal);
+    if (sinal > 0 && precoCheio > 0) {
+      const falta = document.createElement("small");
+      falta.className = "sinal-falta";
+      falta.textContent = "Falta " + formatarReais(precoCheio - sinal);
+      tdPag.appendChild(falta);
+    }
+  }
   // Dia que o pagante combinou de pagar (lembrete em Financeiro → A receber).
   if (!aluno.pago && !ehInterno(aluno)) {
     const previsto = previstoDe(aluno);
@@ -2136,6 +2191,16 @@ function gravarPagamentoPrevisto(timeId, alunoId, chave) {
     : { pagamentoPrevisto: firebase.firestore.FieldValue.delete(), pagamentoPrevistoEm: firebase.firestore.FieldValue.delete() });
 }
 
+// Sinal: valor que o pagante já deu (a camiseta segue em aberto, falta o
+// restante). Em branco/0 tira o sinal.
+function gravarSinal(timeId, alunoId, valor, forma) {
+  const ref = db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(alunoId);
+  const apagar = firebase.firestore.FieldValue.delete();
+  return ref.update(valor > 0
+    ? { pagamentoSinal: Math.round(valor * 100) / 100, pagamentoSinalForma: forma === "dinheiro" ? "dinheiro" : "pix", pagamentoSinalEm: firebase.firestore.FieldValue.serverTimestamp() }
+    : { pagamentoSinal: apagar, pagamentoSinalForma: apagar, pagamentoSinalEm: apagar });
+}
+
 // Camisetas em aberto com data combinada para hoje ou que já passou.
 function previstosVencidos() {
   const lista = [];
@@ -2458,12 +2523,24 @@ function calcularFinanceiro() {
         if (a.pagamentoMpId) fin.recebidoOnline += venda;
         if (a.pagamentoForma === "dinheiro") fin.porForma.dinheiro += venda;
         else fin.porForma.pix += venda;
-      } else if (a.pagamentoDeclarado) {
-        fin.aguardando += venda;
-        fin.qtdAguardando++;
       } else {
-        fin.pendente += venda;
-        fin.qtdPendentes++;
+        // Sinal já entrou; em aberto fica só o restante.
+        const sinal = Math.min(sinalDe(a), venda);
+        if (sinal > 0) {
+          fin.recebido += sinal;
+          t.recebido += sinal;
+          fin.sinais = (fin.sinais || 0) + sinal;
+          fin.qtdSinais = (fin.qtdSinais || 0) + 1;
+          if (a.pagamentoSinalForma === "dinheiro") fin.porForma.dinheiro += sinal;
+          else fin.porForma.pix += sinal;
+        }
+        if (a.pagamentoDeclarado) {
+          fin.aguardando += venda - sinal;
+          fin.qtdAguardando++;
+        } else {
+          fin.pendente += venda - sinal;
+          fin.qtdPendentes++;
+        }
       }
     });
     t.aReceber = t.previsto - t.recebido;
@@ -2525,15 +2602,28 @@ function finLancamentos() {
   const lista = [];
   timesFiltrados().forEach(([timeId, { time, alunos }]) => {
     alunos.forEach((a) => {
-      if (!a.pago || ehInterno(a)) return; // interna não gera receita
+      if (ehInterno(a)) return; // interna não gera receita
+      const venda = Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0);
+      const sinal = Math.min(sinalDe(a), venda);
+      const base = { timeId, time: time.nome, cliente: nomeClienteDoTime(time), alunoId: a.id, tamanho: a.tamanho };
+      // O sinal entra no dia em que foi dado; o pagamento final, só o restante.
+      if (sinal > 0) {
+        lista.push({
+          ...base,
+          aluno: a.nome + " (sinal)",
+          valor: sinal,
+          custo: 0,
+          taxa: 0,
+          forma: a.pagamentoSinalForma === "dinheiro" ? "dinheiro" : "pix",
+          online: false,
+          data: finParaData(a.pagamentoSinalEm)
+        });
+      }
+      if (!a.pago) return;
       lista.push({
-        timeId,
-        time: time.nome,
-        cliente: nomeClienteDoTime(time),
-        alunoId: a.id,
-        aluno: a.nome,
-        tamanho: a.tamanho,
-        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        ...base,
+        aluno: sinal > 0 ? a.nome + " (restante)" : a.nome,
+        valor: venda - sinal,
         custo: custoDoTamanho(a.tamanho),
         taxa: taxaMpDoAluno(a), // o que o Mercado Pago descontou
         forma: a.pagamentoForma === "dinheiro" ? "dinheiro" : "pix",
@@ -2569,7 +2659,9 @@ function finPendencias() {
         alunoId: a.id,
         aluno: a.nome,
         tamanho: a.tamanho,
-        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        // Em aberto: o preço menos o sinal já pago.
+        preco: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        sinal: sinalDe(a),
         tipo: declarado ? "aguardando" : "pendente",
         bloqueado: !!a.ajusteSolicitado, // ajuste em aberto trava o pagamento
         contato: a.ajusteContato || "",
@@ -2582,6 +2674,7 @@ function finPendencias() {
       });
     });
   });
+  lista.forEach((p) => { p.valor = Math.max(0, p.preco - Math.min(p.sinal, p.preco)); });
   return lista;
 }
 
@@ -3251,7 +3344,8 @@ function juntarCandidatas() {
         numero: a.numero || "",
         nomeCamiseta: a.nomeCamiseta || "",
         prof: ehProf(a),
-        valor: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        preco: Number(precoDoAluno(configGeralAtual, timeId, a.id, a.tamanho) || 0),
+        sinal: sinalDe(a),
         especial: precoEspecialDoAluno(configGeralAtual, timeId, a.id) != null,
         bloqueado: !!a.ajusteSolicitado,
         previsto: previstoDe(a),
@@ -3260,6 +3354,7 @@ function juntarCandidatas() {
       });
     });
   });
+  lista.forEach((p) => { p.valor = Math.max(0, p.preco - Math.min(p.sinal, p.preco)); });
   return lista.sort((x, y) =>
     x.time.localeCompare(y.time, "pt-BR") || x.aluno.localeCompare(y.aluno, "pt-BR"));
 }
@@ -3281,7 +3376,7 @@ function juntarMensagem(sel) {
   const pagaveis = sel.filter((p) => p.pagavel);
   const primeiroNome = juntarNome.trim().split(/\s+/)[0] || "";
   const linhas = sel.map((p) =>
-    `• ${p.aluno} — ${p.time} — ${p.tamanho || "-"}${p.valor > 0 ? " — " + formatarReais(p.valor) : ""}`);
+    `• ${p.aluno} — ${p.time} — ${p.tamanho || "-"}${p.valor > 0 ? " — " + formatarReais(p.valor) : ""}${p.sinal > 0 ? ` (falta; sinal de ${formatarReais(p.sinal)} já pago)` : ""}`);
   let texto =
     (primeiroNome ? `Olá, ${primeiroNome}! ` : "Olá! ") +
     "Aqui é da organização do interclasse. Seguem as camisetas em aberto:\n\n" +
@@ -3359,6 +3454,8 @@ function finViewJuntar(alvo) {
         const k = juntarChave(p);
         const situacao = p.bloqueado
           ? '<span class="badge aguardando">ajuste pendente</span>'
+          : p.sinal > 0
+            ? `<span class="badge sinal" title="Já pagou um sinal: o link do site não cobra esta camiseta (cobraria o preço cheio)">sinal ${formatarReais(p.sinal)}</span>`
           : p.pagavel
             ? '<span class="badge pendente">pendente</span>'
             : '<span class="badge fechado" title="O pedido não está na fase de pagamento: o link não cobra esta camiseta (o PIX da mensagem cobra)">fora do pagamento</span>';
@@ -3368,7 +3465,7 @@ function finViewJuntar(alvo) {
           <td>${escapeHtmlAdmin(p.time)}</td>
           <td>${escapeHtmlAdmin(p.tamanho)}</td>
           <td>${escapeHtmlAdmin([p.numero, p.nomeCamiseta].filter(Boolean).join(" · ") || "-")}</td>
-          <td>${p.valor > 0 ? formatarReais(p.valor) : "-"}${p.especial ? ' <span class="fin-dica" title="Preço especial desta camiseta (desconto)">especial</span>' : ""}</td>
+          <td>${p.valor > 0 ? formatarReais(p.valor) : "-"}${p.sinal > 0 ? ` <span class="fin-dica" title="Preço ${formatarReais(p.preco)} menos o sinal">falta</span>` : ""}${p.especial ? ' <span class="fin-dica" title="Preço especial desta camiseta (desconto)">especial</span>' : ""}</td>
           <td>${situacao}</td>
           <td>${previstoBadgeHtml(p.previsto) || "-"}</td>
         </tr>`;
@@ -3433,6 +3530,17 @@ function finViewJuntar(alvo) {
         <label>WhatsApp (opcional)<input type="tel" inputmode="tel" id="juntarTelefone" placeholder="(11) 91234-5678 — em branco, você escolhe o contato" value="${escapeHtmlAdmin(juntarTelefone)}" /></label>
       </div>
       <div class="juntar-desconto">
+        <label for="juntarSinal">Sinal recebido</label>
+        <input type="text" inputmode="decimal" id="juntarSinal" placeholder="0,00" />
+        <select id="juntarSinalForma" aria-label="Forma do sinal">
+          <option value="pix">PIX</option>
+          <option value="dinheiro">dinheiro</option>
+        </select>
+        <button type="button" class="secundario" data-juntar-acao="sinal">Registrar sinal</button>
+        ${sel.some((p) => p.sinal > 0) ? '<button type="button" class="secundario" data-juntar-acao="sem-sinal">Tirar sinal</button>' : ""}
+      </div>
+      <p class="fin-dica">Pagou só uma parte? Registre o sinal: ele é repartido entre as marcadas (na proporção do que falta), entra como recebido no Financeiro e elas ficam em aberto só pelo restante.</p>
+      <div class="juntar-desconto">
         <label for="juntarPrevisto">Pagamento previsto</label>
         <input type="date" id="juntarPrevisto" value="${escapeHtmlAdmin(juntarPrevistoComum(sel))}" />
         <button type="button" class="secundario" data-juntar-acao="previsto">Marcar data nas ${sel.length}</button>
@@ -3476,7 +3584,8 @@ function finViewJuntar(alvo) {
       if (!confirm(`Aplicar ${formatarReais(d / 100)} de desconto? O total passa a ${formatarReais((totalCent - d) / 100)}.\n\n${linhas}`)) return;
       btnDesc.disabled = true;
       try {
-        await Promise.all(novos.map((n) => gravarPrecoAluno(n.item.timeId, n.item.alunoId, n.valor)));
+        // O desconto sai do que falta: o preço novo é esse restante mais o sinal já pago.
+        await Promise.all(novos.map((n) => gravarPrecoAluno(n.item.timeId, n.item.alunoId, Math.round((n.valor + (n.item.sinal || 0)) * 100) / 100)));
         juntarDesconto = "";
         // A lista se redesenha sozinha quando os preços novos chegam.
       } catch (erro) {
@@ -3497,6 +3606,45 @@ function finViewJuntar(alvo) {
           console.error(erro);
           btnSemDesc.disabled = false;
           alert("Erro ao voltar ao preço normal.");
+        }
+      };
+    }
+    const btnSinal = resumo.querySelector('[data-juntar-acao="sinal"]');
+    btnSinal.onclick = async () => {
+      const bruto = resumo.querySelector("#juntarSinal").value.trim().replace(",", ".");
+      const cent = Math.round(parseFloat(bruto) * 100);
+      if (!(cent > 0)) { alert("Digite o valor do sinal."); return; }
+      if (comPreco.length === 0) { alert("Nenhuma das marcadas tem preço."); return; }
+      if (cent >= totalCent) { alert(`O sinal cobre tudo o que falta (${formatarReais(total)}). Marque as camisetas como pagas.`); return; }
+      const forma = resumo.querySelector("#juntarSinalForma").value;
+      // Mesmo rateio do desconto: o que sobra de cada uma é o novo "falta".
+      const restos = juntarRepartirDesconto(comPreco, cent);
+      const linhas = restos.map((r) => `• ${r.item.aluno}: sinal ${formatarReais(r.item.valor - r.valor)} (falta ${formatarReais(r.valor)})`).join("\n");
+      if (!confirm(`Registrar ${formatarReais(cent / 100)} de sinal (${forma === "dinheiro" ? "dinheiro" : "PIX"})? Fica faltando ${formatarReais((totalCent - cent) / 100)}.\n\n${linhas}`)) return;
+      btnSinal.disabled = true;
+      try {
+        await Promise.all(restos.map((r) => {
+          const novo = Math.round(((r.item.sinal || 0) + r.item.valor - r.valor) * 100) / 100;
+          return gravarSinal(r.item.timeId, r.item.alunoId, novo, forma);
+        }));
+      } catch (erro) {
+        console.error(erro);
+        btnSinal.disabled = false;
+        alert("Erro ao registrar o sinal.");
+      }
+    };
+    const btnSemSinal = resumo.querySelector('[data-juntar-acao="sem-sinal"]');
+    if (btnSemSinal) {
+      btnSemSinal.onclick = async () => {
+        const comSinal = sel.filter((p) => p.sinal > 0);
+        if (!confirm(`Tirar o sinal de ${comSinal.length} camiseta(s)? Elas voltam a dever o preço cheio.`)) return;
+        btnSemSinal.disabled = true;
+        try {
+          await Promise.all(comSinal.map((p) => gravarSinal(p.timeId, p.alunoId, 0)));
+        } catch (erro) {
+          console.error(erro);
+          btnSemSinal.disabled = false;
+          alert("Erro ao tirar o sinal.");
         }
       };
     }
@@ -3607,6 +3755,24 @@ function finViewCobranca(alvo, f) {
         <tbody>${lista.map(linhaPrevisto).join("")}</tbody>
       </table>
     </div>`;
+  // Quem já deu um sinal e ainda deve o restante.
+  const comSinal = pend.filter((p) => p.sinal > 0).sort((a, b) => b.valor - a.valor);
+  const blocoSinais = comSinal.length === 0 ? "" : `
+    <h3 class="fin-titulo">💰 Pagaram sinal, falta o restante</h3>
+    <div class="fin-tabela-wrap">
+      <table class="fin-tabela">
+        <thead><tr><th>Aluno</th><th>Time</th><th>Preço</th><th>Sinal</th><th>Falta</th><th>Combinado</th></tr></thead>
+        <tbody>${comSinal.map((p) => `
+          <tr>
+            <td>${escapeHtmlAdmin(p.aluno)}</td>
+            <td>${escapeHtmlAdmin(p.time)}</td>
+            <td>${formatarReais(p.preco)}</td>
+            <td>${formatarReais(p.sinal)}</td>
+            <td class="fin-vermelho">${formatarReais(p.valor)}</td>
+            <td>${previstoBadgeHtml(p.previsto) || "-"}</td>
+          </tr>`).join("")}</tbody>
+      </table>
+    </div>`;
   const blocoPrevistos = previstos.length === 0
     ? `<h3 class="fin-titulo">📅 Pagamentos previstos</h3>
        <p class="fin-dica">Nenhuma data combinada. Quando alguém disser o dia que vai pagar, marque em <em>Juntar cobrança</em> (ou no 📅 da linha da camiseta, no time): no dia, ela aparece aqui para cobrar.</p>`
@@ -3660,7 +3826,7 @@ function finViewCobranca(alvo, f) {
   const maiores = [...pendentes].sort((a, b) => b.valor - a.valor || (b.dias || 0) - (a.dias || 0)).slice(0, 15);
   const linhasMaiores = maiores.map((p) => `
     <tr>
-      <td>${escapeHtmlAdmin(p.aluno)}${p.bloqueado ? ' <span class="badge aguardando">ajuste pendente</span>' : ""}</td>
+      <td>${escapeHtmlAdmin(p.aluno)}${p.bloqueado ? ' <span class="badge aguardando">ajuste pendente</span>' : ""}${p.sinal > 0 ? ` <span class="badge sinal">sinal ${formatarReais(p.sinal)}</span>` : ""}</td>
       <td>${escapeHtmlAdmin(p.time)}</td>
       <td>${escapeHtmlAdmin(p.tamanho)}</td>
       <td class="fin-vermelho">${formatarReais(p.valor)}</td>
@@ -3690,6 +3856,7 @@ function finViewCobranca(alvo, f) {
     </div>
 
     ${blocoPrevistos}
+    ${blocoSinais}
 
     <h3 class="fin-titulo">Fila de conferência (avisaram que pagaram)</h3>
     ${aguardando.length === 0
@@ -5066,10 +5233,10 @@ function exportarTime(time, alunos) {
     alert("Esse time não tem alunos cadastrados.");
     return;
   }
-  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto"]];
+  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto", "Sinal"]];
   const cliente = nomeClienteDoTime(time);
   alunos.forEach((a) =>
-    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""])
+    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || "", sinalDe(a) ? sinalDe(a).toFixed(2) : ""])
   );
   baixarCSV(`pedido-${slugify(time.nome)}.csv`, linhas);
 }
@@ -5101,11 +5268,11 @@ elBtnExportarTudo.addEventListener("click", () => {
 // CSV geral de conferência: tudo, com time e situação de pagamento.
 if (elBtnExportarConferencia) {
   elBtnExportarConferencia.addEventListener("click", () => {
-    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto"]];
+    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto", "Sinal"]];
     let total = 0;
     timesFiltrados().forEach(([, { time, alunos }]) => {
       alunos.forEach((a) => {
-        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || "", sinalDe(a) ? sinalDe(a).toFixed(2) : ""]);
         total++;
       });
     });

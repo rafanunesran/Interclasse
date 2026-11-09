@@ -3203,3 +3203,17 @@ header.topo nav .btn-instalar svg { width: 16px; height: 16px; }
 .tema-escuro .previsto-aluno.ativo input { background: #3b2f12; color: #fcd34d; }
 .tema-escuro .fin-tabela tr.previsto-hoje td { background: #3b2f12; }
 .tema-escuro .fin-tabela tr.previsto-atrasado td { background: #3f1d1d; }
+
+/* Sinal: pagou uma parte, falta o restante */
+.badge.sinal { background: #dbeafe; color: #1e40af; }
+.tema-escuro .badge.sinal { background: #1e2a4a; color: #93c5fd; }
+.sinal-aluno {
+  display: flex; align-items: center; gap: 4px; margin: 6px 0 0;
+  font-size: 0.8rem; font-weight: 600; color: #6b7280;
+}
+.sinal-aluno input { width: 76px; margin: 0; padding: 4px 6px; font-size: 0.85rem; }
+.sinal-aluno select { width: auto; margin: 0; padding: 3px 4px; font-size: 0.8rem; }
+.sinal-aluno.ativo { color: #1d4ed8; }
+.sinal-aluno.ativo input { border-color: #2563eb; background: #eff6ff; font-weight: 700; }
+.tema-escuro .sinal-aluno.ativo input { background: #1e2a4a; color: #93c5fd; }
+.sinal-falta { display: block; font-size: 0.78rem; color: #b91c1c; font-weight: 600; }
