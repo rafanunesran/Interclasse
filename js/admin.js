@@ -3183,8 +3183,8 @@ function finViewEvolucao(alvo, f) {
 // ---------------- Visão 5: juntar cobrança ----------------
 // Junta camisetas em aberto de times diferentes (as dos professores, por
 // exemplo) numa cobrança só: filtra, marca as que entram, e manda o total no
-// WhatsApp com o link de pagamento (que já abre o carrinho com elas) e o PIX
-// copia e cola da soma. Se pagarem fora do site, marca todas como pagas de
+// WhatsApp com o link de pagamento (que já abre o carrinho com elas), que dá
+// baixa sozinho no site. Se pagarem fora do site, marca todas como pagas de
 // uma vez. A seleção sobrevive às atualizações em tempo real da lista.
 
 const juntarSel = new Set();  // "timeId/alunoId" das camisetas marcadas
@@ -3293,15 +3293,6 @@ function juntarMensagem(sel) {
       ? "\n\nPara pagar tudo de uma vez pelo site:\n"
       : `\n\nPelo site dá para pagar agora ${pagaveis.length} delas (${pagaveis.map((p) => p.aluno).join(", ")}):\n`;
     texto += linkCobranca(pagaveis);
-  }
-  if (configGeralAtual.pixChave && total > 0) {
-    texto += (pagaveis.length > 0 ? "\n\nOu pelo PIX copia e cola:\n" : "\n\nPIX copia e cola:\n") +
-      pixCopiaECola({
-        chave: configGeralAtual.pixChave,
-        nome: configGeralAtual.pixNome,
-        cidade: configGeralAtual.pixCidade,
-        valor: total
-      });
   }
   return texto;
 }
