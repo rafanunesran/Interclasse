@@ -1241,6 +1241,11 @@ body.com-carrinho { padding-bottom: 96px; }
 }
 .check-goleiro input,
 .check-prof input { margin: 0; width: auto; }
+/* Versão da camiseta (oficial, goleiro, uniformes…), na coluna da lista. */
+.seletor-versao-aluno { display: inline-block; margin: 0; }
+.seletor-versao-aluno select { width: auto; max-width: 11em; margin: 0; padding: 3px 6px; font-size: 0.82rem; }
+.seletor-versao-aluno.marcado select { background: #cffafe; color: #155e75; border-color: #67e8f9; font-weight: 600; }
+.tema-escuro .seletor-versao-aluno.marcado select { background: #0f3440; color: #67e8f9; border-color: #164e63; }
 .check-goleiro-icone[hidden],
 .check-prof-icone[hidden] { display: none; }
 
@@ -2550,6 +2555,9 @@ button.kanban-card-nome:hover { color: var(--azul); text-decoration: underline; 
 /* Variante goleiro (Arquivos de produção / Editar arte do pedido) */
 .seletor-variante { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 4px 0 12px; }
 .seletor-variante .pix-ajuda { margin: 0; flex: 1 1 220px; }
+.seletor-variante .segmentado { flex-wrap: wrap; }
+.seletor-versao-acoes { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.seletor-versao-acoes button { padding: 4px 10px; font-size: 0.82rem; }
 .producao-time.variante-goleiro .producao-slot.ok { border-color: #67e8f9; }
 .producao-slot.herdado .producao-slot-previa img { opacity: 0.4; filter: grayscale(0.5); }
 .producao-slot.herdado .producao-slot-info { font-style: italic; }

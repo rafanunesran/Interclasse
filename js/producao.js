@@ -275,8 +275,9 @@ function itemAtual(item) {
     mudou: false,
     pago: !!item.pago,
     pagamentoForma: item.pagamentoForma || "",
-    // Camiseta de cor especial: manda o goleiro para um CSV próprio.
-    goleiro: !!item.goleiro,
+    // Versão da camiseta (goleiro, uniforme…): vai para um CSV próprio.
+    versao: versaoDoAluno(item),
+    versaoNome: nomeVersaoDoAluno(item),
     // Camiseta de professor: marca só para organização.
     prof: !!item.prof,
     // Elementos tirados só desta camiseta: { brasao, nome, numero }.
@@ -295,13 +296,14 @@ function itemAtual(item) {
     (aluno.nomeCamiseta || "") !== (item.nomeCamiseta || "") ||
     String(aluno.numero || "") !== String(item.numero || "") ||
     (aluno.tamanho || "") !== (item.tamanho || "") ||
-    ehGoleiro(aluno) !== !!item.goleiro ||
+    versaoDoAluno(aluno) !== versaoDoAluno(item) ||
     JSON.stringify(semElementos(aluno)) !== JSON.stringify(semElementos(item));
   base.nome = aluno.nome || "";
   base.nomeCamiseta = aluno.nomeCamiseta || "";
   base.numero = aluno.numero || "";
   base.tamanho = aluno.tamanho || "";
-  base.goleiro = ehGoleiro(aluno);
+  base.versao = versaoDoAluno(aluno);
+  base.versaoNome = nomeVersaoDoAluno(aluno, estado.time);
   base.prof = ehProf(aluno);
   base.sem = semElementos(aluno);
   base.pago = !!aluno.pago;
@@ -315,9 +317,9 @@ function agruparPorModelo(itens) {
   const grupos = new Map();
   (itens || []).forEach((item) => {
     const atual = itemAtual(item);
-    // O goleiro veste outra cor: mesmo sendo a mesma arte, ele não pode sair
-    // no mesmo arquivo de impressão — vira o modelo "<arte> — goleiro".
-    const modelo = modeloComGoleiro(item.modelo, atual.goleiro);
+    // Outra versão (goleiro, uniforme…) tem outra cor ou arte: não pode sair
+    // no mesmo arquivo de impressão — vira o modelo "<arte> — <versão>".
+    const modelo = modeloComVersao(item.modelo, atual.versao ? atual.versaoNome : "");
     if (!grupos.has(modelo)) grupos.set(modelo, []);
     grupos.get(modelo).push({ item, atual });
   });
@@ -601,7 +603,7 @@ function criarBlocoModelo(leva, grupo) {
         : "");
 
     tr.innerHTML = `
-      <td>${nomeCamisetaDaListaHtml(atual, nomeNaCamiseta(atual) || "—")} ${badgeGoleiroHtml(atual)}${badgeProfHtml(atual)}${badgeSemElementosHtml(atual)}${avisos}
+      <td>${nomeCamisetaDaListaHtml(atual, nomeNaCamiseta(atual) || "—")} ${badgeVersaoHtml(atual)}${badgeProfHtml(atual)}${badgeSemElementosHtml(atual)}${avisos}
           ${!atual.avulso && atual.nome && atual.nomeCamiseta
             ? `<br><small class="pix-ajuda">${escapeHtmlAdmin(atual.nome)}</small>` : ""}</td>
       <td>${numeroDaListaHtml(atual)}</td>
@@ -1130,7 +1132,7 @@ function renderizarSelecaoProducao() {
 
       tr.innerHTML = `
         <td class="cel-marcar"></td>
-        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeGoleiroHtml(aluno)}${badgeProfHtml(aluno)}${badgeSemElementosHtml(aluno)}</td>
+        <td>${escapeHtmlAdmin(aluno.nome)} ${badgeVersaoHtml(aluno, time)}${badgeProfHtml(aluno)}${badgeSemElementosHtml(aluno)}</td>
         <td>${nomeCamisetaDaListaHtml(aluno)}</td>
         <td>${numeroDaListaHtml(aluno)}</td>
         <td>${escapeHtmlAdmin(aluno.tamanho || "-")}</td>
@@ -1362,7 +1364,8 @@ async function enviarSelecaoParaProducao() {
             nomeCamiseta: aluno.nomeCamiseta || "",
             numero: aluno.numero || "",
             tamanho: aluno.tamanho || "",
-            goleiro: ehGoleiro(aluno),
+            ...camposVersaoAluno(versaoDoAluno(aluno)),
+            versaoNome: nomeVersaoDoAluno(aluno, time),
             prof: ehProf(aluno),
             sem: semElementos(aluno),
             criadoEmMs: Date.now()
@@ -1417,7 +1420,7 @@ function baixarCsvsDaLeva(leva, grupos) {
 
 // Conferência da leva inteira: um arquivo só, com o modelo em cada linha.
 function exportarConferenciaLeva(leva, grupos) {
-  const linhas = [["Leva", "Modelo", "Cliente", "Time", "Origem", "Nome do Estudante", "Nome na Camiseta", "Numero", "Tamanho", "Goleiro", "Sem", "Pago", "Forma Pagto", "Situacao"]];
+  const linhas = [["Leva", "Modelo", "Cliente", "Time", "Origem", "Nome do Estudante", "Nome na Camiseta", "Numero", "Tamanho", "Versao", "Sem", "Pago", "Forma Pagto", "Situacao"]];
   grupos.forEach((g) => {
     g.linhas.forEach(({ atual }) => {
       linhas.push([
@@ -1430,7 +1433,7 @@ function exportarConferenciaLeva(leva, grupos) {
         nomeNaCamiseta(atual),
         atual.numero || "",
         atual.tamanho || "",
-        atual.goleiro ? "Sim" : "Nao",
+        atual.versao ? atual.versaoNome : NOME_VERSAO_OFICIAL,
         ELEMENTOS_TIRAVEIS.filter((e) => (atual.sem || {})[e.id]).map((e) => e.rotulo).join(" + "),
         atual.avulso ? "-" : (atual.pago ? "Sim" : "Nao"),
         atual.avulso ? "" : (atual.pagamentoForma || ""),

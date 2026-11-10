@@ -316,10 +316,11 @@ function textoDoTimeParaBusca(time) {
   ].filter(Boolean).join(" ");
 }
 
-// O que, na camiseta, entra na busca (o número ajuda a achar pelo dorsal, e a
-// palavra "goleiro" junta todos os goleiros de uma vez; "prof", os professores).
-function textoDoAlunoParaBusca(aluno) {
-  return [aluno.nome, aluno.nomeCamiseta, aluno.numero, ehGoleiro(aluno) ? "goleiro" : "", ehProf(aluno) ? "prof professor" : ""]
+// O que, na camiseta, entra na busca (o número ajuda a achar pelo dorsal, e o
+// nome da versão — "goleiro", "ensino médio"… — junta todas as camisetas
+// dela de uma vez; "prof", os professores).
+function textoDoAlunoParaBusca(aluno, time) {
+  return [aluno.nome, aluno.nomeCamiseta, aluno.numero, nomeVersaoDoAluno(aluno, time), ehProf(aluno) ? "prof professor" : ""]
     .filter(Boolean).join(" ");
 }
 
@@ -336,7 +337,7 @@ function resultadoBusca(time, alunos, termos) {
   if (faltando.length === 0) return { casa: true, alunos: [] };
 
   const achados = (alunos || []).filter((a) => {
-    const alvo = normalizarTexto(textoDoAlunoParaBusca(a));
+    const alvo = normalizarTexto(textoDoAlunoParaBusca(a, time));
     return faltando.every((t) => alvo.includes(t));
   });
   return { casa: achados.length > 0, alunos: achados };
@@ -1195,9 +1196,10 @@ function renderizarTimeAberto(timeId) {
     editarArte: (() => {
       const prod = time.producao || {};
       const contar = (aj) => Object.values(aj || {}).reduce((s, p) => s + Object.keys(p || {}).length, 0);
-      const n = contar(prod.layoutAjustes) + contar(prod.goleiro && prod.goleiro.layoutAjustes) +
+      const n = contar(prod.layoutAjustes) +
+        Object.values(versoesBrutasDoTime(time)).reduce((s, v) => s + contar(v && v.layoutAjustes), 0) +
         Object.keys(prod.individuais || {}).length;
-      return n ? `<span class="subaba-qtd" title="Ajustes próprios deste time (comum e goleiro)">${n}</span>` : "";
+      return n ? `<span class="subaba-qtd" title="Ajustes próprios deste time (oficial e versões)">${n}</span>` : "";
     })()
   };
   const nav = document.createElement("nav");
@@ -1230,7 +1232,6 @@ function renderizarListaDoTime(timeId) {
 
   const nPagos = alunos.filter((a) => a.pago).length;
   const nConfirmar = alunos.filter((a) => a.pagamentoDeclarado && !a.pago).length;
-  const nGoleiros = alunos.filter(ehGoleiro).length;
   const nProfs = alunos.filter(ehProf).length;
   const nAjustes = alunos.filter((a) => a.ajusteSolicitado).length;
 
@@ -1240,7 +1241,8 @@ function renderizarListaDoTime(timeId) {
     `<span class="numero-chip"><strong>${alunos.length - nPagos}</strong> pendente(s)</span>`
   ];
   if (nConfirmar) numeros.push(`<span class="numero-chip alerta"><strong>${nConfirmar}</strong> PIX a confirmar</span>`);
-  if (nGoleiros) numeros.push(`<span class="numero-chip">${icone("hand")} <strong>${nGoleiros}</strong> goleiro(s)</span>`);
+  contarVersoes(alunos, time).forEach((v) => numeros.push(
+    `<span class="numero-chip">${icone(v.id === VERSAO_GOLEIRO ? "hand" : "shirt")} <strong>${v.n}</strong> ${escapeHtmlAdmin(v.nome)}</span>`));
   if (nProfs) numeros.push(`<span class="numero-chip">${icone("graduation-cap")} <strong>${nProfs}</strong> prof</span>`);
   if (nAjustes) numeros.push(`<span class="numero-chip alerta"><span class="marca-ajuste">!</span> <strong>${nAjustes}</strong> ajuste(s)</span>`);
 
@@ -1317,7 +1319,7 @@ function renderizarListaDoTime(timeId) {
   tabela.className = "tabela-responsiva";
   tabela.innerHTML = `
     <thead>
-      <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th>Goleiro</th><th>Prof</th><th title="Tirar o brasão, o nome ou o número só desta camiseta">Sem</th><th>Pagamento</th><th>Ações</th></tr>
+      <tr><th>Nome</th><th>Tamanho</th><th>Número</th><th>Nome na camiseta</th><th title="Versão da camiseta (oficial, goleiro, uniformes…)">Versão</th><th>Prof</th><th title="Tirar o brasão, o nome ou o número só desta camiseta">Sem</th><th>Pagamento</th><th>Ações</th></tr>
     </thead>
     <tbody></tbody>
   `;
@@ -1359,16 +1361,16 @@ function criarLinhaAlunoAdmin(timeId, time, aluno, idsAchados) {
     <td data-label="Tamanho">${escapeHtmlAdmin(aluno.tamanho)}</td>
     <td data-label="Número">${numeroDaListaHtml(aluno)}</td>
     <td data-label="Nome na camiseta">${nomeCamisetaDaListaHtml(aluno)}</td>
-    <td data-label="Goleiro" class="cel-goleiro"></td>
+    <td data-label="Versão" class="cel-goleiro"></td>
     <td data-label="Prof" class="cel-prof"></td>
     <td data-label="Sem" class="cel-sem"></td>
     <td data-label="Pagamento" class="cel-pagamento"></td>
     <td data-label="" class="acoes-linha"></td>
   `;
 
-  // Goleiro: camiseta de cor especial. O Super Admin marca e desmarca
+  // Versão da camiseta (oficial, goleiro, uniformes…). O Super Admin troca
   // num clique, mesmo com a lista já fechada para o representante.
-  preencherCelulaGoleiroAdmin(tr.querySelector(".cel-goleiro"), timeId, aluno);
+  preencherCelulaVersaoAdmin(tr.querySelector(".cel-goleiro"), timeId, aluno);
   // Prof: camiseta de professor, marca só para organização.
   preencherCelulaProfAdmin(tr.querySelector(".cel-prof"), timeId, aluno);
   // Sem brasão / nome / número: só nesta camiseta, a folha sai sem eles.
@@ -1845,7 +1847,7 @@ function renderizarEditarArteTime(timeId) {
   card.innerHTML = '<h3 class="titulo-bloco">Editar arte deste time</h3>' +
     '<p class="pix-ajuda">Clique num elemento (no desenho ou na lista) para mudar a posição, a letra, as cores ou ocultá-lo — só neste time. ' +
     'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
-  // Camiseta comum ou a do goleiro (o mesmo seletor da aba Arquivos).
+  // Oficial ou outra versão (o mesmo seletor da aba Arquivos).
   if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId, true));
   const host = document.createElement("div");
   host.className = "editor-layout-pedido";
@@ -1866,7 +1868,7 @@ function renderizarArquivosTime(timeId) {
     card.className = "card tema-escuro";
     card.innerHTML = '<h3 class="titulo-bloco">Arquivos para impressão</h3>' +
       '<p class="pix-ajuda">Clique num espaço ou arraste o arquivo para cima dele. Arquivos grandes vão ao Drive em partes.</p>';
-    // Camiseta comum ou a do goleiro: o que o goleiro não tiver usa o da comum.
+    // Oficial ou outra versão: o que a versão não tiver usa o da oficial.
     if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId));
     const bloco = criarBlocoProducaoTime(timeId, time);
     bloco.open = true;
@@ -1879,8 +1881,8 @@ function renderizarArquivosTime(timeId) {
   if (typeof criarPreviaArteTime === "function") {
     const card = document.createElement("div");
     card.className = "card tema-escuro";
-    const golPrevia = typeof editandoGoleiro === "function" && editandoGoleiro(timeId);
-    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${golPrevia ? " — " + icone("hand") + " goleiro" : ""}</h3>`;
+    const versaoPrevia = typeof versaoEditando === "function" ? versaoEditando(timeId) : "";
+    card.innerHTML = `<h3 class="titulo-bloco">Prévia da arte${versaoPrevia ? " — " + escapeHtmlAdmin(nomeVersaoDoTime(time, versaoPrevia)) : ""}</h3>`;
     card.appendChild(criarPreviaArteTime(timeId, time));
     elListaTimesAdmin.appendChild(card);
   }
@@ -2235,21 +2237,23 @@ function renderizarResumoPagamentos() {
   const el = document.getElementById("resumoPagamentos");
   if (!el) return;
 
-  let total = 0, pagos = 0, aguardando = 0, goleiros = 0, profs = 0;
-  timesFiltrados().forEach(([, { alunos }]) => {
+  let total = 0, pagos = 0, aguardando = 0, profs = 0;
+  const versoes = new Map(); // nome da versão -> quantas
+  timesFiltrados().forEach(([, { time, alunos }]) => {
     alunos.forEach((a) => {
       total++;
       if (a.pago) pagos++;
       else if (a.pagamentoDeclarado) aguardando++;
-      if (ehGoleiro(a)) goleiros++;
+      const nv = nomeVersaoDoAluno(a, time);
+      if (nv) versoes.set(nv, (versoes.get(nv) || 0) + 1);
       if (ehProf(a)) profs++;
     });
   });
   const pendentes = total - pagos - aguardando;
-  // Quantas camisetas saem na cor de goleiro (só aparece quando há alguma).
-  const marcaGoleiros = goleiros > 0
-    ? `<span class="badge goleiro" title="Camiseta de cor especial">${icone("hand")} Goleiros: ${goleiros}</span>`
-    : "";
+  // Quantas camisetas saem em cada versão fora a oficial (goleiro,
+  // uniformes…) — só aparece quando há alguma.
+  const marcaGoleiros = [...versoes.entries()].map(([nome, n]) =>
+    `<span class="badge goleiro" title="Versão da camiseta">${icone(normalizarTexto(nome) === "goleiro" ? "hand" : "shirt")} ${escapeHtmlAdmin(nome)}: ${n}</span>`).join(" ");
   const marcaProfs = profs > 0
     ? `<span class="badge prof" title="Camisetas de professor">${icone("graduation-cap")} Prof: ${profs}</span>`
     : "";
@@ -4356,7 +4360,7 @@ const elNovaCamisetaTamanho = document.getElementById("novaCamisetaTamanho");
 const elNovaCamisetaNumero = document.getElementById("novaCamisetaNumero");
 const elNovaCamisetaCostas = document.getElementById("novaCamisetaCostas");
 const elNovaCamisetaQtd = document.getElementById("novaCamisetaQtd");
-const elNovaCamisetaGoleiro = document.getElementById("novaCamisetaGoleiro");
+const elNovaCamisetaVersao = document.getElementById("novaCamisetaVersao");
 const elNovaCamisetaProf = document.getElementById("novaCamisetaProf");
 const elMsgNovaCamiseta = document.getElementById("msgNovaCamiseta");
 const elNovaCamisetaDuplicado = document.getElementById("novaCamisetaDuplicado");
@@ -4467,6 +4471,13 @@ function mostrarModalNovaCamiseta(timeId) {
       : "Escolha o modelo da camiseta para saber em qual pedido o nome entra.";
   }
 
+  // Versões do time escolhido (oficial, goleiro, uniformes…).
+  if (elNovaCamisetaVersao) {
+    const atual = elNovaCamisetaVersao.value;
+    elNovaCamisetaVersao.innerHTML = opcoesVersaoHtml(time, "");
+    if ([...elNovaCamisetaVersao.options].some((o) => o.value === atual)) elNovaCamisetaVersao.value = atual;
+  }
+
   // O pedido já andou? A camiseta nova entra fora do que já foi exportado —
   // melhor dizer isso antes de cadastrar do que descobrir na gráfica.
   if (elNovaCamisetaAviso) {
@@ -4519,7 +4530,7 @@ function limparNovaCamiseta() {
   if (elNovaCamisetaNumero) elNovaCamisetaNumero.value = "";
   if (elNovaCamisetaCostas) elNovaCamisetaCostas.value = "";
   if (elNovaCamisetaQtd) elNovaCamisetaQtd.value = "1";
-  if (elNovaCamisetaGoleiro) elNovaCamisetaGoleiro.checked = false;
+  if (elNovaCamisetaVersao) elNovaCamisetaVersao.value = "";
   if (elNovaCamisetaProf) elNovaCamisetaProf.checked = false;
   montarChavesNovaCamiseta();
   // O tamanho também volta ao "Selecione...": cadastrar o próximo com o
@@ -4564,7 +4575,7 @@ if (elFormNovaCamiseta) {
         numero: elNovaCamisetaNumero.value.trim(),
         // Em branco, o que vai estampado é o nome do estudante.
         nomeCamiseta: elNovaCamisetaCostas.value.trim() || nome,
-        goleiro: !!(elNovaCamisetaGoleiro && elNovaCamisetaGoleiro.checked),
+        ...camposVersaoAluno(elNovaCamisetaVersao ? elNovaCamisetaVersao.value : ""),
         prof: !!(elNovaCamisetaProf && elNovaCamisetaProf.checked),
         // Mesmo formato das chaves da lista: só os tirados, como `sem.<id>: true`.
         ...(Object.keys(novaCamisetaSem).length ? { sem: { ...novaCamisetaSem } } : {})
@@ -4600,23 +4611,24 @@ document.addEventListener("keydown", (ev) => {
   }
 });
 
-// Célula "Goleiro" da lista do Super Admin: caixa de marcar que grava na hora.
-// O goleiro veste uma camiseta de cor diferente, então a marca acompanha a
-// camiseta até a produção, que a separa num arquivo próprio.
-function preencherCelulaGoleiroAdmin(td, timeId, aluno) {
+// Célula "Versão" da lista do Super Admin: seletor que grava na hora. A
+// versão (goleiro, uniforme…) acompanha a camiseta até a produção, que a
+// separa num arquivo próprio.
+function preencherCelulaVersaoAdmin(td, timeId, aluno) {
   if (!td) return;
   td.innerHTML = "";
+  const time = estadoTimes[timeId] && estadoTimes[timeId].time;
 
-  td.appendChild(criarCheckGoleiro(aluno, (valor, chk) => {
-    chk.disabled = true;
+  td.appendChild(criarSeletorVersaoAluno(time, aluno, (valor, sel) => {
+    sel.disabled = true;
     db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
-      .update({ goleiro: valor })
+      .update(camposVersaoAluno(valor))
       .catch((erro) => {
         console.error(erro);
-        alert("Não foi possível salvar a marca de goleiro. Tente novamente.");
+        alert("Não foi possível salvar a versão da camiseta. Tente novamente.");
         renderizarTimesAdmin();
       })
-      .finally(() => { chk.disabled = false; });
+      .finally(() => { sel.disabled = false; });
   }));
 }
 
@@ -4687,8 +4699,8 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   tdCostas.appendChild(inputCostas);
 
   const tdGoleiro = document.createElement("td");
-  const rotuloGoleiro = criarCheckGoleiro(aluno);
-  tdGoleiro.appendChild(rotuloGoleiro);
+  const rotuloVersao = criarSeletorVersaoAluno(estadoTimes[timeId] && estadoTimes[timeId].time, aluno);
+  tdGoleiro.appendChild(rotuloVersao);
 
   const tdProf = document.createElement("td");
   const rotuloProf = criarCheckProf(aluno);
@@ -4714,7 +4726,7 @@ function editarAlunoAdmin(tr, timeId, aluno) {
         tamanho: selectTamanho.value,
         numero: inputNumero.value.trim(),
         nomeCamiseta: novoCostas,
-        goleiro: rotuloGoleiro.chk.checked,
+        ...camposVersaoAluno(rotuloVersao.sel.value),
         prof: rotuloProf.chk.checked
       };
       if (aluno.ajusteSolicitado) {
@@ -4744,7 +4756,7 @@ function editarAlunoAdmin(tr, timeId, aluno) {
   const tdSem = document.createElement("td"); // sem brasão/nome/número (fora da edição)
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
   [[tdNome, "Nome"], [tdTamanho, "Tamanho"], [tdNumero, "Número"], [tdCostas, "Nome na camiseta"],
-    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdSem, ""], [tdPagamento, ""], [tdAcoes, ""]]
+    [tdGoleiro, "Versão"], [tdProf, "Prof"], [tdSem, ""], [tdPagamento, ""], [tdAcoes, ""]]
     .forEach(([td, rotulo]) => (td.dataset.label = rotulo));
   tr.classList.add("linha-editando");
 
@@ -5212,18 +5224,18 @@ function exportarProducaoTime(time, alunos) {
     pendentes.length + " camiseta(s) não paga(s) ficam de fora da produção.\n\n" +
     "Exportar as " + produzir.length + " camiseta(s) pagas?"
   )) return;
-  const saida = baixarCSVProducaoSeparado(`producao-${slugify(time.nome)}.csv`, produzir);
-  avisarGoleirosSeparados(saida);
+  const saida = baixarCSVProducaoSeparado(`producao-${slugify(time.nome)}.csv`, produzir, () => time);
+  avisarVersoesSeparadas(saida);
 }
 
-// Conta para o admin quando os goleiros saíram num arquivo à parte — o
-// download extra não pode passar despercebido.
-function avisarGoleirosSeparados(saida) {
-  if (!saida || saida.goleiros === 0) return;
+// Conta para o admin quando as versões (goleiro, uniformes…) saíram em
+// arquivos à parte — os downloads extras não podem passar despercebidos.
+function avisarVersoesSeparadas(saida) {
+  if (!saida || !saida.versoes || !saida.versoes.length) return;
   alert(
-    `🧤 ${saida.goleiros} camiseta(s) de goleiro saíram num arquivo à parte ` +
-    `("...-goleiros.csv"), porque a cor é outra.` +
-    (saida.demais > 0 ? `\n\nO arquivo principal traz as outras ${saida.demais}.` : "")
+    "Algumas camisetas são de outra versão e saíram em arquivos à parte, porque a cor ou a arte é outra:\n\n" +
+    saida.versoes.map((v) => `• ${v.nome}: ${v.n} camiseta(s) — "${v.arquivo}"`).join("\n") +
+    (saida.demais > 0 ? `\n\nO arquivo principal traz as outras ${saida.demais} (oficial).` : "")
   );
 }
 
@@ -5233,10 +5245,10 @@ function exportarTime(time, alunos) {
     alert("Esse time não tem alunos cadastrados.");
     return;
   }
-  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto", "Sinal"]];
+  const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Versao", "Prof", "Pago", "Forma Pagto", "Sinal"]];
   const cliente = nomeClienteDoTime(time);
   alunos.forEach((a) =>
-    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || "", sinalDe(a) ? sinalDe(a).toFixed(2) : ""])
+    linhas.push([cliente, time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", nomeVersaoDoAluno(a, time) || NOME_VERSAO_OFICIAL, ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || "", sinalDe(a) ? sinalDe(a).toFixed(2) : ""])
   );
   baixarCSV(`pedido-${slugify(time.nome)}.csv`, linhas);
 }
@@ -5244,9 +5256,11 @@ function exportarTime(time, alunos) {
 // CSV geral de produção: junta todos os times, só o que será produzido.
 elBtnExportarTudo.addEventListener("click", () => {
   const produzir = [];
+  const timeDoAluno = new Map();
   let pendentes = 0;
-  timesFiltrados().forEach(([, { alunos }]) => {
+  timesFiltrados().forEach(([, { time, alunos }]) => {
     const separado = separarProducao(alunos);
+    separado.produzir.forEach((a) => timeDoAluno.set(a, time));
     produzir.push(...separado.produzir);
     pendentes += separado.pendentes.length;
   });
@@ -5260,19 +5274,19 @@ elBtnExportarTudo.addEventListener("click", () => {
     pendentes + " camiseta(s) não paga(s) ficam de fora da produção.\n\n" +
     "Exportar as " + produzir.length + " camiseta(s) pagas?"
   )) return;
-  avisarGoleirosSeparados(
-    baixarCSVProducaoSeparado(`producao-interclasse-geral${sufixoCliente()}.csv`, produzir)
+  avisarVersoesSeparadas(
+    baixarCSVProducaoSeparado(`producao-interclasse-geral${sufixoCliente()}.csv`, produzir, (a) => timeDoAluno.get(a))
   );
 });
 
 // CSV geral de conferência: tudo, com time e situação de pagamento.
 if (elBtnExportarConferencia) {
   elBtnExportarConferencia.addEventListener("click", () => {
-    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto", "Sinal"]];
+    const linhas = [["Cliente", "Time", "Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Versao", "Prof", "Pago", "Forma Pagto", "Sinal"]];
     let total = 0;
     timesFiltrados().forEach(([, { time, alunos }]) => {
       alunos.forEach((a) => {
-        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || "", sinalDe(a) ? sinalDe(a).toFixed(2) : ""]);
+        linhas.push([nomeClienteDoTime(time), time.nome, a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", nomeVersaoDoAluno(a, time) || NOME_VERSAO_OFICIAL, ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || "", sinalDe(a) ? sinalDe(a).toFixed(2) : ""]);
         total++;
       });
     });

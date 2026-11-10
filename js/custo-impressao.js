@@ -54,9 +54,9 @@ function ciPecasDaCamiseta(item, atual, cache) {
   if (typeof timeDaLinha !== "function" || typeof pecasDoTime !== "function") return null;
   const timeId = timeDaLinha(item);
   if (!timeId || !estadoTimes[timeId]) return null;
-  const chave = timeId + (atual.goleiro ? "|g" : "");
+  const chave = timeId + "|" + (atual.versao || "");
   const time = typeof timeNaVariante === "function"
-    ? timeNaVariante(estadoTimes[timeId].time, atual.goleiro) : estadoTimes[timeId].time;
+    ? timeNaVariante(estadoTimes[timeId].time, atual.versao) : estadoTimes[timeId].time;
   let ids = cache && cache.get(chave);
   if (!ids) {
     ids = pecasDoTime(time);

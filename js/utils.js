@@ -580,46 +580,155 @@ function modeloDoTime(time) {
 }
 
 // ============================================================
-// GOLEIRO — camiseta de cor especial
+// VERSÕES DA CAMISETA — oficial, goleiro, uniformes escolares…
 // ============================================================
-// O goleiro veste uma camiseta de cor diferente, para ser identificado em
-// quadra. Aqui isso é só uma marca na camiseta (o campo `goleiro` do aluno):
-// quem cuida da lista do time (com a senha do time) e o Super Admin marcam e
-// desmarcam, e a produção separa essas camisetas das demais — cor diferente
-// quer dizer arquivo de impressão diferente.
+// Um time pode ter quantas versões da camiseta quiser (goleiro, "Ensino
+// Médio", "Fundamental", "Reserva"…). A oficial é a de base; cada versão
+// tem nome e, se precisar, artes, brasão, fonte e ajustes próprios — o que
+// ela não tiver usa o da oficial. Cada camiseta da lista escolhe a sua
+// versão, e a produção separa as versões (cor ou arte diferente quer dizer
+// arquivo de impressão diferente).
+//
+// No banco: time.producao.versoes = { [id]: { nome, ordem, ...arquivos } } e
+// aluno.versao = id ("" = oficial). Dados antigos: time.producao.goleiro (os
+// arquivos do goleiro) e aluno.goleiro (true) viram a versão "goleiro".
 
-function ehGoleiro(aluno) {
-  return !!(aluno && aluno.goleiro);
+const VERSAO_GOLEIRO = "goleiro";
+const NOME_VERSAO_OFICIAL = "Oficial";
+
+// Times sem a lista nova começam com a versão "Goleiro" (o que existia antes).
+function versoesBrutasDoTime(time) {
+  const prod = (time && time.producao) || {};
+  if (prod.versoes && typeof prod.versoes === "object") return prod.versoes;
+  return { [VERSAO_GOLEIRO]: { nome: "Goleiro", ordem: 0, ...(prod.goleiro || {}) } };
 }
 
-// Marca do goleiro para as listas que não têm a coluna de marcar (produção,
-// levas, conferência). Onde dá para editar, quem manda é a caixa de marcar.
+// As versões do time além da oficial, na ordem: [{ id, nome }].
+function versoesDoTime(time) {
+  return Object.entries(versoesBrutasDoTime(time))
+    .filter(([, v]) => v)
+    .map(([id, v]) => ({ id, nome: String(v.nome || (id === VERSAO_GOLEIRO ? "Goleiro" : id)), ordem: Number(v.ordem) || 0 }))
+    .sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+// A versão de uma camiseta ("" = oficial). Aceita a marca antiga de goleiro.
+function versaoDoAluno(aluno) {
+  if (!aluno) return "";
+  if (typeof aluno.versao === "string") return aluno.versao;
+  return aluno.goleiro ? VERSAO_GOLEIRO : "";
+}
+
+// Nome de uma versão do time ("Oficial" para a de base).
+function nomeVersaoDoTime(time, versao) {
+  if (!versao) return NOME_VERSAO_OFICIAL;
+  const v = versoesDoTime(time).find((x) => x.id === versao);
+  if (v) return v.nome;
+  return versao === VERSAO_GOLEIRO ? "Goleiro" : versao;
+}
+
+// Nome da versão de uma camiseta ("" na oficial). Sem o time à mão (itens
+// de produção), usa o nome guardado no item.
+function nomeVersaoDoAluno(aluno, time) {
+  const v = versaoDoAluno(aluno);
+  if (!v) return "";
+  if (time) return nomeVersaoDoTime(time, v);
+  return (aluno && aluno.versaoNome) || (v === VERSAO_GOLEIRO ? "Goleiro" : v);
+}
+
+// A camiseta é de goleiro? (a versão "goleiro", vinda da marca antiga)
+function ehGoleiro(aluno) {
+  return versaoDoAluno(aluno) === VERSAO_GOLEIRO;
+}
+
+// Campos para gravar a versão numa camiseta. `goleiro` segue junto para as
+// telas antigas (cache do navegador) não se perderem.
+function camposVersaoAluno(versao) {
+  return { versao: versao || "", goleiro: versao === VERSAO_GOLEIRO };
+}
+
+// Id novo para uma versão criada agora (a partir do nome).
+function novoIdVersao(time, nome) {
+  const usados = versoesBrutasDoTime(time);
+  const base = slugify(nome) || "versao";
+  let id = base, n = 2;
+  while (usados[id] || id === "oficial") id = `${base}-${n++}`;
+  return id;
+}
+
 // Ícone (js/icones.js) ou, numa página sem ele, o texto de reserva.
 function iconeOu(nome, reserva) {
   return typeof icone === "function" ? icone(nome) : reserva;
 }
 
-function badgeGoleiroHtml(aluno) {
-  return ehGoleiro(aluno)
-    ? '<span class="badge goleiro" title="Goleiro — camiseta de cor especial">' + iconeOu("hand", "🧤") + ' Goleiro</span>'
-    : "";
+function escapeHtmlVersao(texto) {
+  return String(texto == null ? "" : texto).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// Caixa de marcar o goleiro — a mesma na página do time e no Super Admin.
-// `aoMudar(valor, chk)` é chamada a cada clique quando a marca grava na hora;
-// sem ela, a caixa só fica ali para ser lida ao salvar a linha inteira (é o
-// caso da edição). O rótulo devolvido expõe a caixa em `.chk`.
-function criarCheckGoleiro(aluno, aoMudar) {
-  return criarCheckMarca(aluno, {
-    classe: "check-goleiro",
-    titulo: "Goleiro — camiseta de cor especial",
-    icone: "hand",
-    palavra: "goleiro",
-    marcado: ehGoleiro(aluno)
-  }, aoMudar);
+// Marca da versão para as listas que não têm a coluna de escolher
+// (produção, levas, conferência). A oficial não ganha marca.
+function badgeVersaoHtml(aluno, time) {
+  const nome = nomeVersaoDoAluno(aluno, time);
+  if (!nome) return "";
+  const ic = ehGoleiro(aluno) ? iconeOu("hand", "🧤") : iconeOu("shirt", "👕");
+  return `<span class="badge goleiro" title="Versão da camiseta: ${escapeHtmlVersao(nome)}">${ic} ${escapeHtmlVersao(nome)}</span>`;
 }
 
-// Caixa de marcar genérica das colunas de marca da lista (Goleiro, Prof).
+// Opções do seletor de versão (<option>…), com a escolhida marcada. Uma
+// versão que não existe mais no time ainda aparece, para não sumir calada.
+function opcoesVersaoHtml(time, selecionada) {
+  const lista = [{ id: "", nome: NOME_VERSAO_OFICIAL }].concat(versoesDoTime(time));
+  if (selecionada && !lista.some((v) => v.id === selecionada)) {
+    lista.push({ id: selecionada, nome: nomeVersaoDoTime(time, selecionada) });
+  }
+  return lista.map((v) => `<option value="${escapeHtmlVersao(v.id)}"${v.id === (selecionada || "") ? " selected" : ""}>${escapeHtmlVersao(v.nome)}</option>`).join("");
+}
+
+// Seletor da versão de uma camiseta — o mesmo na página do time e no Super
+// Admin. `aoMudar(versao, sel)` é chamada a cada troca quando grava na hora;
+// sem ela, o seletor só fica ali para ser lido ao salvar a linha inteira (é
+// o caso da edição). O rótulo devolvido expõe o seletor em `.sel`.
+function criarSeletorVersaoAluno(time, aluno, aoMudar) {
+  const rotulo = document.createElement("label");
+  rotulo.className = "seletor-versao-aluno";
+  rotulo.title = "Versão da camiseta (oficial, goleiro…)";
+  const sel = document.createElement("select");
+  sel.setAttribute("aria-label", "Versão da camiseta de " + ((aluno && aluno.nome) || "esta pessoa"));
+  sel.innerHTML = opcoesVersaoHtml(time, versaoDoAluno(aluno));
+  const pintar = () => rotulo.classList.toggle("marcado", !!sel.value);
+  pintar();
+  sel.onchange = () => {
+    pintar();
+    if (aoMudar) aoMudar(sel.value, sel);
+  };
+  rotulo.appendChild(sel);
+  rotulo.sel = sel;
+  return rotulo;
+}
+
+// As versões na prévia do cliente (time.previaCliente.versoes): [{ id, nome,
+// cena, frente, costas, arte, texturas }]. A prévia antiga tinha só
+// `goleiro`.
+function versoesDaPreviaCliente(pc) {
+  if (!pc) return [];
+  if (Array.isArray(pc.versoes)) return pc.versoes.filter(Boolean);
+  return pc.goleiro ? [{ id: VERSAO_GOLEIRO, nome: "Goleiro", ...pc.goleiro }] : [];
+}
+
+// Contagem por versão (fora a oficial): [{ id, nome, n }], na ordem do time.
+function contarVersoes(alunos, time) {
+  const cont = new Map();
+  (alunos || []).forEach((a) => {
+    const v = versaoDoAluno(a);
+    if (v) cont.set(v, (cont.get(v) || 0) + 1);
+  });
+  const ordem = versoesDoTime(time).map((v) => v.id);
+  return [...cont.entries()]
+    .sort((a, b) => ((ordem.indexOf(a[0]) + 1) || 999) - ((ordem.indexOf(b[0]) + 1) || 999))
+    .map(([id, n]) => ({ id, nome: nomeVersaoDoTime(time, id), n }));
+}
+
+// Caixa de marcar genérica das colunas de marca da lista (Prof).
 function criarCheckMarca(aluno, cfg, aoMudar) {
   const rotulo = document.createElement("label");
   rotulo.className = cfg.classe;
@@ -756,22 +865,22 @@ function criarCheckProf(aluno, aoMudar) {
   }, aoMudar);
 }
 
-// Separa os goleiros do resto da lista.
-function separarGoleiros(itens) {
-  const lista = itens || [];
-  return {
-    goleiros: lista.filter(ehGoleiro),
-    demais: lista.filter((i) => !ehGoleiro(i))
-  };
+// Na produção, cada versão vira uma variação do modelo: como a cor ou a arte
+// da camiseta é outra, ela não pode sair no mesmo arquivo de impressão do
+// restante ("<modelo> — <versão>").
+const SEPARADOR_MODELO_VERSAO = " — ";
+const SUFIXO_MODELO_GOLEIRO = SEPARADOR_MODELO_VERSAO + "goleiro";
+
+function modeloComVersao(modelo, nomeVersao) {
+  const base = String(modelo || MODELO_PADRAO).trim() || MODELO_PADRAO;
+  return nomeVersao ? base + SEPARADOR_MODELO_VERSAO + String(nomeVersao).toLowerCase() : base;
 }
 
-// Na produção, o goleiro vira uma variação do modelo: como a cor da camiseta
-// é outra, ele não pode sair no mesmo arquivo de impressão do restante.
-const SUFIXO_MODELO_GOLEIRO = " — goleiro";
-
-function modeloComGoleiro(modelo, goleiro) {
-  const base = String(modelo || MODELO_PADRAO).trim() || MODELO_PADRAO;
-  return goleiro ? base + SUFIXO_MODELO_GOLEIRO : base;
+// Sufixo de arquivo de uma versão ("-goleiros", "-ensino-medio").
+function sufixoArquivoVersao(versao, nomeVersao) {
+  if (!versao) return "";
+  if (versao === VERSAO_GOLEIRO) return "-goleiros";
+  return "-" + (slugify(nomeVersao || versao) || "versao");
 }
 
 // Nome de arquivo irmão ("producao-time.csv" + "-goleiros" ->
@@ -781,22 +890,38 @@ function nomeComSufixo(nomeArquivo, sufixo) {
   return base + sufixo + ".csv";
 }
 
-// CSV de produção com os goleiros à parte: o arquivo principal sai igual ao de
-// sempre (mesmo nome, mesmo formato) e, SÓ se houver goleiro na lista, sai
-// também um "-goleiros.csv" com eles. Devolve as contagens de cada arquivo.
-function baixarCSVProducaoSeparado(nomeArquivo, alunos) {
+// CSV de produção com as versões à parte: o arquivo principal (oficial) sai
+// igual ao de sempre (mesmo nome, mesmo formato) e cada versão presente na
+// lista sai num "-<versão>.csv". `timeDe(aluno)` diz o time de cada camiseta
+// (para o nome da versão). Devolve [{ nome, n }] das versões à parte e
+// quantas saíram no principal.
+function baixarCSVProducaoSeparado(nomeArquivo, alunos, timeDe) {
   const produzir = (alunos || []).filter(alunoSeraProduzido);
-  const { goleiros, demais } = separarGoleiros(produzir);
+  const grupos = new Map();
+  const demais = [];
+  produzir.forEach((a) => {
+    const v = versaoDoAluno(a);
+    if (!v) { demais.push(a); return; }
+    const nome = nomeVersaoDoAluno(a, timeDe ? timeDe(a) : null);
+    const suf = sufixoArquivoVersao(v, nome);
+    if (!grupos.has(suf)) grupos.set(suf, { nome, itens: [] });
+    grupos.get(suf).itens.push(a);
+  });
 
   if (demais.length > 0) baixarCSVProducaoItens(nomeArquivo, demais);
-  if (goleiros.length > 0) {
-    // O navegador barra dois downloads disparados no mesmo instante: o
-    // segundo arquivo sai logo depois, com um respiro.
-    const nomeGoleiros = nomeComSufixo(nomeArquivo, "-goleiros");
-    if (demais.length === 0) baixarCSVProducaoItens(nomeGoleiros, goleiros);
-    else setTimeout(() => baixarCSVProducaoItens(nomeGoleiros, goleiros), 400);
-  }
-  return { goleiros: goleiros.length, demais: demais.length };
+  // O navegador barra vários downloads disparados no mesmo instante: cada
+  // arquivo a mais sai logo depois, com um respiro.
+  let atraso = demais.length > 0 ? 400 : 0;
+  [...grupos.entries()].forEach(([suf, g]) => {
+    const nome = nomeComSufixo(nomeArquivo, suf);
+    if (!atraso) baixarCSVProducaoItens(nome, g.itens);
+    else setTimeout(() => baixarCSVProducaoItens(nome, g.itens), atraso);
+    atraso += 400;
+  });
+  return {
+    versoes: [...grupos.entries()].map(([suf, g]) => ({ nome: g.nome, arquivo: nomeComSufixo(nomeArquivo, suf), n: g.itens.length })),
+    demais: demais.length
+  };
 }
 
 // Uma linha do CSV de produção: nome na camiseta (A), número (B), tamanho (C).

@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Interclasse" />
-<link rel="stylesheet" href="css/style.css?v=20261109d" />
+<link rel="stylesheet" href="css/style.css?v=20261110a" />
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
 </head>
 <body>
@@ -101,7 +101,7 @@
             <th>Tamanho</th>
             <th>Número</th>
             <th>Nome na camiseta</th>
-            <th>Goleiro</th>
+            <th>Versão</th>
             <th>Prof</th>
             <th title="Tirar o brasão, o nome ou o número só desta camiseta">Sem</th>
             <th>Pagamento</th>
@@ -148,11 +148,11 @@
         <input type="number" id="qtdCamisetas" min="1" max="50" step="1" value="1" class="input-curto" />
         <p class="pix-ajuda">Mais de 1: entram várias camisetas idênticas (mesmo nome, número e tamanho). Cada uma aparece na lista e é paga e produzida separadamente.</p>
 
-        <label class="checkbox-inline" for="goleiroAluno">
-          <input type="checkbox" id="goleiroAluno" />
-          <i data-icone="hand"></i> É goleiro (camiseta de cor especial)
-        </label>
-        <p class="pix-ajuda">O goleiro joga com uma camiseta de cor diferente, para ser identificado em quadra. Dá para marcar e desmarcar depois, na lista.</p>
+        <div id="campoVersaoAluno" class="oculto">
+          <label for="versaoAluno">Versão da camiseta</label>
+          <select id="versaoAluno"><option value="">Oficial</option></select>
+          <p class="pix-ajuda">Goleiro, uniforme de outra turma… Cada versão sai separada na produção. Dá para trocar depois, na lista.</p>
+        </div>
 
         <label class="checkbox-inline" for="profAluno">
           <input type="checkbox" id="profAluno" />
@@ -276,10 +276,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 <script src="js/firebase-config.js"></script>
-<script src="js/firebase-init.js?v=20261109d"></script>
-<script src="js/icones.js?v=20261109d"></script>
-<script src="js/utils.js?v=20261109d"></script>
-<script src="js/time.js?v=20261109d"></script>
-<script src="js/pwa.js?v=20261109d"></script>
+<script src="js/firebase-init.js?v=20261110a"></script>
+<script src="js/icones.js?v=20261110a"></script>
+<script src="js/utils.js?v=20261110a"></script>
+<script src="js/time.js?v=20261110a"></script>
+<script src="js/pwa.js?v=20261110a"></script>
 </body>
 </html>

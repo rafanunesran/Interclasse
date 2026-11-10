@@ -90,6 +90,7 @@ async function iniciar() {
   }
   timeAtual = doc.data();
   elNomeTime.textContent = timeAtual.nome;
+  preencherVersoesDoFormulario();
   // Preço especial deste time/cliente (só o dele: ninguém lista os outros).
   await carregarPrecosEspeciais(configGeral, [{ id: timeId, clienteId: clienteIdDoTime(timeAtual) }]);
   await mostrarCliente();
@@ -111,6 +112,7 @@ async function iniciar() {
   db.collection(COL_TIMES).doc(timeId).onSnapshot(async (snap) => {
     if (snap.exists) {
       timeAtual = snap.data();
+      preencherVersoesDoFormulario();
       await aplicarFechamentoAutomatico();
       atualizarBadge();
       atualizarVisibilidade();
@@ -184,14 +186,13 @@ function imagensDaGaleria() {
     vistas.forEach(([chave, legenda]) => {
       if (pc[chave]) itens.push({ url: pc[chave], legenda, comMarca });
     });
-    // Camiseta do goleiro (quando o time tem uma diferente).
-    const g = pc.goleiro;
-    if (g) {
-      [["cena", "Goleiro — na camiseta"], ["frente", "Goleiro — frente"], ["costas", "Goleiro — costas"], ["arte", "Goleiro — arte (sem simulação)"]]
+    // Outras versões da camiseta (goleiro, uniformes…), quando o time tem.
+    versoesDaPreviaCliente(pc).forEach((g) => {
+      [["cena", "na camiseta"], ["frente", "frente"], ["costas", "costas"], ["arte", "arte (sem simulação)"]]
         .forEach(([chave, legenda]) => {
-          if (g[chave]) itens.push({ url: g[chave], legenda, comMarca, goleiro: true });
+          if (g[chave]) itens.push({ url: g[chave], legenda: `${g.nome} — ${legenda}`, comMarca, versao: g });
         });
-    }
+    });
   }
   // A tabela de medidas é informação para o aluno: nunca leva marca d'água.
   GRUPOS_TAMANHO.filter((g) => g.imagemUrl).forEach((g) => {
@@ -246,10 +247,10 @@ function renderizarGaleria() {
       wrap.appendChild(marca);
     }
 
-    if (item.goleiro) {
+    if (item.versao) {
       const selo = document.createElement("span");
       selo.className = "selo-goleiro";
-      selo.innerHTML = icone("hand") + " Goleiro";
+      selo.innerHTML = icone(item.versao.id === VERSAO_GOLEIRO ? "hand" : "shirt") + " " + escapeHtml(item.versao.nome);
       wrap.appendChild(selo);
     }
 
@@ -269,13 +270,15 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261109d";
+const VERSAO_MOCKUP3D = "20261110a";
 let botao3d = null;
 
-function texturas3D(goleiro) {
+// Texturas do 3D da oficial (versao "") ou de outra versão do time.
+function texturas3D(versao) {
   const pc = timeAtual && timeAtual.previaCliente;
   if (!pc || timeAtual.imagemUrl || timeAtual.arteUrl) return null;
-  const t = goleiro ? pc.goleiro && pc.goleiro.texturas : pc.texturas;
+  const v = versao ? versoesDaPreviaCliente(pc).find((x) => x.id === versao) : null;
+  const t = versao ? v && v.texturas : pc.texturas;
   return t && (t.frente || t.costas) ? t : null;
 }
 
@@ -310,15 +313,15 @@ function imagemDeBytes(bytes, tipo) {
 
 async function abrirVer3D() {
   if (!texturas3D()) return;
-  const temGoleiro = !!texturas3D(true);
+  const versoes = versoesDaPreviaCliente(timeAtual.previaCliente).filter((v) => texturas3D(v.id));
   const fundo = document.createElement("div");
   fundo.className = "modal-3d";
   fundo.innerHTML = `<div class="modal-3d-caixa" role="dialog" aria-label="Camiseta em 3D">
       <button type="button" class="modal-3d-fechar" aria-label="Fechar">${icone("x")}</button>
-      ${temGoleiro ? `<div class="modal-3d-variantes segmentado" role="tablist" aria-label="Camiseta">
-        <button type="button" data-variante="" class="ativo">Camiseta</button>
-        <button type="button" data-variante="goleiro">${icone("hand")} Goleiro</button></div>` : ""}
-      <span class="selo-goleiro modal-3d-selo oculto">${icone("hand")} Goleiro</span>
+      ${versoes.length ? `<div class="modal-3d-variantes segmentado" role="tablist" aria-label="Camiseta">
+        <button type="button" data-variante="" class="ativo">Oficial</button>
+        ${versoes.map((v) => `<button type="button" data-variante="${escapeHtml(v.id)}">${icone(v.id === VERSAO_GOLEIRO ? "hand" : "shirt")} ${escapeHtml(v.nome)}</button>`).join("")}</div>` : ""}
+      <span class="selo-goleiro modal-3d-selo oculto"></span>
       <div class="modal-3d-palco"></div>
       ${timeAtual.marcaDagua === true ? '<span class="marca-overlay" aria-hidden="true"></span>' : ""}
       <p class="modal-3d-aviso">Carregando o 3D…</p>
@@ -333,12 +336,15 @@ async function abrirVer3D() {
   const aviso = fundo.querySelector(".modal-3d-aviso");
   const palco = fundo.querySelector(".modal-3d-palco");
   let vez = 0;
-  // Monta (ou troca) a camiseta mostrada: a comum ou a do goleiro.
-  const mostrar = async (goleiro) => {
+  // Monta (ou troca) a camiseta mostrada: a oficial ou outra versão.
+  const mostrar = async (versao) => {
     const minha = ++vez;
-    const t = texturas3D(goleiro);
-    fundo.querySelector(".modal-3d-selo").classList.toggle("oculto", !goleiro);
-    fundo.querySelectorAll("[data-variante]").forEach((b) => b.classList.toggle("ativo", !!b.dataset.variante === !!goleiro));
+    const t = texturas3D(versao);
+    const v = versoes.find((x) => x.id === versao);
+    const selo = fundo.querySelector(".modal-3d-selo");
+    selo.classList.toggle("oculto", !v);
+    selo.innerHTML = v ? icone(v.id === VERSAO_GOLEIRO ? "hand" : "shirt") + " " + escapeHtml(v.nome) : "";
+    fundo.querySelectorAll("[data-variante]").forEach((b) => b.classList.toggle("ativo", b.dataset.variante === versao));
     aviso.textContent = "Carregando o 3D…";
     try {
       const [mod, cfg] = await Promise.all([
@@ -362,8 +368,8 @@ async function abrirVer3D() {
       if (minha === vez) aviso.textContent = e.message || "Não foi possível abrir o 3D.";
     }
   };
-  fundo.querySelectorAll("[data-variante]").forEach((b) => (b.onclick = () => mostrar(!!b.dataset.variante)));
-  mostrar(false);
+  fundo.querySelectorAll("[data-variante]").forEach((b) => (b.onclick = () => mostrar(b.dataset.variante)));
+  mostrar("");
 }
 
 // Rola a galeria uma "página" para o lado.
@@ -874,7 +880,7 @@ function criarLinhaAluno(aluno, podeEditar, duplicados) {
     <td data-label="Tamanho">${escapeHtml(aluno.tamanho)}</td>
     <td data-label="Número">${numeroDaListaHtml(aluno)}</td>
     <td data-label="Nome na camiseta">${nomeCamisetaDaListaHtml(aluno)}</td>
-    <td data-label="Goleiro" class="cel-goleiro"></td>
+    <td data-label="Versão" class="cel-goleiro"></td>
     <td data-label="Prof" class="cel-prof"></td>
     <td data-label="Sem" class="cel-sem"></td>
     <td data-label="Pagamento">${badgePagamentoHtml(aluno)}</td>
@@ -882,9 +888,9 @@ function criarLinhaAluno(aluno, podeEditar, duplicados) {
     <td data-label="" class="acoes-linha"></td>
   `;
 
-  // Goleiro: quem entrou com a senha do time marca e desmarca aqui mesmo,
-  // num clique. Para quem só está olhando a lista, fica a marca (ou "-").
-  preencherCelulaGoleiro(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
+  // Versão (oficial, goleiro, uniformes…): quem entrou com a senha do time
+  // troca aqui mesmo. Para quem só está olhando a lista, fica a marca (ou "-").
+  preencherCelulaVersao(tr.querySelector(".cel-goleiro"), aluno, podeEditar);
   // Prof: camiseta de professor, marca só para organização.
   preencherCelulaProf(tr.querySelector(".cel-prof"), aluno, podeEditar);
   // Sem brasão / nome / número: só nesta camiseta.
@@ -974,33 +980,46 @@ function criarLinhaAluno(aluno, podeEditar, duplicados) {
   return tr;
 }
 
-// Célula "Goleiro" da lista. Com permissão de editar (senha do time, lista
-// aberta), é uma caixa de marcar que grava na hora; sem permissão, é só a
-// marca de quem é goleiro.
-function preencherCelulaGoleiro(td, aluno, podeEditar) {
+// Célula "Versão" da lista. Com permissão de editar (senha do time, lista
+// aberta), é um seletor que grava na hora; sem permissão, é só a marca da
+// versão (a oficial fica "-").
+function preencherCelulaVersao(td, aluno, podeEditar) {
   if (!td) return;
   td.innerHTML = "";
 
-  if (!podeEditar) {
-    td.innerHTML = ehGoleiro(aluno) ? badgeGoleiroHtml(aluno) : '<span class="pix-ajuda">-</span>';
+  // Time só com a oficial: não há o que escolher.
+  if (!podeEditar || (!versoesDoTime(timeAtual).length && !versaoDoAluno(aluno))) {
+    td.innerHTML = badgeVersaoHtml(aluno, timeAtual) || '<span class="pix-ajuda">-</span>';
     return;
   }
 
-  td.appendChild(criarCheckGoleiro(aluno, (valor, chk) => {
-    chk.disabled = true;
-    marcarGoleiro(aluno, valor).finally(() => { chk.disabled = false; });
+  td.appendChild(criarSeletorVersaoAluno(timeAtual, aluno, (valor, sel) => {
+    sel.disabled = true;
+    marcarVersao(aluno, valor).finally(() => { sel.disabled = false; });
   }));
 }
 
-// Grava a marca do goleiro. O onSnapshot redesenha a lista sozinho.
-function marcarGoleiro(aluno, valor) {
+// Grava a versão da camiseta. O onSnapshot redesenha a lista sozinho.
+function marcarVersao(aluno, valor) {
   return db.collection(COL_TIMES).doc(timeId).collection("alunos").doc(aluno.id)
-    .update({ goleiro: !!valor })
+    .update(camposVersaoAluno(valor))
     .catch((erro) => {
       console.error(erro);
-      alert("Não foi possível salvar a marca de goleiro. Tente novamente.");
+      alert("Não foi possível salvar a versão da camiseta. Tente novamente.");
       renderizarTabela();
     });
+}
+
+// Opções do campo "Versão da camiseta" do cadastro (as do time). Some quando
+// o time só tem a oficial.
+function preencherVersoesDoFormulario() {
+  const sel = document.getElementById("versaoAluno");
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = opcoesVersaoHtml(timeAtual, "");
+  if ([...sel.options].some((o) => o.value === atual)) sel.value = atual;
+  const caixa = document.getElementById("campoVersaoAluno");
+  if (caixa) caixa.classList.toggle("oculto", !versoesDoTime(timeAtual).length);
 }
 
 // Célula "Prof" da lista: mesma lógica do goleiro, mas a marca serve só para
@@ -1083,13 +1102,12 @@ function renderizarResumo() {
       elResumo.appendChild(fora);
     }
   }
-  const nGoleiros = alunosAtuais.filter(ehGoleiro).length;
-  if (nGoleiros > 0) {
+  contarVersoes(alunosAtuais, timeAtual).forEach((v) => {
     const span = document.createElement("span");
-    span.innerHTML = `<strong>${icone("hand")} Goleiros: ${nGoleiros}</strong>`;
-    span.title = "Camiseta de cor especial";
+    span.innerHTML = `<strong>${icone(v.id === VERSAO_GOLEIRO ? "hand" : "shirt")} ${escapeHtml(v.nome)}: ${v.n}</strong>`;
+    span.title = "Versão da camiseta";
     elResumo.appendChild(span);
-  }
+  });
   const nProfs = alunosAtuais.filter(ehProf).length;
   if (nProfs > 0) {
     const span = document.createElement("span");
@@ -1128,8 +1146,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
   const tamanho = document.getElementById("tamanho").value;
   const numero = document.getElementById("numeroCamiseta").value.trim();
   const nomeCamiseta = document.getElementById("nomeCostas").value.trim();
-  const elGoleiro = document.getElementById("goleiroAluno");
-  const goleiro = !!(elGoleiro && elGoleiro.checked);
+  const elVersao = document.getElementById("versaoAluno");
+  const versao = elVersao ? elVersao.value : "";
   const elProf = document.getElementById("profAluno");
   const prof = !!(elProf && elProf.checked);
 
@@ -1148,8 +1166,8 @@ elFormAluno.addEventListener("submit", async (ev) => {
       tamanho,
       numero,
       nomeCamiseta,
-      // Camiseta de cor especial: o goleiro sai separado na produção.
-      goleiro,
+      // Versão da camiseta (goleiro, uniforme…): sai separada na produção.
+      ...camposVersaoAluno(versao),
       // Camiseta de professor: marca só para organização.
       prof
     }, quantidade);
@@ -1198,8 +1216,8 @@ function editarLinha(tr, aluno) {
   tdCostas.appendChild(inputCostas);
 
   const tdGoleiro = document.createElement("td");
-  const rotuloGoleiro = criarCheckGoleiro(aluno);
-  tdGoleiro.appendChild(rotuloGoleiro);
+  const rotuloVersao = criarSeletorVersaoAluno(timeAtual, aluno);
+  tdGoleiro.appendChild(rotuloVersao);
 
   const tdProf = document.createElement("td");
   const rotuloProf = criarCheckProf(aluno);
@@ -1224,7 +1242,7 @@ function editarLinha(tr, aluno) {
         tamanho: selectTamanho.value,
         numero: inputNumero.value.trim(),
         nomeCamiseta: novoNomeCamiseta,
-        goleiro: rotuloGoleiro.chk.checked,
+        ...camposVersaoAluno(rotuloVersao.sel.value),
         prof: rotuloProf.chk.checked
       });
     } catch (erro) {
@@ -1245,7 +1263,7 @@ function editarLinha(tr, aluno) {
   const tdPagamento = document.createElement("td"); // coluna de pagamento (vazia na edição)
   const tdCarrinho = document.createElement("td");  // coluna do carrinho (vazia na edição)
   [[tdNome, "Nome"], [tdTamanho, "Tamanho"], [tdNumero, "Número"], [tdCostas, "Nome na camiseta"],
-    [tdGoleiro, "Goleiro"], [tdProf, "Prof"], [tdSem, ""], [tdPagamento, ""], [tdCarrinho, ""], [tdAcoes, ""]]
+    [tdGoleiro, "Versão"], [tdProf, "Prof"], [tdSem, ""], [tdPagamento, ""], [tdCarrinho, ""], [tdAcoes, ""]]
     .forEach(([td, rotulo]) => (td.dataset.label = rotulo));
   tr.classList.add("linha-editando");
 
@@ -1729,9 +1747,9 @@ elBtnExportar.addEventListener("click", () => {
     alert("Não há alunos cadastrados para exportar.");
     return;
   }
-  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Goleiro", "Prof", "Pago", "Forma Pagto"]];
+  const linhas = [["Nome do Estudante", "Tamanho", "Numero", "Nome na Camiseta", "Versao", "Prof", "Pago", "Forma Pagto"]];
   alunosAtuais.forEach((a) => {
-    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", ehGoleiro(a) ? "Sim" : "Nao", ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
+    linhas.push([a.nome, a.tamanho, a.numero || "", a.nomeCamiseta || "", nomeVersaoDoAluno(a, timeAtual) || NOME_VERSAO_OFICIAL, ehProf(a) ? "Sim" : "Nao", a.pago ? "Sim" : "Nao", a.pagamentoForma || ""]);
   });
   baixarCSV(`pedido-${slugify(timeAtual.nome)}.csv`, linhas);
 });
