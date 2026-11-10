@@ -67,7 +67,7 @@ function ciPecasDaCamiseta(item, atual, cache) {
   if (atual.sem && Object.keys(atual.sem).length && typeof producaoDoTime === "function") {
     const prod = producaoDoTime(time);
     const lay = layoutDoTime(time);
-    ids = ids.filter((pecaId) => EPS.PECAS_VIRTUAIS[pecaId] || EPS.arteDaPeca(prod, pecaId) ||
+    ids = ids.filter((pecaId) => EPS.PECAS_VIRTUAIS[pecaId] || EPS.arteDaPeca(prod, pecaId) || EPS.corBaseDaPeca(prod, pecaId) ||
       EPS.elementosDaCamiseta(EPS.elementosDaPecaNoTime(lay, prod, pecaId), atual).length);
   }
   return ids.map((pecaId) => ({

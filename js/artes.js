@@ -463,6 +463,12 @@ function producaoDoTime(time) {
   return (time && time.producao) || {};
 }
 
+// A camiseta tem cor base (lisa, sem arquivo por peça)? Ver EPS.corBaseDaPeca.
+// Numa versão, `corBase: { nenhuma: true }` desliga a cor da oficial.
+function temCorBase(prod) {
+  return !!(prod && prod.corBase && Array.isArray(prod.corBase.cmyk));
+}
+
 // ---------------- Versões da camiseta (goleiro, uniformes…) ----------------
 // Além da oficial, o time pode ter quantas versões quiser (js/utils.js →
 // versoesDoTime). Cada uma pode ter artes, brasão, detalhe e fonte próprios e
@@ -491,7 +497,7 @@ function producaoVersaoPropria(prod, versao) {
 // A versão tem algum arquivo ou ajuste próprio?
 function temVersaoPropria(time, versao) {
   const g = producaoVersaoPropria(producaoDoTime(time), versao);
-  return !!(Object.keys(g.pecas || {}).length || g.brasao || g.fonte || g.detalheManga || g.detalheMangaDir ||
+  return !!(Object.keys(g.pecas || {}).length || g.brasao || g.fonte || g.detalheManga || g.detalheMangaDir || g.corBase ||
     Object.keys(g.layoutAjustes || {}).length || Object.keys(g.elementosExtras || {}).length || Object.keys(g.desativados || {}).length);
 }
 
@@ -525,7 +531,7 @@ function producaoDaVersao(prod, versao) {
   const saida = { ...p, pecas: { ...(p.pecas || {}), ...(g.pecas || {}) } };
   delete saida.goleiro;
   delete saida.versoes;
-  ["brasao", "fonte", "detalheManga", "detalheMangaDir"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
+  ["brasao", "fonte", "detalheManga", "detalheMangaDir", "corBase"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
   // Elementos só do time: a versão pode ter a lista própria de uma peça.
   if (p.elementosExtras || g.elementosExtras) saida.elementosExtras = { ...(p.elementosExtras || {}), ...(g.elementosExtras || {}) };
   // Espaços desativados: o da versão (true ou false) ganha sobre o da oficial.
@@ -889,8 +895,11 @@ function requisitosProducao(time) {
   const usa = (teste) => usaNoTime(time, teste);
   const ativo = (slot) => EPS.slotAtivo(p, slot);
   const nArtes = PECAS_PRODUCAO.filter((x) => p.pecas && p.pecas[x.id] && ativo("arte:" + x.id)).length;
+  // Com a cor base, as peças não precisam de arquivo (camiseta lisa).
+  const cor = temCorBase(p);
   return [
-    { id: "artes", rotulo: "Artes das peças", necessario: true, tem: nArtes > 0, detalhe: `${nArtes} enviada(s)` },
+    { id: "artes", rotulo: cor && !nArtes ? "Cor base" : "Artes das peças", necessario: true, tem: nArtes > 0 || cor,
+      detalhe: cor ? (nArtes ? `cor base + ${nArtes} arte(s)` : "") : `${nArtes} enviada(s)` },
     { id: "fonte", rotulo: "Fonte", necessario: usa((e) => !ehCaixaImagem(e)), tem: !!p.fonte && ativo("fonte") },
     { id: "brasao", rotulo: "Brasão", necessario: usa((e) => e.tipo === "brasao"), tem: !!p.brasao && ativo("brasao") },
     { id: "detalhe", rotulo: "Detalhe da manga", necessario: usa((e) => e.tipo === "detalhe"), tem: !!p.detalheManga && ativo("detalhe") }
@@ -902,8 +911,8 @@ function requisitosProducao(time) {
 function pendenciasProducao(time) {
   const p = producaoDoTime(time);
   const falta = [];
-  const temArte = PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id] && EPS.slotAtivo(p, "arte:" + x.id));
-  if (!temArte) falta.push("arte das peças");
+  const temArte = temCorBase(p) || PECAS_PRODUCAO.some((x) => p.pecas && p.pecas[x.id] && EPS.slotAtivo(p, "arte:" + x.id));
+  if (!temArte) falta.push("arte das peças (ou a cor base)");
   const usaTexto = usaNoTime(time, (e) => !ehCaixaImagem(e));
   const usaBrasao = usaNoTime(time, (e) => e.tipo === "brasao");
   if (usaTexto && !p.fonte) falta.push("fonte");
@@ -934,7 +943,7 @@ function criarBlocoProducaoTime(timeId, time) {
   const reqs = requisitosProducao(timeNaVariante(time, gol));
   const falta = reqs.filter((r) => r.necessario && !r.tem);
   const nProprios = gol ? Object.keys(propria.pecas || {}).length +
-    ["brasao", "fonte", "detalheManga", "detalheMangaDir"].filter((k) => propria[k]).length : 0;
+    ["brasao", "fonte", "detalheManga", "detalheMangaDir", "corBase"].filter((k) => propria[k]).length : 0;
   bloco.innerHTML = `<summary class="producao-resumo">
       <span class="producao-estado ${falta.length ? "falta" : "pronto"}">${falta.length
         ? `Falta ${escapeHtmlAdmin(falta.map((r) => r.rotulo.toLowerCase()).join(", "))}`
@@ -972,6 +981,9 @@ function criarBlocoProducaoTime(timeId, time) {
     const herdado = gol && !proprio && daComum ? daComum : null;
     grade.appendChild(criarSlotProducao(timeId, id, titulo, proprio, formato, herdado));
   };
+
+  // Cor base: a camiseta lisa, sem um arquivo para cada peça.
+  bloco.appendChild(criarGrupoCorBase(timeId, comum, propria, gol));
 
   const gradePecas = grupo("Peças da camiseta", "TIFF CMYK (cor exata) ou PNG, feito para o molde do tamanho base — nos outros tamanhos a arte é esticada para cobrir o molde, então perde resolução nos maiores. O espaço mostra a resolução real em cada ponta (ex.: \"300 ppi no M · 215 ppi no G4\"): mantenha pelo menos ~200 ppi no maior tamanho (em geral ~300 ppi no base basta). No Illustrator, marque \"Compactação LZW\" ao exportar o TIFF: o arquivo fica muito menor e sobe mais rápido.");
   // Uma arte serve para as duas mangas; a da direita só aparece quando o
@@ -1056,6 +1068,94 @@ function criarBlocoProducaoTime(timeId, time) {
     : "Posição do nome, número e brasão: segue o layout geral (aba Artes)"}</span>`);
   bloco.appendChild(rodape);
   return bloco;
+}
+
+// ---------------- Cor base (camiseta lisa + estampa) ----------------
+// Peças que a cor base pode pintar ("mangaEsq" vale para as duas mangas).
+const PECAS_COR_BASE = [
+  { id: "frente", nome: "Frente" },
+  { id: "costas", nome: "Costas" },
+  { id: "mangaEsq", nome: "Mangas" },
+  { id: "gola", nome: "Gola" }
+];
+
+// Muda a cor base no nível aberto (oficial ou versão) e grava.
+async function mudarCorBase(timeId, gol, mudar) {
+  try {
+    const prod = limparParaFirestore(producaoDoTime(estadoTimes[timeId].time));
+    const alvo = alvoDaVersao(prod, gol);
+    // A versão que ainda usa a cor da oficial parte dela.
+    const atual = alvo.corBase || (gol && prod.corBase) || null;
+    const nova = mudar(atual ? limparParaFirestore(atual) : null);
+    if (nova) alvo.corBase = nova;
+    else delete alvo.corBase;
+    limparVersoesVazias(prod);
+    await gravarProducaoTime(timeId, prod);
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Não foi possível salvar a cor base.");
+  }
+}
+
+function criarGrupoCorBase(timeId, comum, propria, gol) {
+  const daOficial = gol && !propria.corBase;
+  const cb = (gol ? propria.corBase || comum.corBase : comum.corBase) || null;
+  const usa = temCorBase({ corBase: cb });
+  const cor = usa ? cb.cmyk : [0, 0, 0, 0];
+  const sem = (usa && cb.sem) || {};
+  const sec = document.createElement("section");
+  sec.className = "producao-grupo producao-cor-base";
+  sec.innerHTML = `<h4 class="producao-grupo-titulo">Cor base da camiseta</h4>
+    <p class="pix-ajuda">Para a camiseta lisa: escolha a cor e as peças saem pintadas inteiras, sem precisar de um arquivo para cada parte. A estampa entra como imagem em “Elementos extras” (+) e é posicionada em “Editar arte”. Se alguma peça tiver arte enviada, a arte fica por cima da cor.</p>
+    <div class="producao-opcoes producao-reforco">
+      <label class="interruptor"><input type="checkbox" data-cor-usar ${usa ? "checked" : ""} /> <span>Usar cor base</span></label>
+      ${usa ? `
+        <label class="arte-amostra-cor" style="background:${cmykParaCss(cor)}" title="Escolher a cor">
+          <input type="color" data-cor-hex value="${cmykParaHex(cor)}" aria-label="Escolher a cor base" /></label>
+        ${["C", "M", "Y", "K"].map((l, i) =>
+          `<label>${l}<input type="number" min="0" max="100" step="1" class="input-curto" data-cor-cmyk="${i}" value="${Number(cor[i]) || 0}" /></label>`).join("")}
+        <span class="producao-cor-pecas">Pintar: ${PECAS_COR_BASE.map((p) =>
+          `<label><input type="checkbox" data-cor-peca="${p.id}" ${sem[p.id] ? "" : "checked"} /> ${escapeHtmlAdmin(p.nome)}</label>`).join("")}</span>` : ""}
+      ${daOficial && usa ? '<span class="pix-ajuda">Cor da oficial (mudar aqui cria uma cor só desta versão)</span>' : ""}
+      ${gol && propria.corBase ? `<span class="pix-ajuda">${usa ? "Cor própria desta versão" : "Esta versão não usa a cor base da oficial"}</span>
+        <button type="button" class="secundario" data-cor-oficial>Usar a da oficial</button>` : ""}
+    </div>`;
+  const cmykAtual = (c) => (c && Array.isArray(c.cmyk) ? c.cmyk.slice() : cor.slice());
+  sec.querySelector("[data-cor-usar]").onchange = (ev) => {
+    const ligar = ev.target.checked;
+    mudarCorBase(timeId, gol, (c) => {
+      if (ligar) {
+        const base = c && Array.isArray(c.cmyk) ? c.cmyk : temCorBase(comum) ? comum.corBase.cmyk : [0, 0, 0, 0];
+        return { cmyk: base.slice(), ...(c && c.sem ? { sem: c.sem } : {}) };
+      }
+      // Numa versão, desligar com a oficial usando a cor: marca "nenhuma".
+      return gol && temCorBase(comum) ? { nenhuma: true } : null;
+    });
+  };
+  const hex = sec.querySelector("[data-cor-hex]");
+  if (hex) {
+    hex.oninput = () => { hex.parentElement.style.background = hex.value; };
+    hex.onchange = () => mudarCorBase(timeId, gol, (c) => ({ ...(c || {}), cmyk: hexParaCmyk(hex.value) }));
+  }
+  sec.querySelectorAll("[data-cor-cmyk]").forEach((inp) => {
+    inp.onchange = () => mudarCorBase(timeId, gol, (c) => {
+      const v = cmykAtual(c);
+      v[Number(inp.dataset.corCmyk)] = Math.max(0, Math.min(100, Number(inp.value) || 0));
+      return { ...(c || {}), cmyk: v };
+    });
+  });
+  sec.querySelectorAll("[data-cor-peca]").forEach((inp) => {
+    inp.onchange = () => mudarCorBase(timeId, gol, (c) => {
+      const n = { ...(c || {}), cmyk: cmykAtual(c), sem: { ...((c && c.sem) || {}) } };
+      if (inp.checked) delete n.sem[inp.dataset.corPeca];
+      else n.sem[inp.dataset.corPeca] = true;
+      if (!Object.keys(n.sem).length) delete n.sem;
+      return n;
+    });
+  });
+  const bOf = sec.querySelector("[data-cor-oficial]");
+  if (bOf) bOf.onclick = () => mudarCorBase(timeId, gol, () => null);
+  return sec;
 }
 
 // Amostra da fonte do time ("AaBb 0123"), desenhada com a própria fonte.
@@ -1268,7 +1368,7 @@ function criarGrupoExtrasProducao(timeId, prod, gol) {
       <h4 class="producao-grupo-titulo">Elementos extras</h4>
       <button type="button" class="producao-mais" data-extra-mais title="Adicionar elemento extra" aria-label="Adicionar elemento extra" aria-expanded="${aberto}">${aberto ? "×" : "+"}</button>
     </div>
-    <p class="pix-ajuda">Imagens a mais só ${gol ? daVersaoTexto(timeId, gol) : "deste time"} (patrocinador, selo…), quando precisar. Cada uma entra na folha; ajuste a posição em “Editar arte”.</p>`;
+    <p class="pix-ajuda">Imagens a mais só ${gol ? daVersaoTexto(timeId, gol) : "deste time"} (a estampa da camiseta lisa, patrocinador, selo…), quando precisar. Cada uma entra na folha; ajuste a posição em “Editar arte”.</p>`;
   const grade = document.createElement("div");
   grade.className = "producao-grade";
   const pecas = PECAS_PRODUCAO;
@@ -1636,6 +1736,11 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
       : (layoutConfig.pecas.etiquetaTam || {}).fundoCmyk || [0, 0, 0, 0];
     partes.push(`<rect x="0" y="0" width="${n(dim.w)}" height="${n(dim.h)}" fill="${cmykParaCss(fundo)}" />`);
   }
+  // Cor base da camiseta (lisa): a peça inteira pintada, por baixo da arte.
+  const corBase = virtual ? null : EPS.corBaseDaPeca(prod, pecaId);
+  if (corBase && soArte !== "elementos") {
+    partes.push(`<rect x="-5" y="-5" width="${n(dim.w + 10)}" height="${n(dim.h + 10)}" fill="${cmykParaCss(corBase)}" />`);
+  }
   if (arte && arte.previaUrl && soArte !== "elementos") {
     const c = EPS.caixaArte(arte, base, dim, sangriaDaPrevia());
     partes.push(`<image href="${escAttr(urlPreviaGrande(arte.previaUrl))}" x="${n(c.x)}" y="${n(c.y)}" ` +
@@ -1698,7 +1803,7 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
     svg += `<image href="${escAttr(urlPreviaGrande(molde.previaUrl))}" x="0" y="0" ` +
       `width="${n(dim.w)}" height="${n(dim.h)}" preserveAspectRatio="none" />`;
   }
-  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte || virtual, margem };
+  return { w: dim.w, h: dim.h, svg, contorno: recorte, temArte: !!arte || !!corBase || virtual, margem };
 }
 
 // ---------------- Mockup nas fotos base (js/mockup.js) ----------------
@@ -1805,8 +1910,9 @@ function timeTemImagemPostada(time) {
 }
 
 function timeTemArteDeProducao(time) {
-  const pecas = producaoDoTime(time).pecas || {};
-  return !!(pecas.frente || pecas.costas);
+  const prod = producaoDoTime(time);
+  const pecas = prod.pecas || {};
+  return !!(pecas.frente || pecas.costas || temCorBase(prod));
 }
 
 // Arte plana (sem simulação): as peças recortadas no molde, arrumadas como
@@ -1857,7 +1963,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261110a";
+const VERSAO_MOCKUP3D = "20261110b";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -2754,6 +2860,16 @@ function renderizarPalcoLayout() {
     const fundo = ((layoutConfig.pecas.etiquetaTam || {}).fundoCmyk) || [0, 0, 0, 0];
     palco.insertAdjacentHTML("beforeend",
       `<div class="layout-fundo-etiqueta" style="position:absolute;inset:0;background:${cmykParaCss(fundo)}"></div>`);
+  }
+  // Cor base do time (camiseta lisa), recortada no molde.
+  const corEd = m.molde.virtual ? null : EPS.corBaseDaPeca(prod, layoutPeca);
+  if (corEd) {
+    const idClipCor = "lb" + Math.random().toString(36).slice(2, 8);
+    const clipCor = m.molde.contorno ? `<clipPath id="${idClipCor}"><path d="${escAttr(m.molde.contorno)}" /></clipPath>` : "";
+    palco.insertAdjacentHTML("beforeend",
+      `<svg class="layout-arte" viewBox="0 0 ${dim.w.toFixed(2)} ${dim.h.toFixed(2)}" preserveAspectRatio="none"
+        style="left:0;top:0;width:${dim.w * s}px;height:${dim.h * s}px">${clipCor}
+        <rect x="0" y="0" width="${dim.w.toFixed(2)}" height="${dim.h.toFixed(2)}" fill="${cmykParaCss(corEd)}"${clipCor ? ` clip-path="url(#${idClipCor})"` : ""} /></svg>`);
   }
   const adEd = m.molde.virtual ? null : EPS.arteDaPeca(prod, layoutPeca);
   const arte = adEd && adEd.arte;
@@ -4231,7 +4347,7 @@ async function carregarRecursosDoTime(time, tamanhos, pecasIds, dpiSaida, aviso,
 function pecasDoTime(time) {
   const prod = producaoDoTime(time);
   return PECAS_PRODUCAO.map((p) => p.id).filter((id) =>
-    EPS.arteDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutDoTime(time), prod, id).length)
+    EPS.arteDaPeca(prod, id) || EPS.corBaseDaPeca(prod, id) || EPS.elementosDaPecaNoTime(layoutDoTime(time), prod, id).length)
     .concat(pecasVirtuaisDoTime(time));
 }
 

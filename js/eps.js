@@ -775,6 +775,20 @@ const EPS = (function () {
     return pecas[pecaId] && slotAtivo(prod, "arte:" + pecaId) ? { arte: pecas[pecaId], chave: "arte:" + pecaId } : null;
   }
 
+  // Cor base da camiseta (producao.corBase = { cmyk: [C,M,Y,K], sem: { gola:
+  // true } }): pinta a peça inteira, recortada no molde, sem precisar de um
+  // arquivo de arte por peça — a camiseta lisa só com a estampa (elemento
+  // extra) por cima. A arte enviada de uma peça vai por cima da cor. `sem`
+  // tira peças da cor (a chave "mangaEsq" vale para as duas mangas).
+  // Devolve o CMYK ou null.
+  function corBaseDaPeca(prod, pecaId) {
+    const cb = prod && prod.corBase;
+    if (!cb || !Array.isArray(cb.cmyk) || PECAS_VIRTUAIS[pecaId]) return null;
+    const chave = pecaId === "mangaDir" ? "mangaEsq" : pecaId;
+    if (cb.sem && cb.sem[chave]) return null;
+    return cb.cmyk.map((v) => Math.max(0, Math.min(100, Number(v) || 0)));
+  }
+
   // Espaços desativados no time (producao.desativados[slot] = true): o time
   // não tem aquele arquivo/elemento, então ele é ignorado na folha, na prévia
   // e na lista de pendências. Os arquivos continuam guardados.
@@ -1198,7 +1212,8 @@ const EPS = (function () {
         // O que foi tirado desta camiseta sai das peças; a etiqueta fica igual.
         const doTime = elementosDaPecaNoTime(layout, prod, pecaId);
         const elementos = virtual ? doTime : elementosDaCamiseta(doTime, cam);
-        if (!virtual && !arte && !elementos.length) return; // peça sem nada deste time (ou desta camiseta)
+        const corBase = virtual ? null : corBaseDaPeca(prod, pecaId);
+        if (!virtual && !arte && !corBase && !elementos.length) return; // peça sem nada deste time (ou desta camiseta)
         if (!molde || !molde.bbox) {
           avisar(pecaId === "reforcoOmbro"
             ? `Sem o comprimento do reforço de ombro para o tamanho ${cam.tamanho || "(vazio)"} (sem molde das costas com contorno nesse tamanho e sem valor na aba Tamanhos) — o reforço ficou de fora.`
@@ -1211,10 +1226,14 @@ const EPS = (function () {
 
         const ops = [];
         // Peça virtual: fundo de cor sólida (reforço, fundo da etiqueta).
-        const fundo = virtual ? fundoVirtual(moldes, layout, prod, pecaId) : null;
+        // Peça de verdade com a cor base do time: o mesmo fundo, no molde.
+        const fundo = virtual ? fundoVirtual(moldes, layout, prod, pecaId) : corBase;
         if (fundo && fundo.some((v) => Number(v) > 0)) {
+          // Sem o contorno (peça de verdade não recortada), a cor fica na caixa
+          // do molde, sem passar para as peças vizinhas.
+          const f = virtual || molde.contorno ? 5 : 0;
           ops.push({ tipo: "caminho", recortar: true, cmyk: fundo,
-            comandos: [{ type: "M", x: -5, y: -5 }, { type: "L", x: tam.w + 5, y: -5 }, { type: "L", x: tam.w + 5, y: tam.h + 5 }, { type: "L", x: -5, y: tam.h + 5 }, { type: "Z" }] });
+            comandos: [{ type: "M", x: -f, y: -f }, { type: "L", x: tam.w + f, y: -f }, { type: "L", x: tam.w + f, y: tam.h + f }, { type: "L", x: -f, y: tam.h + f }, { type: "Z" }] });
         }
         const opMolde = { tipo: "eps", chave: "molde:" + pecaId + ":" + cam.tamanho, x: 0, y: 0, w: tam.w, h: tam.h };
         // Faca a partir do contorno (3 mm por fora); sem contorno lido, vai o
@@ -2016,6 +2035,7 @@ const EPS = (function () {
     PECAS_VIRTUAIS,
     REFORCO_LARGURA_MM,
     arteDaPeca,
+    corBaseDaPeca,
     detalheDaPeca,
     textoDoMarcador,
     marcadorDaPeca,

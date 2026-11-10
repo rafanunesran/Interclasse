@@ -3227,3 +3227,8 @@ header.topo nav .btn-instalar svg { width: 16px; height: 16px; }
 .sinal-falta { display: block; font-size: 0.78rem; color: #b91c1c; font-weight: 600; }
 .badge.esperando-lote { background: #dcfce7; color: #166534; }
 .tema-escuro .badge.esperando-lote { background: #14301f; color: #86efac; }
+
+/* Cor base da camiseta (lisa + estampa) */
+.producao-time .producao-cor-base .producao-opcoes { margin-top: 6px; padding-top: 0; border-top: 0; }
+.producao-cor-pecas { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.producao-cor-pecas label { display: inline-flex; align-items: center; gap: 4px; }
