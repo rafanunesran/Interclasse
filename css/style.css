@@ -127,6 +127,8 @@ tr.duplicado td { background: #fef3c7; }
 .badge.suspenso { background: #ffedd5; color: #9a3412; }
 .badge.bloqueado { background: #fee2e2; color: #7f1d1d; }
 .badge.finalizado { background: #e0e7ff; color: #3730a3; }
+.badge.cancelado { background: #fecaca; color: #7f1d1d; text-decoration: line-through; }
+.badge.ocultado { background: #e5e7eb; color: #4b5563; }
 .badge.interno { background: #ede9fe; color: #5b21b6; }
 .badge.oculto-loja { background: #e5e7eb; color: #374151; }
 /* Goleiro: camiseta de cor especial, marcada na lista. */
@@ -167,6 +169,16 @@ tr.duplicado td { background: #fef3c7; }
   background: #ea580c;
   border-color: #ea580c;
   box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
+}
+.status-etapa.cancelado.atual {
+  background: #7f1d1d;
+  border-color: #7f1d1d;
+  box-shadow: 0 2px 8px rgba(127, 29, 29, 0.3);
+}
+.status-etapa.ocultado.atual {
+  background: #4b5563;
+  border-color: #4b5563;
+  box-shadow: none;
 }
 .status-etapa.bloqueado.atual {
   background: #b91c1c;

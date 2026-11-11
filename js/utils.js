@@ -1096,7 +1096,15 @@ const STATUS_PEDIDO = [
   // "Bloqueado" é a trava por decisão da organização (pendência com o cliente,
   // pedido em disputa...), até que ela mesma resolva e devolva o status.
   { id: "suspenso", label: "Suspenso" },
-  { id: "bloqueado", label: "Bloqueado" }
+  { id: "bloqueado", label: "Bloqueado" },
+  // Fim sem conclusão: o pedido foi CANCELADO (não vai ser produzido) ou só
+  // OCULTADO pelo admin (teste, duplicado, pedido que não interessa mais).
+  // Os dois travam tudo para os usuários e saem das listas do dia a dia,
+  // indo cada um para a sua seção recolhível na aba Inicial. Para trazer de
+  // volta, basta trocar o status. (O id é "ocultado" porque "oculto" já é a
+  // classe CSS que esconde elementos.)
+  { id: "cancelado", label: "Cancelado" },
+  { id: "ocultado", label: "Oculto" }
 ];
 
 // A produção (impressão, costura, logística, entrega) agora é acompanhada por
@@ -1114,7 +1122,11 @@ const STATUS_PEDIDO_ANTIGO = {
 
 // Status que NÃO fazem parte da linha do tempo do pedido: ficam fora da barra
 // de etapas e travam o pedido, apesar de virem no fim da lista acima.
-const STATUS_FORA_DA_LINHA = ["suspenso", "bloqueado"];
+const STATUS_FORA_DA_LINHA = ["suspenso", "bloqueado", "cancelado", "ocultado"];
+
+// Status que tiram o pedido das listas do dia a dia (aba Inicial, Kanban,
+// loja): cada um vira uma seção recolhível no fim da lista do admin.
+const STATUS_ARQUIVO = ["finalizado", "cancelado", "ocultado"];
 
 function statusForaDaLinha(statusId) {
   return STATUS_FORA_DA_LINHA.includes(statusId);
@@ -1141,6 +1153,19 @@ function pedidoFinalizado(time) {
   return statusPedidoDe(time) === "finalizado";
 }
 
+// Pedido fora das listas do dia a dia: finalizado, cancelado ou oculto.
+function pedidoArquivado(time) {
+  return STATUS_ARQUIVO.includes(statusPedidoDe(time));
+}
+
+// Pedido cancelado ou oculto: some e trava tudo para os usuários.
+function pedidoCancelado(time) {
+  return statusPedidoDe(time) === "cancelado";
+}
+function pedidoOcultado(time) {
+  return statusPedidoDe(time) === "ocultado";
+}
+
 // O time está aberta para o representante editar quando o status é "aberto".
 function pedidoAberto(time) {
   return statusPedidoDe(time) === "aberto";
@@ -1156,7 +1181,7 @@ function pedidoBloqueado(time) {
   return statusPedidoDe(time) === "bloqueado";
 }
 
-// Pedido travado (suspenso OU bloqueado): nada de cadastro nem de pagamento.
+// Pedido travado (suspenso, bloqueado, cancelado ou oculto): nada de cadastro nem de pagamento.
 function pedidoTravado(time) {
   return statusForaDaLinha(statusPedidoDe(time));
 }
@@ -1193,6 +1218,8 @@ function classeBadgeStatus(statusId) {
   if (statusId === "finalizado") return "finalizado";
   if (statusId === "suspenso") return "suspenso";
   if (statusId === "bloqueado") return "bloqueado";
+  if (statusId === "cancelado") return "cancelado";
+  if (statusId === "ocultado") return "ocultado";
   return "fechado";
 }
 
@@ -1217,7 +1244,14 @@ function renderizarBarraStatus(container, statusId) {
   if (statusForaDaLinha(statusId)) {
     const etapa = document.createElement("span");
     etapa.className = "status-etapa " + statusId + " atual";
-    etapa.innerHTML = statusId === "bloqueado" ? iconeOu("ban", "") + " Pedido bloqueado" : iconeOu("circle-pause", "") + " Pedido suspenso";
+    const rotulos = {
+      bloqueado: ["ban", "Pedido bloqueado"],
+      cancelado: ["x", "Pedido cancelado"],
+      ocultado: ["eye-off", "Pedido indisponível"],
+      suspenso: ["circle-pause", "Pedido suspenso"]
+    };
+    const [ic, txt] = rotulos[statusId] || rotulos.suspenso;
+    etapa.innerHTML = iconeOu(ic, "") + " " + txt;
     container.appendChild(etapa);
     return;
   }

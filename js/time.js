@@ -270,7 +270,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261111a";
+const VERSAO_MOCKUP3D = "20261111b";
 let botao3d = null;
 
 // Texturas do 3D da oficial (versao "") ou de outra versão do time.
@@ -544,6 +544,10 @@ function atualizarVisibilidade() {
   // As mensagens de suspenso/bloqueado têm prioridade sobre a de "lista travada".
   if (elMensagemSuspenso) elMensagemSuspenso.classList.toggle("oculto", !suspenso);
   if (elMensagemBloqueado) elMensagemBloqueado.classList.toggle("oculto", !bloqueado);
+  const elMsgCancelado = document.getElementById("mensagemCancelado");
+  if (elMsgCancelado) elMsgCancelado.classList.toggle("oculto", !pedidoCancelado(timeAtual));
+  const elMsgOcultado = document.getElementById("mensagemOcultado");
+  if (elMsgOcultado) elMsgOcultado.classList.toggle("oculto", !pedidoOcultado(timeAtual));
   // "Não é mais possível editar" só quando a lista realmente travou (pagamento encerrado+).
   elMensagemFechado.classList.toggle("oculto", aceitaCadastro || travado);
   if (elMensagemGlobalFechado) {

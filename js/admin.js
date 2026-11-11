@@ -27,7 +27,8 @@ let clienteFiltro = "";
 let buscaFiltro = "";
 
 // Seção "Arquivados" (pedidos finalizados) da aba Inicial aberta ou recolhida.
-let arquivadosAbertos = false;
+// Seções do fim da lista (Arquivados, Cancelados, Ocultos) abertas ou recolhidas.
+const secoesArquivoAbertas = {};
 // Times marcados na lista para mudar o status de uma vez (ids).
 const selecaoTimesStatus = new Set();
 let statusEmMassa = ""; // status escolhido na barra de seleção
@@ -897,15 +898,19 @@ function renderizarListaTimes() {
   elListaTimesAdmin.appendChild(criarBarraStatusEmMassa(ids));
 
   // Pedidos finalizados vão para o "arquivo": uma seção recolhível no fim.
-  const idsAtivos = ids.filter((id) => !pedidoFinalizado(estadoTimes[id].time));
-  const idsArquivados = ids.filter((id) => pedidoFinalizado(estadoTimes[id].time));
+  // Cancelados e ocultos também saem da lista, cada um na sua seção.
+  const idsAtivos = ids.filter((id) => !pedidoArquivado(estadoTimes[id].time));
+  const idsPorArquivo = {};
+  STATUS_ARQUIVO.forEach((st) => {
+    idsPorArquivo[st] = ids.filter((id) => statusPedidoDe(estadoTimes[id].time) === st);
+  });
 
   if (idsAtivos.length === 0) {
     const vazio = document.createElement("p");
     vazio.className = "pix-ajuda";
     vazio.textContent = termosBusca.length
       ? "Nenhum pedido em andamento bateu com a busca — veja os arquivados abaixo."
-      : "Nenhum pedido em andamento — todos estão arquivados.";
+      : "Nenhum pedido em andamento — todos estão arquivados, cancelados ou ocultos.";
     elListaTimesAdmin.appendChild(vazio);
   }
 
@@ -930,21 +935,39 @@ function renderizarListaTimes() {
     elListaTimesAdmin.appendChild(criarListaDeLinhas(idsAtivos, termosBusca));
   }
 
-  if (idsArquivados.length > 0) {
-    const elArquivados = document.createElement("details");
-    elArquivados.className = "arquivados-admin";
-    // Com busca ativa o arquivo já abre, para o resultado não ficar escondido.
-    elArquivados.open = arquivadosAbertos || termosBusca.length > 0;
-    elArquivados.addEventListener("toggle", () => {
-      if (!buscaAtiva()) arquivadosAbertos = elArquivados.open;
+  SECOES_ARQUIVO.forEach((secao) => {
+    const idsSecao = idsPorArquivo[secao.status] || [];
+    if (idsSecao.length === 0) return;
+    const el = document.createElement("details");
+    el.className = "arquivados-admin";
+    // Com busca ativa a seção já abre, para o resultado não ficar escondido.
+    el.open = !!secoesArquivoAbertas[secao.status] || termosBusca.length > 0;
+    el.addEventListener("toggle", () => {
+      if (!buscaAtiva()) secoesArquivoAbertas[secao.status] = el.open;
     });
-    elArquivados.innerHTML =
-      `<summary>${icone("archive")} Arquivados (finalizados) <span class="badge finalizado">${idsArquivados.length}</span></summary>` +
-      '<p class="pix-ajuda">Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele.</p>';
-    elArquivados.appendChild(criarListaDeLinhas(idsArquivados, termosBusca));
-    elListaTimesAdmin.appendChild(elArquivados);
-  }
+    el.innerHTML =
+      `<summary>${icone(secao.icone)} ${secao.titulo} <span class="badge ${classeBadgeStatus(secao.status)}">${idsSecao.length}</span></summary>` +
+      `<p class="pix-ajuda">${secao.ajuda}</p>`;
+    el.appendChild(criarListaDeLinhas(idsSecao, termosBusca));
+    elListaTimesAdmin.appendChild(el);
+  });
 }
+
+// Seções recolhíveis do fim da lista: pedidos que saíram do dia a dia.
+const SECOES_ARQUIVO = [
+  {
+    status: "finalizado", icone: "archive", titulo: "Arquivados (finalizados)",
+    ajuda: "Pedidos com status Finalizado. Eles saem do Kanban e da tela inicial, mas continuam no Financeiro. Para tirar um pedido do arquivo, mude o status dele."
+  },
+  {
+    status: "cancelado", icone: "x", titulo: "Cancelados",
+    ajuda: "Pedidos cancelados: travados para os usuários (sem cadastro e sem pagamento) e fora da loja e do Kanban. Para reativar, marque e mude o status."
+  },
+  {
+    status: "ocultado", icone: "eye-off", titulo: "Ocultos",
+    ajuda: "Pedidos ocultados (testes, duplicados, os que não interessam mais): travados para os usuários e fora da loja e do Kanban. Para trazer de volta, marque e mude o status."
+  }
+];
 
 // Barra da seleção em massa: "selecionar todos" e, com algo marcado, o
 // status novo e o botão que aplica em todos os times marcados.
@@ -972,7 +995,7 @@ function criarBarraStatusEmMassa(ids) {
   if (n === 0) {
     const ajuda = document.createElement("span");
     ajuda.className = "pix-ajuda";
-    ajuda.textContent = "Marque os times para mudar o status de vários de uma vez.";
+    ajuda.textContent = "Marque os times para mudar o status, cancelar ou ocultar vários de uma vez.";
     barra.appendChild(ajuda);
     return barra;
   }
@@ -993,8 +1016,23 @@ function criarBarraStatusEmMassa(ids) {
   btnAplicar.className = "primario";
   btnAplicar.textContent = "Aplicar";
   btnAplicar.disabled = !statusEmMassa;
-  btnAplicar.onclick = () => aplicarStatusEmMassa();
+  btnAplicar.onclick = () => aplicarStatusEmMassa(statusEmMassa);
   barra.appendChild(btnAplicar);
+
+  // Atalhos para tirar vários pedidos do caminho de uma vez.
+  const btnCancelar = document.createElement("button");
+  btnCancelar.type = "button";
+  btnCancelar.className = "perigo";
+  btnCancelar.innerHTML = icone("x") + " Cancelar pedidos";
+  btnCancelar.onclick = () => aplicarStatusEmMassa("cancelado");
+  barra.appendChild(btnCancelar);
+
+  const btnOcultar = document.createElement("button");
+  btnOcultar.type = "button";
+  btnOcultar.className = "secundario";
+  btnOcultar.innerHTML = icone("eye-off") + " Ocultar";
+  btnOcultar.onclick = () => aplicarStatusEmMassa("ocultado");
+  barra.appendChild(btnOcultar);
 
   const btnLimpar = document.createElement("button");
   btnLimpar.type = "button";
@@ -1008,8 +1046,7 @@ function criarBarraStatusEmMassa(ids) {
   return barra;
 }
 
-function aplicarStatusEmMassa() {
-  const novo = statusEmMassa;
+function aplicarStatusEmMassa(novo) {
   const ids = [...selecaoTimesStatus].filter((id) => estadoTimes[id]);
   if (!novo || ids.length === 0) return;
   const mudar = ids.filter((id) => statusPedidoDe(estadoTimes[id].time) !== novo);
@@ -1021,6 +1058,9 @@ function aplicarStatusEmMassa() {
     (mudar.length > 15 ? `\n… e mais ${mudar.length - 15}` : "");
   if (!confirm(
     `Mudar o status de ${mudar.length} time(s) para "${labelStatus(novo)}"?\n\n${nomes}` +
+    (novo === "cancelado" || novo === "ocultado"
+      ? "\n\nEles somem da lista, do Kanban e da loja, e os usuários não conseguem mais cadastrar nem pagar. Dá para desfazer mudando o status de novo."
+      : "") +
     (mudar.length < ids.length ? `\n\n(${ids.length - mudar.length} já estão nesse status.)` : "")
   )) return;
   mudar.forEach((id) => atualizarStatusPedido(id, novo));
@@ -2008,13 +2048,16 @@ function renderizarKanban() {
 
     // Finalizados são o arquivo: a coluna só recebe cards (arraste um pedido
     // para cá para arquivá-lo) e mostra quantos há, sem listar cada um.
-    if (etapa.id === "finalizado") {
+    if (STATUS_ARQUIVO.includes(etapa.id)) {
       coluna.classList.add("kanban-coluna-arquivo");
       const aviso = document.createElement("p");
       aviso.className = "kanban-vazio";
-      aviso.innerHTML = icone("archive") + (timesDaColuna.length > 0
-        ? ` ${timesDaColuna.length} arquivado(s) — veja na aba Inicial`
-        : " Solte aqui para arquivar");
+      const [ic, verbo, part] = etapa.id === "cancelado" ? ["x", "cancelar", "cancelado(s)"]
+        : etapa.id === "ocultado" ? ["eye-off", "ocultar", "oculto(s)"]
+        : ["archive", "arquivar", "arquivado(s)"];
+      aviso.innerHTML = icone(ic) + (timesDaColuna.length > 0
+        ? ` ${timesDaColuna.length} ${part} — veja na aba Inicial`
+        : ` Solte aqui para ${verbo}`);
       listaCards.appendChild(aviso);
       coluna.appendChild(listaCards);
       board.appendChild(coluna);
@@ -4419,7 +4462,7 @@ function abrirNovaCamisetaPorModelo() {
 // pedidos já finalizados (arquivados).
 function timesParaNovaCamiseta() {
   return timesFiltrados()
-    .filter(([, e]) => !pedidoFinalizado(e.time))
+    .filter(([, e]) => !pedidoArquivado(e.time))
     .sort((a, b) => String(a[1].time.nome || "").localeCompare(String(b[1].time.nome || ""), "pt-BR"));
 }
 

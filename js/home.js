@@ -51,12 +51,12 @@ async function carregarInicio() {
       carregarClientes(),
       db.collection(COL_TIMES).orderBy("nome").get()
     ]);
-    // Pedidos finalizados estão arquivados, e os ocultados pelo Super Admin
+    // Pedidos finalizados, cancelados ou ocultos estão arquivados, e os ocultados pelo Super Admin
     // (o time ou o cliente dele) também não aparecem aqui. O link direto do
     // time continua abrindo.
     timesLoja = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((t) => !pedidoFinalizado(t) && !timeOcultoNaLoja(t, clientes));
+      .filter((t) => !pedidoArquivado(t) && !timeOcultoNaLoja(t, clientes));
     clientesLoja = clientes.filter((c) => c.oculto !== true);
 
     elCarregando.classList.add("oculto");
