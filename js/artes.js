@@ -506,6 +506,12 @@ function versoesComArtePropria(time) {
   return versoesDoTime(time).filter((v) => temVersaoPropria(time, v.id));
 }
 
+// A versão tem a cor base dela (não a "nenhuma", que só desliga a da oficial)?
+// Nesse caso ela não herda as artes das peças da oficial.
+function versaoTemCorPropria(propria) {
+  return temCorBase(propria);
+}
+
 // Ajuste da versão por cima do da oficial: a posição vem inteira de um ou do
 // outro; o estilo mistura (o da versão ganha); "oculto" da versão ganha.
 function mesclarAjusteVersao(comum, gol) {
@@ -528,7 +534,11 @@ function producaoDaVersao(prod, versao) {
   const p = prod || {};
   if (!versao) return p;
   const g = producaoVersaoPropria(p, versao);
-  const saida = { ...p, pecas: { ...(p.pecas || {}), ...(g.pecas || {}) } };
+  // Versão com cor base própria (camiseta lisa + estampa): as artes das
+  // peças da oficial NÃO valem nela — iriam por cima da cor e a camiseta
+  // sairia com a arte da oficial. Só entram as artes enviadas na versão.
+  const pecasDaOficial = versaoTemCorPropria(g) ? {} : (p.pecas || {});
+  const saida = { ...p, pecas: { ...pecasDaOficial, ...(g.pecas || {}) } };
   delete saida.goleiro;
   delete saida.versoes;
   ["brasao", "fonte", "detalheManga", "detalheMangaDir", "corBase"].forEach((k) => { if (g[k]) saida[k] = g[k]; });
@@ -991,8 +1001,9 @@ function criarBlocoProducaoTime(timeId, time) {
   PECAS_PRODUCAO.forEach((peca) => {
     if (peca.id === "mangaDir" && !comum.mangaDirDiferente) return;
     const titulo = peca.id === "mangaEsq" && !comum.mangaDirDiferente ? "Mangas (as duas)" : peca.nome;
+    // Versão com cor própria: a arte da oficial não vale aqui (não mostra como herdada).
     slot(gradePecas, `arte:${peca.id}`, titulo, infoPng(propria.pecas && propria.pecas[peca.id], peca.id),
-      infoPng(comum.pecas && comum.pecas[peca.id], peca.id), "TIFF CMYK ou PNG, 600 dpi");
+      gol && versaoTemCorPropria(propria) ? null : infoPng(comum.pecas && comum.pecas[peca.id], peca.id), "TIFF CMYK ou PNG, 600 dpi");
   });
 
   const gradeExtras = grupo("Brasão, detalhe e fonte", "");
@@ -1106,7 +1117,7 @@ function criarGrupoCorBase(timeId, comum, propria, gol) {
   const sec = document.createElement("section");
   sec.className = "producao-grupo producao-cor-base";
   sec.innerHTML = `<h4 class="producao-grupo-titulo">Cor base da camiseta</h4>
-    <p class="pix-ajuda">Para a camiseta lisa: escolha a cor e as peças saem pintadas inteiras, sem precisar de um arquivo para cada parte. A estampa entra como imagem em “Elementos extras” (+) e é posicionada em “Editar arte”. Se alguma peça tiver arte enviada, a arte fica por cima da cor.</p>
+    <p class="pix-ajuda">Para a camiseta lisa: escolha a cor e as peças saem pintadas inteiras, sem precisar de um arquivo para cada parte. A estampa entra como imagem em “Elementos extras” (+) e é posicionada em “Editar arte”. Se alguma peça tiver arte enviada, a arte fica por cima da cor. Numa versão com cor própria, as artes das peças da oficial não entram — só as enviadas na versão.</p>
     <div class="producao-opcoes producao-reforco">
       <label class="interruptor"><input type="checkbox" data-cor-usar ${usa ? "checked" : ""} /> <span>Usar cor base</span></label>
       ${usa ? `
@@ -1963,7 +1974,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261110b";
+const VERSAO_MOCKUP3D = "20261111a";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -4566,7 +4577,7 @@ async function montarBlocosDoGrupo(g, op, etapa, prog, rotulo) {
   const timeComum = estadoTimes[g.timeId].time;
   const time = timeNaVariante(timeComum, g.versao);
   const falta = pendenciasProducao(time);
-  if (falta.includes("arte das peças")) {
+  if (falta.some((x) => x.startsWith("arte das peças"))) {
     prog.aviso(`${rotulo}: o time não tem arte enviada — ficou de fora.`);
     return { fora: "sem arte das peças" };
   }
