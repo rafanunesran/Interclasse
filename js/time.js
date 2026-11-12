@@ -232,9 +232,11 @@ function renderizarGaleria() {
 
     const img = document.createElement("img");
     img.className = "imagem-galeria img-na-marca";
-    img.src = item.url;
+    // No slide, a miniatura do Drive em 1000 px (a ampliação usa a grande).
+    img.src = /drive\.google\.com\/thumbnail/.test(item.url) ? item.url.replace(/sz=w\d+/, "sz=w1000") : item.url;
     img.alt = item.legenda;
     img.loading = indice === 0 ? "eager" : "lazy";
+    if (indice === 0) img.fetchPriority = "high";
     // Clicar (ou Enter/Espaço) amplia, já dentro da galeria toda.
     tornarImagemAmpliavel(img, item.legenda, item.comMarca, itens, indice);
     wrap.appendChild(img);
@@ -270,7 +272,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261112d";
+const VERSAO_MOCKUP3D = "20261112e";
 let botao3d = null;
 
 // Texturas do 3D da oficial (versao "") ou de outra versão do time.
@@ -293,6 +295,37 @@ function atualizarBotao3D() {
     elGaleria.insertAdjacentElement("afterend", botao3d);
   }
   if (botao3d) botao3d.classList.toggle("oculto", !t);
+  if (t) adiantar3D();
+}
+
+// Com a página parada, já baixa o three.js, o modelo e as texturas da versão
+// oficial: tocar em "Ver em 3D" abre na hora. Não adianta com economia de
+// dados ligada.
+let adiantado3D = false;
+function adiantar3D() {
+  if (adiantado3D) return;
+  const conexao = navigator.connection;
+  if (conexao && (conexao.saveData || /2g/.test(conexao.effectiveType || ""))) return;
+  adiantado3D = true;
+  const ir = () => {
+    const t = texturas3D();
+    if (!t) return;
+    modulo3D().then((M) => M.preparar && M.preparar()).catch(() => {});
+    const url = configGeral && configGeral.driveScriptUrl;
+    if (url) ["frente", "costas", "mangaEsq", "mangaDir"].filter((id) => t[id]).forEach((id) => texturaDoDrive(url, t[id]).catch(() => {}));
+  };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(ir, { timeout: 5000 });
+  else setTimeout(ir, 2000);
+}
+
+let promessaModulo3D = null;
+function modulo3D() {
+  if (!promessaModulo3D) {
+    promessaModulo3D = import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href)
+      .then((m) => m.default)
+      .catch((e) => { promessaModulo3D = null; throw e; });
+  }
+  return promessaModulo3D;
 }
 
 function imagemDeBytes(bytes, tipo) {
@@ -311,12 +344,37 @@ function imagemDeBytes(bytes, tipo) {
   });
 }
 
+// Textura pela miniatura pública do Drive (rápida, direto do Google). Só vale
+// se vier liberada para o WebGL (CORS); senão, pelo Apps Script.
+function texturaPelaMiniatura(fileId) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    const desiste = setTimeout(() => { img.src = ""; reject(new Error("miniatura demorou")); }, 6000);
+    img.onload = () => {
+      clearTimeout(desiste);
+      try {
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        ctx.getImageData(0, 0, 1, 1); // falha se a imagem veio sem CORS
+        resolve(c);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => { clearTimeout(desiste); reject(new Error("miniatura indisponível")); };
+    img.src = "https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w1024";
+  });
+}
+
 // Texturas já baixadas (trocar de versão e voltar não baixa de novo).
 const texturasBaixadas = {};
 function texturaDoDrive(scriptUrl, fileId) {
   if (!texturasBaixadas[fileId]) {
-    texturasBaixadas[fileId] = baixarArquivoDrive(scriptUrl, fileId)
-      .then((bytes) => imagemDeBytes(bytes, "image/jpeg"))
+    texturasBaixadas[fileId] = texturaPelaMiniatura(fileId)
+      .catch(() => baixarArquivoDrive(scriptUrl, fileId).then((bytes) => imagemDeBytes(bytes, "image/jpeg")))
       .catch((e) => { delete texturasBaixadas[fileId]; throw e; });
   }
   return texturasBaixadas[fileId];
@@ -358,11 +416,10 @@ async function abrirVer3D() {
     fundo.querySelectorAll("[data-variante]").forEach((b) => b.classList.toggle("ativo", b.dataset.variante === versao));
     aviso.textContent = "Carregando o 3D…";
     try {
-      const [mod, cfg] = await Promise.all([
-        import(new URL("js/mockup3d.js?v=" + VERSAO_MOCKUP3D, document.baseURI).href),
-        carregarConfigGeral()
+      const [M, cfg] = await Promise.all([
+        modulo3D(),
+        configGeral && configGeral.driveScriptUrl ? configGeral : carregarConfigGeral()
       ]);
-      const M = mod.default;
       if (!M.suportado()) throw new Error("Este aparelho não consegue mostrar o 3D.");
       if (!cfg.driveScriptUrl) throw new Error("As imagens do 3D não estão disponíveis.");
       const pecas = { gola: { cor: t.gola || "" } };

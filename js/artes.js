@@ -2084,7 +2084,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261112d";
+const VERSAO_MOCKUP3D = "20261112e";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -2148,7 +2148,13 @@ async function gerarPreviaVariante(timeV, timeId, tam, pref, nomeVersao) {
     const [chave, canvas] = await gerar();
     if (!canvas) continue;
     if (nomeVersao) carimbarVersao(canvas, nomeVersao);
-    const env = await enviarArquivoDrive(driveScriptUrl, new File([await canvasEmPng(canvas)], chave + ".png", { type: "image/png" }), pref);
+    // Os mockups (foto, fundo sem transparência) vão em JPEG: bem menores que
+    // o PNG, sobem e abrem mais rápido na página do cliente. A arte plana
+    // continua em PNG (traços nítidos).
+    const arquivo = chave === "arte"
+      ? new File([await canvasEmPng(canvas)], chave + ".png", { type: "image/png" })
+      : new File([await canvasEmJpeg(canvas)], chave + ".jpg", { type: "image/jpeg" });
+    const env = await enviarArquivoDrive(driveScriptUrl, arquivo, pref);
     saida[chave] = urlPreviaGrande(env.url);
   }
   // Texturas das peças para o "Ver em 3D" da página do cliente.
