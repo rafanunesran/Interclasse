@@ -1974,7 +1974,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261112a";
+const VERSAO_MOCKUP3D = "20261112b";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -4535,11 +4535,11 @@ function perguntarOpcoesEps(resumo, nomeLote) {
           <label>Altura máxima por folha (cm, 0 = sem limite)<input type="number" name="alturaMaxCm" min="0" step="1" value="${escAttr(f.alturaMaxCm || 0)}" /></label>
           <label class="checkbox-inline"><input type="checkbox" name="etiqueta" ${f.etiqueta !== false ? "checked" : ""} /> Marcador para a costureira em cada peça ("Time-Tamanho-Peça", 4 mm, dentro da área de impressão)</label>
           <label>Arquivos
-            <select name="juntar"><option value="0">Um por time</option><option value="1">Todos os times juntos (peças misturadas)</option><option value="colunas">Colunas de 7 m — todos os times, EPS para o Corel</option></select></label>
+            <select name="juntar"><option value="0">Um por time</option><option value="1">Todos os times juntos (peças misturadas)</option><option value="colunas">Colunas — todos os times, EPS ou PDF para o Corel</option></select></label>
           <div class="oculto eps-colunas" data-so-colunas>
-            <p class="pix-ajuda">Todos os times juntos, com as peças encaixadas em colunas da largura do rolo. O site calcula todas as colunas e gera os PNGs de conferência; depois você baixa os EPS (um por coluna) pelos botões, um de cada vez ou todos em sequência. Abra no Corel → Salvar como CDR. Prefira 300 dpi.</p>
-            <label>Altura da coluna (cm)<input type="number" name="alturaColunaCm" min="50" step="10" value="${escAttr(f.alturaColunaCm || 700)}" /></label>
-            <label>Colunas por arquivo (1 = um EPS por coluna, o mais leve para o Corel)<input type="number" name="colunasPorArquivo" min="1" max="30" step="1" value="${escAttr(f.colunasPorEps || 1)}" /></label>
+            <p class="pix-ajuda">Todos os times juntos, com as peças encaixadas em colunas da largura do rolo. O site calcula todas as colunas e gera os PNGs de conferência; depois você baixa os arquivos (um por coluna) pelos botões, um de cada vez ou todos em sequência. Escolha EPS ou PDF em <strong>Formato do arquivo</strong> (no PDF a coluna tem no máximo 500 cm, limite do formato). Abra no Corel → Salvar como CDR. Prefira 300 dpi.</p>
+            <label>Altura da coluna (cm; PDF: até 500)<input type="number" name="alturaColunaCm" min="50" step="10" value="${escAttr(f.alturaColunaCm || 700)}" /></label>
+            <label>Colunas por arquivo (1 = um arquivo por coluna, o mais leve para o Corel)<input type="number" name="colunasPorArquivo" min="1" max="30" step="1" value="${escAttr(f.colunasPorEps || 1)}" /></label>
             <label>Espaço entre colunas (cm)<input type="number" name="espacoColunasCm" min="0" step="0.5" value="${escAttr(f.espacoColunasCm == null ? 5 : f.espacoColunasCm)}" /></label>
           </div>
           <p class="pix-ajuda oculto" data-so-juntar>Todos os times nas mesmas folhas, com as peças misturadas para gastar menos tecido (o marcador de cada peça diz o time). PDF: um arquivo com páginas de até 5 m. EPS: folhas de até 45 m (limite do Corel), juntas num .zip.</p>
@@ -4568,18 +4568,13 @@ function perguntarOpcoesEps(resumo, nomeLote) {
       const col = form.juntar.value === "colunas";
       soJuntar.classList.toggle("oculto", form.juntar.value !== "1");
       soColunas.classList.toggle("oculto", !col);
-      // Colunas: sempre EPS compatível com o Corel; 300 dpi sugerido.
-      form.formato.disabled = col;
-      if (col) {
-        form.formato.value = "eps";
-        form.corel.checked = true;
-        if (antes !== "colunas" && form.dpi.value === "600") form.dpi.value = "300";
-      }
+      // Colunas: EPS (sempre compatível com o Corel) ou PDF; 300 dpi sugerido.
+      if (col && antes !== "colunas" && form.dpi.value === "600") form.dpi.value = "300";
       mostrarSoEps();
       antes = form.juntar.value;
     };
     const soEps = fundo.querySelector("[data-so-eps]");
-    const mostrarSoEps = () => soEps.classList.toggle("oculto", form.formato.value !== "eps");
+    const mostrarSoEps = () => soEps.classList.toggle("oculto", form.formato.value !== "eps" || form.juntar.value === "colunas");
     form.formato.onchange = mostrarSoEps;
     mostrarSoEps();
     form.juntar.onchange();
@@ -4603,7 +4598,7 @@ function perguntarOpcoesEps(resumo, nomeLote) {
         alturaMaxCm: Math.max(0, Number(form.alturaMaxCm.value) || 0),
         etiqueta: form.etiqueta.checked,
         corel: form.juntar.value === "colunas" ? true : form.corel.checked,
-        formato: form.juntar.value === "colunas" ? "eps" : form.formato.value,
+        formato: form.formato.value,
         copiaDrive: form.copiaDrive.checked,
         juntar: form.juntar.value === "colunas" ? "colunas" : form.juntar.value === "1",
         alturaColunaCm: Math.max(50, Number(form.alturaColunaCm.value) || 700),
@@ -4723,7 +4718,9 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
     const colunas = op.juntar === "colunas";
     const pdfFmt = !colunas && op.formato !== "eps";
     const altMax = op.alturaMaxCm > 0 ? op.alturaMaxCm * 10 : Infinity;
-    const limite = colunas ? Math.min((op.alturaColunaCm || 700) * 10, EPS.ALTURA_MAX_COREL_MM)
+    const colPdf = colunas && op.formato === "pdf";
+    if (colPdf && (op.alturaColunaCm || 700) * 10 > EPS.PDF_ALTURA_MAX_MM) prog.aviso(`PDF: cada coluna fica com no máximo ${EPS.PDF_ALTURA_MAX_MM / 10} cm de altura (limite da página de PDF). Para colunas mais altas, use EPS.`);
+    const limite = colunas ? Math.min((op.alturaColunaCm || 700) * 10, colPdf ? EPS.PDF_ALTURA_MAX_MM : EPS.ALTURA_MAX_COREL_MM)
       : Math.min(altMax, pdfFmt ? EPS.PDF_ALTURA_MAX_MM : EPS.ALTURA_MAX_COREL_MM);
     const { folhas, avisos: avE } = EPS.empacotar(todos, {
       larguraMm: op.larguraCm * 10, espacoMm: op.espacoMm, rotacao: op.rotacao, alturaMaxMm: limite
@@ -4733,7 +4730,7 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
     let saida;
     let resumoFim = "";
     if (colunas) {
-      const r = await escreverColunas(folhas, recJunto, op, destino, prog, base, etapaFim);
+      const r = await escreverColunas(folhas, recJunto, op, destino, prog, base, etapaFim, limite);
       saida = r.saida;
       resumoFim = r.resumo;
     } else {
@@ -4785,20 +4782,22 @@ async function gerarFolhasJuntas(lista, op, destino, prog, nomeBase, levaId) {
 }
 
 // Modo "colunas": cada folha encaixada (até a altura da coluna) é uma
-// coluna. Primeiro calcula tudo e gera os PNGs de conferência; os EPS
-// (compatíveis com o Corel, N colunas por arquivo — padrão 1) saem pelos
-// botões da janela, um de cada vez, para não pesar a memória nem o Corel.
-// Devolve { saida, resumo }.
-async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) {
+// coluna. Primeiro calcula tudo e gera os PNGs de conferência; os arquivos
+// (EPS compatível com o Corel ou PDF; N colunas por arquivo — padrão 1)
+// saem pelos botões da janela, um de cada vez, para não pesar a memória nem
+// o Corel. Devolve { saida, resumo }.
+async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim, limiteMm) {
+  const fmt = op.formato === "pdf" ? "pdf" : "eps";
+  const FMT = fmt.toUpperCase();
   const porArq = Math.max(1, op.colunasPorEps || 1);
   const gap = Math.max(0, (op.espacoColunasCm == null ? 5 : op.espacoColunasCm) * 10);
   const L = op.larguraCm * 10;
   const copia = copiaDriveAtual; // a geração termina antes dos cliques
   const grupos = [];
   for (let i = 0; i < colunas.length; i += porArq) grupos.push(colunas.slice(i, i + porArq));
-  const altM = ((op.alturaColunaCm || 700) / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  const altM = ((limiteMm || (op.alturaColunaCm || 700) * 10) / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
   const fmtM = (mm) => (mm / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " m";
-  prog.aviso(`${colunas.length} coluna(s) de até ${altM} m → ${grupos.length} arquivo(s) EPS${porArq > 1 ? ` com até ${porArq} coluna(s) cada` : " (um por coluna)"}.`);
+  prog.aviso(`${colunas.length} coluna(s) de até ${altM} m → ${grupos.length} arquivo(s) ${FMT}${porArq > 1 ? ` com até ${porArq} coluna(s) cada` : " (um por coluna)"}.`);
 
   // 1. PNG de cada coluna (conferência).
   const pngs = [];
@@ -4823,12 +4822,12 @@ async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) 
     if (copia) for (const p of pngs) await copia.guardar(p.nome, p.blob, (t) => etapaFim(t), true);
   }
 
-  // 2. Lista dos EPS para baixar (gerados na hora do clique).
+  // 2. Lista dos arquivos para baixar (gerados na hora do clique).
   const arquivos = grupos.map((g, gi) => {
     const n0 = gi * porArq;
     return {
       g, n0,
-      nome: porArq === 1 ? `${base}-coluna${n0 + 1}.eps` : `${base}-colunas${n0 + 1}a${n0 + g.length}.eps`,
+      nome: porArq === 1 ? `${base}-coluna${n0 + 1}.${fmt}` : `${base}-colunas${n0 + 1}a${n0 + g.length}.${fmt}`,
       rotulo: porArq === 1 ? `Coluna ${n0 + 1}` : `Colunas ${n0 + 1} a ${n0 + g.length}`,
       alturaMm: Math.max(...g.map((f) => f.alturaMm)),
       mb: 0
@@ -4839,14 +4838,14 @@ async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) 
     a.g.forEach((f, j) => f.blocos.forEach((b) => folha.blocos.push({ ...b, x: b.x + j * (L + gap) })));
     return folha;
   };
-  arquivos.forEach((a) => { a.mb = EPS.estimarTamanho(folhaDe(a), rec, { corel: true }) / 1e6; });
+  arquivos.forEach((a) => { a.mb = EPS.estimarTamanho(folhaDe(a), rec, { corel: fmt === "eps" }) / 1e6; });
   const area = prog.extra();
   area.innerHTML = `<div class="colunas-baixar">
-      <div class="colunas-baixar-topo"><strong>Arquivos EPS (${arquivos.length})</strong>
+      <div class="colunas-baixar-topo"><strong>Arquivos ${FMT} (${arquivos.length})</strong>
         <button type="button" class="primario" data-col="todos">Baixar todos em sequência</button></div>
       <ol>${arquivos.map((a, i) => `<li><span>${escapeHtmlAdmin(a.rotulo)} · ${fmtM(a.alturaMm)} · ~${Math.max(1, Math.round(a.mb))} MB</span>
         <span class="colunas-baixar-st" data-st="${i}"></span>
-        <button type="button" class="secundario" data-col="${i}">Baixar EPS</button></li>`).join("")}</ol>
+        <button type="button" class="secundario" data-col="${i}">Baixar ${FMT}</button></li>`).join("")}</ol>
     </div>`;
   let ocupado = false;
   const baixar = async (i) => {
@@ -4857,7 +4856,7 @@ async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) 
     st.textContent = "gerando…";
     await esperarTela();
     try {
-      const blob = await arquivoDaFolha(folhaDe(a), rec, `Todos os times - ${a.rotulo}`, "eps", { corel: true }, (t) => (st.textContent = t));
+      const blob = await arquivoDaFolha(folhaDe(a), rec, `Todos os times - ${a.rotulo}`, fmt, { corel: true }, (t) => (st.textContent = t));
       const onde = await salvarArquivoGerado(destino, a.nome, blob, null, { semCopia: true });
       if (copia) await copia.guardar(a.nome, blob, (t) => (st.textContent = t), false);
       st.textContent = `✓ ${(blob.size / 1e6).toFixed(1)} MB${onde ? ` · salvo em ${onde}` : ""}`;
@@ -4888,7 +4887,7 @@ async function escreverColunas(colunas, rec, op, destino, prog, base, etapaFim) 
   });
   return {
     saida: null,
-    resumo: `${colunas.length} coluna(s) calculada(s) e ${pngs.length} PNG(s) de conferência${destino && ondePng ? ` salvos em ${ondePng}` : ""}. Baixe os EPS pelos botões abaixo.`
+    resumo: `${colunas.length} coluna(s) calculada(s) e ${pngs.length} PNG(s) de conferência${destino && ondePng ? ` salvos em ${ondePng}` : ""}. Baixe os ${FMT} pelos botões abaixo.`
   };
 }
 
