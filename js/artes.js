@@ -1974,7 +1974,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261111b";
+const VERSAO_MOCKUP3D = "20261112a";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -2051,6 +2051,40 @@ async function gerarPreviaVariante(timeV, timeId, tam, pref, nomeVersao) {
   return saida;
 }
 
+// Impressão digital do que entra na prévia de uma versão (arquivos, cor,
+// elementos, ajustes, layout, moldes): igual à da prévia publicada, as
+// imagens dela continuam valendo e não são montadas e enviadas de novo.
+// Antes, qualquer mudança refazia a oficial e TODAS as versões (3 mockups,
+// a arte e 4 texturas cada, tudo enviado ao Drive), o que deixava lenta a
+// montagem de uma versão nova (sem brasão, sem nome, cor base…).
+function jsonEstavel(v) {
+  if (Array.isArray(v)) return "[" + v.map(jsonEstavel).join(",") + "]";
+  if (v && typeof v === "object") {
+    return "{" + Object.keys(v).sort().filter((k) => v[k] !== undefined)
+      .map((k) => JSON.stringify(k) + ":" + jsonEstavel(v[k])).join(",") + "}";
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+
+function hashTexto(t) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+}
+
+function assinaturaPreviaVariante(timeV, tam, nomeVersao, baseComum) {
+  const prod = { ...producaoDoTime(timeV) };
+  delete prod.versoes; // as outras versões não mudam esta
+  delete prod.goleiro;
+  return hashTexto(jsonEstavel({ prod, layout: layoutDoTime(timeV), tam, nomeVersao: nomeVersao || "", base: baseComum }));
+}
+
 async function publicarPreviaCliente(timeId, opcoes) {
   const auto = !!(opcoes && opcoes.automatico);
   const est = previaClienteEstado[timeId] = previaClienteEstado[timeId] || {};
@@ -2071,13 +2105,26 @@ async function publicarPreviaCliente(timeId, opcoes) {
   try {
     const tam = moldesConfig.tamanhoBase || tamanhoDaPrevia();
     const pref = `${slugify(time.nome) || timeId}-previa-cliente`;
-    const previa = { geradaEmMs: Date.now(), ...(await gerarPreviaVariante(time, timeId, tam, pref, "")) };
+    // O que vale para todas as versões (moldes, versão do mockup 3D).
+    const baseComum = hashTexto(jsonEstavel({ moldes: moldesConfig, m3d: VERSAO_MOCKUP3D }));
+    // Publicação automática: o que não mudou desde a última prévia é
+    // reaproveitado. O botão "Publicar" refaz tudo.
+    const anterior = auto ? time.previaCliente : null;
+    const versoesAnteriores = versoesDaPreviaCliente(anterior);
+    const assOficial = assinaturaPreviaVariante(time, tam, "", baseComum);
+    const oficial = anterior && anterior.assinatura === assOficial && anterior.cena
+      ? (({ versoes: _v, goleiro: _g, geradaEmMs: _t, ...resto }) => resto)(anterior)
+      : { ...(await gerarPreviaVariante(time, timeId, tam, pref, "")), assinatura: assOficial };
+    const previa = { ...oficial, geradaEmMs: Date.now() };
     // Versões com arquivos/ajustes próprios (goleiro, uniformes…): as mesmas
     // imagens e o 3D, marcados com o nome da versão.
     const versoes = [];
     for (const v of versoesComArtePropria(time)) {
-      versoes.push({ id: v.id, nome: v.nome,
-        ...(await gerarPreviaVariante(timeNaVariante(time, v.id), timeId, tam, `${pref}-${v.id}`, v.nome)) });
+      const timeV = timeNaVariante(time, v.id);
+      const ass = assinaturaPreviaVariante(timeV, tam, v.nome, baseComum);
+      const igual = versoesAnteriores.find((x) => x.id === v.id && x.assinatura === ass && x.cena);
+      versoes.push(igual ? { ...igual, nome: v.nome }
+        : { id: v.id, nome: v.nome, ...(await gerarPreviaVariante(timeV, timeId, tam, `${pref}-${v.id}`, v.nome)), assinatura: ass });
     }
     if (versoes.length) previa.versoes = versoes;
     await db.collection(COL_TIMES).doc(timeId).update({ previaCliente: previa });
