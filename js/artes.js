@@ -1824,39 +1824,81 @@ function pecaEmSvg(time, timeId, pecaId, tam, amostra, comMolde, semRecorte, soA
 // carrega imagens de fora dentro de um SVG desenhado no canvas, e assim o
 // mockup pode ser baixado em PNG.
 const dataUrlsDrive = {};
-function dataUrlDoDrive(url) {
-  const m = /[?&]id=([^&"]+)/.exec(url);
-  if (!m || !driveScriptUrl) return Promise.resolve(url);
-  const id = m[1];
-  if (!dataUrlsDrive[id]) {
-    dataUrlsDrive[id] = baixarArquivoDrive(driveScriptUrl, id).then((bytes) => {
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-      return "data:image/png;base64," + btoa(bin);
-    }).catch((e) => {
-      delete dataUrlsDrive[id];
+const bytesDrive = {};
+function bytesDoDrive(id) {
+  if (!bytesDrive[id]) {
+    bytesDrive[id] = baixarArquivoDrive(driveScriptUrl, id).catch((e) => {
+      delete bytesDrive[id];
       throw e;
     });
   }
-  return dataUrlsDrive[id];
+  return bytesDrive[id];
 }
 
-async function embutirImagens(svg) {
-  const hrefs = [...new Set([...svg.matchAll(/href="([^"]+)"/g)].map((m) => m[1]))];
-  let saida = svg;
-  for (const h of hrefs) {
-    const url = h.replace(/&amp;/g, "&");
-    const dados = await dataUrlDoDrive(url).catch(() => url);
-    saida = saida.split(`href="${h}"`).join(`href="${dados}"`);
+// `limite` (px no lado maior): a miniatura (2000 px) vai reduzida para o
+// tamanho em que a peça é desenhada no mockup — decodificar o SVG da peça
+// com a imagem inteira embutida era o passo mais lento da montagem.
+function dataUrlDoDrive(url, limite) {
+  const m = /[?&]id=([^&"]+)/.exec(url);
+  if (!m || !driveScriptUrl) return Promise.resolve(url);
+  const id = m[1];
+  const chave = limite ? id + "@" + limite : id;
+  if (!dataUrlsDrive[chave]) {
+    dataUrlsDrive[chave] = (limite ? reduzirImagemDrive(id, url, limite) : bytesDoDrive(id).then((bytes) => {
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+      return "data:image/png;base64," + btoa(bin);
+    })).catch((e) => {
+      delete dataUrlsDrive[chave];
+      throw e;
+    });
   }
+  return dataUrlsDrive[chave];
+}
+
+async function reduzirImagemDrive(id, url, limite) {
+  if (typeof createImageBitmap !== "function") return dataUrlDoDrive(url);
+  const bytes = await bytesDoDrive(id);
+  let bmp;
+  try {
+    bmp = await createImageBitmap(new Blob([bytes]));
+  } catch (e) {
+    return dataUrlDoDrive(url);
+  }
+  const k = limite / Math.max(bmp.width, bmp.height);
+  if (k >= 0.9) {
+    bmp.close && bmp.close();
+    return dataUrlDoDrive(url);
+  }
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(bmp.width * k));
+  c.height = Math.max(1, Math.round(bmp.height * k));
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close && bmp.close();
+  // WebP com alfa (onde o navegador não gera WebP, sai PNG).
+  return c.toDataURL("image/webp", 0.92);
+}
+
+async function embutirImagens(svg, limite) {
+  const hrefs = [...new Set([...svg.matchAll(/href="([^"]+)"/g)].map((m) => m[1]))];
+  const dados = await Promise.all(hrefs.map((h) => {
+    const url = h.replace(/&amp;/g, "&");
+    return dataUrlDoDrive(url, limite).catch(() => url);
+  }));
+  let saida = svg;
+  hrefs.forEach((h, i) => { saida = saida.split(`href="${h}"`).join(`href="${dados[i]}"`); });
   return saida;
 }
 
-// Peça plana (SVG em mm) → canvas com `pxMax` no lado maior.
-async function pecaEmCanvas(p, pxMax) {
+// Peça plana (SVG em mm) → canvas com `pxMax` no lado maior. `reduzir`: as
+// imagens embutidas vão no tamanho do canvas (mockup), não na miniatura cheia.
+async function pecaEmCanvas(p, pxMax, reduzir) {
   const k = pxMax / Math.max(p.w, p.h);
   const W = Math.max(1, Math.round(p.w * k)), H = Math.max(1, Math.round(p.h * k));
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${p.w.toFixed(2)} ${p.h.toFixed(2)}" preserveAspectRatio="none">${await embutirImagens(p.svg)}</svg>`;
+  const limite = reduzir ? Math.max(768, Math.round(pxMax * 1.25)) : 0;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${p.w.toFixed(2)} ${p.h.toFixed(2)}" preserveAspectRatio="none">${await embutirImagens(p.svg, limite)}</svg>`;
   const img = new Image();
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   await img.decode();
@@ -1883,6 +1925,9 @@ function corMedia(canvas) {
 }
 
 // Todas as peças do time prontas para o mockup: { pecaId: { canvas, cor } }.
+// As peças são montadas em paralelo. As camadas extras do mockup em foto
+// (`fundo` = só a arte, `elementos` = só nome/número/brasão) só são montadas
+// se o mockup em foto for usado (sem WebGL): `await pecas.prepararFoto()`.
 async function pecasParaMockup(time, timeId, tam, amostra) {
   const saida = {};
   // Nome e número precisam da fonte do time já carregada.
@@ -1891,21 +1936,85 @@ async function pecasParaMockup(time, timeId, tam, amostra) {
     const fonte = await obterFonte(f.partes).catch(() => null);
     if (fonte) fontesProntas[chaveArquivoDrive(f.partes)] = fonte;
   }
-  for (const id of ["frente", "costas", "mangaEsq", "mangaDir", "gola"]) {
+  const extras = [];
+  const ids = ["frente", "costas", "mangaEsq", "mangaDir", "gola"];
+  const prontas = await Promise.all(ids.map(async (id) => {
     const p = pecaEmSvg(time, timeId, id, tam, amostra, false, true);
-    if (!p || !p.svg) continue;
+    if (!p || !p.svg) return null;
     const px = id === "frente" || id === "costas" ? 900 : 520;
-    const canvas = await pecaEmCanvas(p, px);
-    // Só a arte (sem nome/número/brasão), para preencher as bordas das
-    // regiões com caixa própria no mockup sem duplicar os textos.
-    const soArte = id === "gola" ? null : pecaEmSvg(time, timeId, id, tam, amostra, false, true, true);
-    const fundo = soArte && soArte.svg ? await pecaEmCanvas(soArte, px) : null;
-    // Só os elementos (fundo transparente), para as regiões com caixa própria.
-    const soElem = id === "frente" || id === "costas" ? pecaEmSvg(time, timeId, id, tam, amostra, false, true, "elementos") : null;
-    const elementos = soElem && soElem.svg ? await pecaEmCanvas(soElem, px) : null;
-    saida[id] = { canvas, fundo, elementos, cor: id === "gola" ? corMedia(canvas) : "" };
-  }
+    const canvas = await pecaEmCanvas(p, px, true);
+    const peca = { canvas, fundo: null, elementos: null, cor: id === "gola" ? corMedia(canvas) : "" };
+    if (id !== "gola") {
+      extras.push(async () => {
+        // Só a arte (sem nome/número/brasão), para preencher as bordas das
+        // regiões com caixa própria no mockup sem duplicar os textos.
+        const soArte = pecaEmSvg(time, timeId, id, tam, amostra, false, true, true);
+        // Só os elementos (fundo transparente), para as regiões com caixa própria.
+        const soElem = id === "frente" || id === "costas" ? pecaEmSvg(time, timeId, id, tam, amostra, false, true, "elementos") : null;
+        const [fundo, elementos] = await Promise.all([
+          soArte && soArte.svg ? pecaEmCanvas(soArte, px, true) : null,
+          soElem && soElem.svg ? pecaEmCanvas(soElem, px, true) : null
+        ]);
+        peca.fundo = fundo;
+        peca.elementos = elementos;
+      });
+    }
+    return [id, peca];
+  }));
+  prontas.forEach((x) => { if (x) saida[x[0]] = x[1]; });
+  let foto = null;
+  Object.defineProperty(saida, "prepararFoto", {
+    enumerable: false,
+    value: () => foto || (foto = Promise.all(extras.map((g) => g())))
+  });
   return saida;
+}
+
+// Cache da prévia do admin: trocar a vista, abrir o "Girar 3D" ou redesenhar
+// a tela do time sem mudar nada não monta as peças (nem o mockup) de novo.
+const cacheMockupPrevia = new Map(); // chave → { pecas: Promise, vistas: { vista: Promise<canvas> } }
+const hashesPorObjeto = new WeakMap();
+function hashDoObjeto(o) {
+  if (!o || typeof o !== "object") return String(o);
+  if (!hashesPorObjeto.has(o)) hashesPorObjeto.set(o, hashTexto(jsonEstavel(o)));
+  return hashesPorObjeto.get(o);
+}
+
+function entradaMockupPrevia(time, timeId, tam, amostra) {
+  const chave = hashTexto(jsonEstavel({
+    timeId, nome: time.nome || "", prod: producaoDoTime(time), layout: layoutDoTime(time), tam: tam || "", amostra,
+    moldes: hashDoObjeto(moldesConfig), drive: !!driveScriptUrl
+  }));
+  let e = cacheMockupPrevia.get(chave);
+  if (e) {
+    cacheMockupPrevia.delete(chave);
+    cacheMockupPrevia.set(chave, e); // mais recente por último
+    return e;
+  }
+  e = { pecas: pecasParaMockup(time, timeId, tam, { ...amostra }), vistas: {} };
+  e.pecas.catch(() => cacheMockupPrevia.delete(chave));
+  cacheMockupPrevia.set(chave, e);
+  while (cacheMockupPrevia.size > 4) cacheMockupPrevia.delete(cacheMockupPrevia.keys().next().value);
+  return e;
+}
+
+function pecasDaPrevia(time, timeId, tam, amostra) {
+  return entradaMockupPrevia(time, timeId, tam, amostra).pecas;
+}
+
+// Canvas do mockup da prévia (uma cópia: o do cache não vai para a tela).
+async function mockupDaPrevia(time, timeId, tam, amostra, vista) {
+  const e = entradaMockupPrevia(time, timeId, tam, amostra);
+  if (!e.vistas[vista]) {
+    e.vistas[vista] = e.pecas.then((pecas) => renderizarMockup(vista, pecas));
+    e.vistas[vista].catch(() => { delete e.vistas[vista]; });
+  }
+  const origem = await e.vistas[vista];
+  const c = document.createElement("canvas");
+  c.width = origem.width;
+  c.height = origem.height;
+  c.getContext("2d").drawImage(origem, 0, 0);
+  return c;
 }
 
 // ---------------- Prévia para o cliente ----------------
@@ -1975,7 +2084,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261112c";
+const VERSAO_MOCKUP3D = "20261112d";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -1994,6 +2103,7 @@ async function renderizarMockup(vista, pecas) {
   } catch (e) {
     console.warn("Mockup 3D indisponível; usando o mockup em foto.", e);
   }
+  if (pecas.prepararFoto) await pecas.prepararFoto();
   return Mockup.renderizar(vista, pecas);
 }
 
@@ -2219,6 +2329,12 @@ function criarPreviaArteTime(timeId, timeComum) {
 
   const area = wrap.querySelector(".previa-area");
   const nota = wrap.querySelector(".previa-nota");
+  // Adianta o three.js e o modelo 3D enquanto a tela está parada.
+  if (!window.Mockup3D) {
+    const adiantar = () => obterMockup3D().then((M) => M.preparar && M.preparar()).catch(() => {});
+    if (typeof requestIdleCallback === "function") requestIdleCallback(adiantar, { timeout: 4000 });
+    else setTimeout(adiantar, 1500);
+  }
   let desenhoMockup = 0;   // descarta desenhos antigos quando algo muda no meio
   let ultimoMockup = null;
   let vivo3d = null;       // visualizador 3D aberto (girar)
@@ -2246,8 +2362,7 @@ function criarPreviaArteTime(timeId, timeComum) {
       const vez = ++desenhoMockup;
       area.innerHTML = '<div class="mockup-carregando">Montando o mockup…</div>';
       nota.textContent = "";
-      pecasParaMockup(time, timeId, tamAtual, amostraPrevia)
-        .then((pecas) => renderizarMockup(previaTime.vista, pecas))
+      mockupDaPrevia(time, timeId, tamAtual, amostraPrevia, previaTime.vista)
         .then((canvas) => {
           if (vez !== desenhoMockup) return;
           canvas.className = "mockup-canvas";
@@ -2320,7 +2435,7 @@ function criarPreviaArteTime(timeId, timeComum) {
     if (vivo3d) { vivo3d.destruir(); vivo3d = null; }
     area.innerHTML = '<div class="mockup-carregando">Montando o 3D…</div>';
     try {
-      const [M, pecas] = await Promise.all([obterMockup3D(), pecasParaMockup(time, timeId, tamanhoDaPrevia(), amostraPrevia)]);
+      const [M, pecas] = await Promise.all([obterMockup3D(), pecasDaPrevia(time, timeId, tamanhoDaPrevia(), amostraPrevia)]);
       if (vez !== desenhoMockup) return;
       if (!M.suportado()) throw new Error("Este navegador não tem WebGL.");
       area.innerHTML = '<div class="mockup-3d-vivo"></div>';

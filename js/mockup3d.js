@@ -115,10 +115,10 @@ function prepararCamisa(geoOrig) {
 
   const uv = new Float32Array(n * 2);
   const regiao = new Uint8Array(n / 3);
-  const ctr = new THREE.Vector3();
+  const ctr = new THREE.Vector3(), vt = new THREE.Vector3();
   for (let t = 0; t < n / 3; t++) {
     ctr.set(0, 0, 0);
-    for (let k = 0; k < 3; k++) ctr.add(new THREE.Vector3().fromBufferAttribute(P, t * 3 + k));
+    for (let k = 0; k < 3; k++) ctr.add(vt.fromBufferAttribute(P, t * 3 + k));
     ctr.multiplyScalar(1 / 3);
     const ax = Math.abs(ctr.x);
     let r;
@@ -129,7 +129,7 @@ function prepararCamisa(geoOrig) {
     regiao[t] = r;
   }
 
-  const p = new THREE.Vector3();
+  const p = new THREE.Vector3(), q = new THREE.Vector2();
   for (let t = 0; t < n / 3; t++) {
     const r = regiao[t];
     for (let k = 0; k < 3; k++) {
@@ -143,7 +143,7 @@ function prepararCamisa(geoOrig) {
       } else {
         const lado = r === MAT.mangaDir ? -1 : 1;
         // No plano (|x|, y): distância ao longo do eixo do braço.
-        const q = new THREE.Vector2(Math.abs(p.x), p.y).sub(ombro);
+        q.set(Math.abs(p.x), p.y).sub(ombro);
         const ao = q.dot(eixo);
         v = Math.max(0, Math.min(1, ao / compr));
         // Ângulo em volta do eixo: 0 na linha de fora; para a frente (+z) na
@@ -160,7 +160,12 @@ function prepararCamisa(geoOrig) {
   geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 
   // Grupos contínuos por região (ordena os triângulos por região).
-  const ordem = Array.from({ length: n / 3 }, (_, t) => t).sort((a, b) => regiao[a] - regiao[b]);
+  // (contagem por região: estável e sem o sort de ~40 mil triângulos)
+  const cont = new Uint32Array(8);
+  for (let t = 0; t < n / 3; t++) cont[regiao[t] + 1]++;
+  for (let r = 1; r < 8; r++) cont[r] += cont[r - 1];
+  const ordem = new Uint32Array(n / 3);
+  for (let t = 0; t < n / 3; t++) ordem[cont[regiao[t]]++] = t;
   const novo = new THREE.BufferGeometry();
   for (const nome of ["position", "normal", "uv"]) {
     const a = geo.attributes[nome], tam = a.itemSize;
@@ -315,19 +320,49 @@ function suportado() {
   }
 }
 
+// Cenas da renderização (uma por vista), montadas uma vez: a cada mockup só
+// trocam os materiais das camisetas. Os materiais (e as texturas, que vão
+// para a placa de vídeo) valem para o mesmo objeto `pecas` — as três vistas
+// da prévia usam as mesmas texturas, enviadas uma vez só.
+const cenasProntas = {};
+let matsEmUso = null; // { pecas, debug, mats }
+
+function materiaisDaRenderizacao(pecas, opcoes) {
+  const debug = !!(opcoes && opcoes.debug);
+  if (matsEmUso && matsEmUso.pecas === pecas && matsEmUso.debug === debug) return matsEmUso.mats;
+  if (matsEmUso) matsEmUso.mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+  matsEmUso = { pecas, debug, mats: materiais(pecas, opcoes) };
+  return matsEmUso.mats;
+}
+
+function cenaDaVista(vista, mod) {
+  if (!cenasProntas[vista]) {
+    const { cena, camera } = montar(vista, mod, []);
+    const camisas = [];
+    cena.traverse((o) => { if (o.isMesh && o.geometry === mod.camisa) camisas.push(o); });
+    cenasProntas[vista] = { cena, camera, camisas };
+  }
+  return cenasProntas[vista];
+}
+
 // Mesma assinatura do mockup em foto: devolve um canvas 1024 × 1536.
 async function renderizar(vista, pecas, opcoes) {
   if (!suportado()) throw new Error("Sem WebGL neste navegador.");
   const mod = await modelos();
-  const mats = materiais(pecas, opcoes);
-  const { cena, camera } = montar(vista, mod, mats);
+  const mats = materiaisDaRenderizacao(pecas, opcoes);
+  const { cena, camera, camisas } = cenaDaVista(vista, mod);
+  camisas.forEach((m) => { m.material = mats; });
   const r = renderer(1024, 1536);
   r.render(cena, camera);
   const saida = document.createElement("canvas");
   saida.width = 1024; saida.height = 1536;
   saida.getContext("2d").drawImage(r.domElement, 0, 0);
-  mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
   return saida;
+}
+
+// Adianta o download do three.js e do modelo (e o preparo da malha).
+function preparar() {
+  return suportado() ? modelos().then(() => true) : Promise.resolve(false);
 }
 
 // Visualizador que gira (arrastar) e aproxima (roda/pinça). Devolve { destruir }.
@@ -345,8 +380,14 @@ async function visualizador(container, pecas, opcoes) {
   const r = new THREE.WebGLRenderer({ antialias: true });
   r.outputColorSpace = THREE.SRGBColorSpace;
   r.shadowMap.enabled = true;
+  // A camiseta e a luz não se mexem (só a câmera gira): a sombra é
+  // calculada uma vez, não a cada quadro.
+  r.shadowMap.autoUpdate = false;
+  r.shadowMap.needsUpdate = true;
   r.toneMapping = THREE.ACESFilmicToneMapping;
-  r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  // Telas de densidade 2–3 (celular): 1,5 já fica nítido com antialias e
+  // desenha bem menos pixels por quadro.
+  r.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
   container.appendChild(r.domElement);
   r.domElement.style.width = "100%";
   r.domElement.style.height = "100%";
@@ -363,28 +404,45 @@ async function visualizador(container, pecas, opcoes) {
   controles.maxPolarAngle = 1.75;
   controles.autoRotate = op.girar !== false;
   controles.autoRotateSpeed = 1.2;
-  controles.addEventListener("start", () => (controles.autoRotate = false));
   let ativo = true;
+  let visivel = true;
+  let pedido = 0;
+  // Desenha só quando precisa: girando sozinho, ao arrastar/aproximar ou ao
+  // mudar de tamanho — e nada com a aba escondida ou o palco fora da tela.
+  const quadro = () => {
+    pedido = 0;
+    if (!ativo || !visivel || document.hidden) return;
+    controles.update();
+    r.render(cena, camera);
+    if (controles.autoRotate) pedir();
+  };
+  const pedir = () => { if (!pedido && ativo) pedido = requestAnimationFrame(quadro); };
+  controles.addEventListener("start", () => (controles.autoRotate = false));
+  controles.addEventListener("change", pedir);
   const ajustar = () => {
     const w = container.clientWidth || 400, h = container.clientHeight || 500;
     r.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    pedir();
   };
   ajustar();
   const obs = typeof ResizeObserver !== "undefined" ? new ResizeObserver(ajustar) : null;
   if (obs) obs.observe(container);
-  const quadro = () => {
-    if (!ativo) return;
-    controles.update();
-    r.render(cena, camera);
-    requestAnimationFrame(quadro);
-  };
-  quadro();
+  const io = typeof IntersectionObserver !== "undefined"
+    ? new IntersectionObserver((ents) => { visivel = ents.some((e) => e.isIntersecting); pedir(); })
+    : null;
+  if (io) io.observe(container);
+  const aba = () => pedir();
+  document.addEventListener("visibilitychange", aba);
+  pedir();
   return {
     destruir() {
       ativo = false;
+      if (pedido) cancelAnimationFrame(pedido);
       if (obs) obs.disconnect();
+      if (io) io.disconnect();
+      document.removeEventListener("visibilitychange", aba);
       controles.dispose();
       mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
       r.dispose();
@@ -393,6 +451,6 @@ async function visualizador(container, pecas, opcoes) {
   };
 }
 
-const Mockup3D = { renderizar, visualizador, suportado, CAL };
+const Mockup3D = { renderizar, visualizador, suportado, preparar, CAL };
 window.Mockup3D = Mockup3D;
 export default Mockup3D;

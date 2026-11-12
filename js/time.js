@@ -270,7 +270,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261112c";
+const VERSAO_MOCKUP3D = "20261112d";
 let botao3d = null;
 
 // Texturas do 3D da oficial (versao "") ou de outra versão do time.
@@ -309,6 +309,17 @@ function imagemDeBytes(bytes, tipo) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Textura inválida.")); };
     img.src = url;
   });
+}
+
+// Texturas já baixadas (trocar de versão e voltar não baixa de novo).
+const texturasBaixadas = {};
+function texturaDoDrive(scriptUrl, fileId) {
+  if (!texturasBaixadas[fileId]) {
+    texturasBaixadas[fileId] = baixarArquivoDrive(scriptUrl, fileId)
+      .then((bytes) => imagemDeBytes(bytes, "image/jpeg"))
+      .catch((e) => { delete texturasBaixadas[fileId]; throw e; });
+  }
+  return texturasBaixadas[fileId];
 }
 
 async function abrirVer3D() {
@@ -356,8 +367,7 @@ async function abrirVer3D() {
       if (!cfg.driveScriptUrl) throw new Error("As imagens do 3D não estão disponíveis.");
       const pecas = { gola: { cor: t.gola || "" } };
       await Promise.all(["frente", "costas", "mangaEsq", "mangaDir"].filter((id) => t[id]).map(async (id) => {
-        const bytes = await baixarArquivoDrive(cfg.driveScriptUrl, t[id]);
-        pecas[id] = { canvas: await imagemDeBytes(bytes, "image/jpeg") };
+        pecas[id] = { canvas: await texturaDoDrive(cfg.driveScriptUrl, t[id]) };
       }));
       if (!fundo.isConnected || minha !== vez) return;
       if (vivo) { vivo.destruir(); vivo = null; }
