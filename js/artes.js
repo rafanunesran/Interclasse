@@ -242,6 +242,7 @@ const desfazerEditor = () => aplicarHistorico("desfazer", "refazer", "antes");
 const refazerEditor = () => aplicarHistorico("refazer", "desfazer", "depois");
 
 function salvarLayout(imediato) {
+  if (loteEditor) { loteEditor.geral = true; return; }
   const agora = JSON.stringify(layoutConfig);
   if (ultimoLayoutSalvo) registrarHistorico({ tipo: "geral", antes: ultimoLayoutSalvo, depois: agora });
   ultimoLayoutSalvo = agora;
@@ -1974,7 +1975,7 @@ async function arteDoClienteEmCanvas(time, timeId, tam, op) {
 // ---------------- Mockup 3D (js/mockup3d.js) ----------------
 // Carregado só quando é usado (three.js ~600 KB + os modelos). Sem WebGL
 // ou com erro, o mockup em foto (js/mockup.js) continua valendo.
-const VERSAO_MOCKUP3D = "20261112b";
+const VERSAO_MOCKUP3D = "20261112c";
 let promessaMockup3D = null;
 function obterMockup3D() {
   if (window.Mockup3D) return Promise.resolve(window.Mockup3D);
@@ -2395,7 +2396,14 @@ function abrirLayoutDoTime(timeId) {
 function montarEditorLayout(container, timeId) {
   container.dataset.editorLayout = "1";
   editorPedido = { container, timeId };
-  renderizarEditorLayout();
+  desenharEditorLayout();
+}
+
+// O palco do pedido já montado para este time (para reaproveitar quando a
+// tela do time é redesenhada).
+function editorDoPedidoAberto(timeId) {
+  const c = editorPedido && editorPedido.timeId === timeId && editorPedido.container;
+  return c && c.querySelector("#layoutPalco") ? c : null;
 }
 
 function editorNoPedidoVisivel() {
@@ -2411,6 +2419,7 @@ function escolherAlvoDoEditor() {
   if (alvo !== elEditorLayout) {
     if (elEditorLayout && elEditorLayout.isConnected) elEditorLayout.innerHTML = "";
     elEditorLayout = alvo;
+    htmlEditorAnterior = "";
   }
   if (noPedido) {
     if (!editorTravado) layoutModoArtes = layoutModo;
@@ -2429,7 +2438,7 @@ function escolherAlvoDoEditor() {
 // Trocar de aba principal muda onde o editor aparece (aba Artes ou o
 // pedido aberto): redesenha no lugar certo.
 document.querySelectorAll(".aba").forEach((aba) =>
-  aba.addEventListener("click", () => setTimeout(renderizarEditorLayout, 0)));
+  aba.addEventListener("click", () => setTimeout(desenharEditorLayout, 0)));
 
 // Times que aparecem nos seletores (com o filtro de cliente do topo).
 function timesParaLayout() {
@@ -2469,7 +2478,7 @@ function abrirArteDoCliente(clienteId) {
   layoutElSel = "";
   const aba = document.querySelector('.aba[data-aba="artes"]');
   if (aba) aba.click();
-  else renderizarEditorLayout();
+  else desenharEditorLayout();
 }
 
 // Time cujos arquivos (arte, brasão, fonte) aparecem no palco: no modo time,
@@ -2512,7 +2521,36 @@ function ocultoNoEditor(el, aj) {
 
 // Abre o nível do editor para mudar e gravar: { prod (cópia editável),
 // alvo (onde ficam layoutAjustes/elementosExtras), gravar() }.
+// Lote: várias mudanças (ex.: mover 5 elementos selecionados) viram uma
+// gravação só e um passo só de desfazer. Dentro do lote, abrirNivelEditor
+// devolve sempre a mesma cópia e salvarLayout só marca; quem grava é o fim.
+let loteEditor = null;
+async function emLoteEditor(fazer) {
+  if (loteEditor) { fazer(); return; }
+  loteEditor = { nivel: null, geral: false };
+  let lote;
+  try {
+    fazer();
+  } finally {
+    lote = loteEditor;
+    loteEditor = null;
+  }
+  if (lote.geral) salvarLayout(true);
+  if (lote.nivel) await lote.nivel.gravarDeVerdade();
+}
+
 function abrirNivelEditor() {
+  if (loteEditor && loteEditor.nivel) return loteEditor.nivel;
+  const nivel = abrirNivelEditorSemLote();
+  if (nivel && loteEditor) {
+    nivel.gravarDeVerdade = nivel.gravar;
+    nivel.gravar = () => Promise.resolve();
+    loteEditor.nivel = nivel;
+  }
+  return nivel;
+}
+
+function abrirNivelEditorSemLote() {
   const erro = (e) => { console.error(e); estadoSalvarLayout("⚠️ Erro ao salvar"); };
   const cid = modoCliente();
   if (cid) {
@@ -2580,10 +2618,25 @@ function tamanhoDoEditor() {
   return tams[0] || "";
 }
 
+// Pedido de redesenho vindo de fora (Firestore: times, clientes, tamanhos,
+// layout). Junta vários pedidos num quadro só; o editor escondido não é
+// desenhado (fica marcado e desenha quando a aba aparece).
+let quadroEditor = 0;
+let htmlEditorAnterior = "";
 function renderizarEditorLayout() {
-  if (layoutArrastando) return;
+  if (quadroEditor) return;
+  quadroEditor = requestAnimationFrame(() => { quadroEditor = 0; desenharEditorLayout(); });
+}
+
+function editorEscondido() {
+  return !elEditorLayout || !elEditorLayout.isConnected || !!elEditorLayout.closest(".oculto");
+}
+
+function desenharEditorLayout() {
+  if (layoutArrastando || empurraoLayout) return;
   escolherAlvoDoEditor();
   if (!elEditorLayout) return;
+  if (editorEscondido()) { htmlEditorAnterior = ""; return; }
   const foco = document.activeElement && elEditorLayout.contains(document.activeElement) ? document.activeElement : null;
   // Não redesenha com o cursor num campo de texto (perderia o que se digita).
   if (foco && foco.tagName === "INPUT" && foco.type !== "checkbox") return;
@@ -2619,7 +2672,7 @@ function renderizarEditorLayout() {
     ? ` <button type="button" class="link-botao" data-l="abrirCliente">Editar a arte do cliente</button>` : "";
   const ferramenta = (tipo, ic, titulo) =>
     `<button type="button" class="ferramenta" data-add="${tipo}" title="${escAttr(titulo)}" aria-label="${escAttr(titulo)}">${icone(ic)}</button>`;
-  elEditorLayout.innerHTML = `
+  const htmlEditor = `
     <div class="estudio">
       <header class="estudio-topo">
         <span class="estudio-titulo">${icone("palette")} ${layoutModo ? nomeTime : "Layout geral"}</span>
@@ -2676,12 +2729,23 @@ function renderizarEditorLayout() {
               <button type="button" data-zoom="0" class="estudio-zoom-valor" title="Ajustar à tela">${Math.round(layoutZoom * 100)}%</button>
               <button type="button" data-zoom="1" title="Aumentar" aria-label="Aumentar">${icone("plus")}</button>
             </span>
+            <button type="button" class="estudio-atalhos" data-l="atalhos" title="Atalhos do teclado (?)" aria-label="Atalhos do teclado">?</button>
           </div>
         </div>
         <aside class="arte-painel estudio-painel" id="layoutPainel"></aside>
       </div>
-      <p class="estudio-dica">Arraste para mover · alça do canto para redimensionar · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Esc</kbd> solta a seleção</p>
+      <p class="estudio-dica">Arraste para mover · <kbd>Shift</kbd>+clique ou arraste no fundo para selecionar vários · <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> movem 1 mm (<kbd>Shift</kbd>: 10 mm) · <kbd>Ctrl</kbd>+rodinha: zoom · <kbd>?</kbd> todos os atalhos</p>
     </div>`;
+  // Nada mudou em volta do desenho (o caso comum quando chega uma
+  // atualização do Firestore): refaz só o palco e o painel.
+  if (htmlEditor === htmlEditorAnterior && elEditorLayout.querySelector("#layoutPalco")) {
+    atualizarBotoesHistorico();
+    renderizarPalcoLayout();
+    renderizarPainelLayout();
+    return;
+  }
+  htmlEditorAnterior = htmlEditor;
+  elEditorLayout.innerHTML = htmlEditor;
 
   elEditorLayout.querySelector('[data-historico="desfazer"]').onclick = desfazerEditor;
   elEditorLayout.querySelector('[data-historico="refazer"]').onclick = refazerEditor;
@@ -2692,9 +2756,7 @@ function renderizarEditorLayout() {
   elEditorLayout.querySelectorAll("[data-zoom]").forEach((b) => {
     b.onclick = () => {
       const d = Number(b.dataset.zoom);
-      layoutZoom = d === 0 ? 1 : Math.min(3, Math.max(0.5, Math.round((layoutZoom + d * 0.25) * 100) / 100));
-      b.closest(".estudio-zoom").querySelector(".estudio-zoom-valor").textContent = Math.round(layoutZoom * 100) + "%";
-      renderizarPalcoLayout();
+      mudarZoomLayout(d === 0 ? 1 : layoutZoom * (d > 0 ? 1.25 : 0.8));
     };
   });
   // Clique no fundo do palco solta a seleção.
@@ -2724,11 +2786,17 @@ function renderizarEditorLayout() {
       }
       return;
     }
-    if (ev.target.closest(".arte-el") || !layoutElSel) return;
-    layoutElSel = "";
-    renderizarPalcoLayout();
-    renderizarPainelLayout();
+    if (ev.target.closest(".arte-el") || ev.button !== 0) return;
+    // Clique na barra de rolagem não seleciona nada.
+    if (ev.offsetX > palcoFundo.clientWidth || ev.offsetY > palcoFundo.clientHeight) return;
+    selecionarPorLaco(ev, palcoFundo);
   });
+  // Ctrl+rodinha (ou pinça no touchpad): zoom no ponto do mouse.
+  palcoFundo.addEventListener("wheel", (ev) => {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    mudarZoomLayout(layoutZoom * Math.exp(-ev.deltaY * 0.0025), ev);
+  }, { passive: false });
 
   const q = (s) => elEditorLayout.querySelector(s);
   if (q('[data-l="modo"]')) q('[data-l="modo"]').onchange = (ev) => {
@@ -2736,12 +2804,12 @@ function renderizarEditorLayout() {
     layoutModoArtes = layoutModo;
     if (modoTime()) layoutTimePrevia = layoutModo;
     layoutElSel = "";
-    renderizarEditorLayout();
+    desenharEditorLayout();
   };
   if (q('[data-l="abrirCliente"]')) q('[data-l="abrirCliente"]').onclick = () => abrirArteDoCliente(cliDoTime);
-  if (q('[data-l="previa"]')) q('[data-l="previa"]').onchange = (ev) => { layoutTimePrevia = ev.target.value; renderizarEditorLayout(); };
+  if (q('[data-l="previa"]')) q('[data-l="previa"]').onchange = (ev) => { layoutTimePrevia = ev.target.value; desenharEditorLayout(); };
   elEditorLayout.querySelectorAll("[data-peca]").forEach((b) => {
-    b.onclick = () => { layoutPeca = b.dataset.peca; layoutElSel = ""; renderizarEditorLayout(); };
+    b.onclick = () => { layoutPeca = b.dataset.peca; layoutElSel = ""; desenharEditorLayout(); };
   });
   const selTam = q('[data-l="tam"]');
   if (selTam) selTam.onchange = () => { layoutTam = selTam.value; renderizarPalcoLayout(); renderizarPainelLayout(); };
@@ -2750,6 +2818,7 @@ function renderizarEditorLayout() {
   });
   elEditorLayout.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => adicionarElementoLayout(b.dataset.add)));
   q('[data-l="teste"]').onclick = baixarEpsDeTesteLayout;
+  q('[data-l="atalhos"]').onclick = mostrarAtalhosEditor;
 
   renderizarPalcoLayout();
   renderizarPainelLayout();
@@ -2952,6 +3021,8 @@ function renderizarPalcoLayout() {
   }
 
   const fonte = fonteProntaDoTime(time);
+  const selVarios = idsSelecionados();
+  palco.classList.toggle("varios-selecionados", selVarios.length > 1);
   elementosNoEditor().forEach((elGeral) => {
     const ajTime = ehExtra(elGeral.id) ? undefined : ajusteNoEditor(layoutPeca, elGeral.id);
     // Oculto neste time: aparece apagado (dá para selecionar e mostrar de novo).
@@ -2961,7 +3032,8 @@ function renderizarPalcoLayout() {
     const div = document.createElement("div");
     const temAjusteTime = !!ajTime;
     div.className = "arte-el arte-el-" + el.tipo + (el.id === layoutElSel ? " selecionado" : "") +
-      (temAjusteTime ? " ajuste-time" : "") + (oculto ? " oculto-time" : "");
+      (temAjusteTime ? " ajuste-time" : "") + (oculto ? " oculto-time" : "") +
+      (el.id !== layoutElSel && selVarios.includes(el.id) ? " selecionado-junto" : "");
     div.dataset.id = elGeral.id;
     div.dataset.rotulo = rotuloElementoLayout(el) + (oculto ? " (oculto)" : "");
     div.style.left = c.x * s + "px";
@@ -3009,7 +3081,7 @@ function renderizarPalcoLayout() {
 
 // Setas do teclado: movem o elemento selecionado 1 mm (Shift: 10 mm). O
 // desenho acompanha na hora; grava uma vez só, quando as teclas param.
-let empurraoLayout = null; // { elId, m, caixa, timer }
+let empurraoLayout = null; // { chave, m, caixas: [{ id, c }], timer }
 
 function editorLayoutVisivel() {
   return !!(elEditorLayout && elEditorLayout.isConnected && !elEditorLayout.closest(".oculto") &&
@@ -3017,34 +3089,256 @@ function editorLayoutVisivel() {
 }
 
 function empurrarSelecionado(dx, dy) {
-  const el = elementosNoEditor().find((e) => e.id === layoutElSel);
+  const els = elementosSelecionados().filter((e) => !elementoNoEditor(e).travado);
   const m = medidasLayout();
-  if (!el || !m) return;
-  if (!empurraoLayout || empurraoLayout.elId !== el.id) {
-    empurraoLayout = { elId: el.id, m, caixa: caixaNoEditor(el, m) };
+  if (!els.length || !m) return;
+  const chave = els.map((e) => e.id).join(",");
+  if (!empurraoLayout || empurraoLayout.chave !== chave) {
+    if (empurraoLayout) { clearTimeout(empurraoLayout.timer); empurraoLayout.gravar(); }
+    const novo = { chave, m, caixas: els.map((e) => ({ id: e.id, c: caixaNoEditor(e, m) })) };
+    novo.gravar = () => {
+      if (empurraoLayout === novo) empurraoLayout = null;
+      gravarCaixasEmLote(novo.m, novo.caixas.map((x) => ({ id: x.id, caixa: x.c })));
+    };
+    empurraoLayout = novo;
   }
   const e = empurraoLayout;
-  e.caixa = { ...e.caixa, x: e.caixa.x + dx, y: e.caixa.y + dy };
-  const div = elEditorLayout.querySelector(`.arte-el[data-id="${CSS.escape(el.id)}"]`);
-  if (div) {
-    div.style.left = e.caixa.x * m.s + "px";
-    div.style.top = e.caixa.y * m.s + "px";
-  }
+  e.caixas.forEach((x) => {
+    x.c = { ...x.c, x: x.c.x + dx, y: x.c.y + dy };
+    const div = elEditorLayout.querySelector(`.arte-el[data-id="${CSS.escape(x.id)}"]`);
+    if (div) {
+      div.style.left = x.c.x * m.s + "px";
+      div.style.top = x.c.y * m.s + "px";
+    }
+  });
+  const prim = e.caixas.find((x) => x.id === layoutElSel) || e.caixas[0];
   const campoX = elEditorLayout.querySelector('[data-cx="x"]');
   const campoY = elEditorLayout.querySelector('[data-cx="y"]');
-  if (campoX) campoX.value = e.caixa.x.toFixed(1);
-  if (campoY) campoY.value = e.caixa.y.toFixed(1);
+  if (campoX) campoX.value = prim.c.x.toFixed(1);
+  if (campoY) campoY.value = prim.c.y.toFixed(1);
   clearTimeout(e.timer);
-  e.timer = setTimeout(() => {
-    empurraoLayout = null;
-    gravarCaixaLayout(el, e.m, e.caixa);
-    renderizarPalcoLayout();
-    renderizarPainelLayout();
-  }, 450);
+  e.timer = setTimeout(e.gravar, 450);
 }
 
 // ---------------- Operações de elemento (atalhos e botões) ----------------
-let elementoCopiado = null; // Ctrl+C (só no layout geral)
+let elementoCopiado = null; // Ctrl+C: lista de elementos copiados
+
+// ---------------- Seleção de vários elementos ----------------
+// layoutElSel é o principal (o do painel); layoutSelExtra são os outros. Os
+// extras só valem enquanto o principal for o mesmo que os escolheu
+// (layoutSelDono): qualquer código que troque layoutElSel direto volta a
+// uma seleção simples sem precisar saber disto.
+let layoutSelExtra = [];
+let layoutSelDono = "";
+
+function idsSelecionados() {
+  if (!layoutElSel) return [];
+  const existe = new Set(elementosNoEditor().map((e) => e.id));
+  const ids = [layoutElSel].concat(layoutSelDono === layoutElSel ? layoutSelExtra : []);
+  return ids.filter((id, i) => existe.has(id) && ids.indexOf(id) === i);
+}
+
+function elementosSelecionados() {
+  const ids = idsSelecionados();
+  return elementosNoEditor().filter((e) => ids.includes(e.id));
+}
+
+function definirSelecao(ids, principal) {
+  const lista = ids.filter((id, i) => id && ids.indexOf(id) === i);
+  layoutElSel = principal && lista.includes(principal) ? principal : lista[lista.length - 1] || "";
+  layoutSelExtra = lista.filter((id) => id !== layoutElSel);
+  layoutSelDono = layoutElSel;
+}
+
+function alternarNaSelecao(id) {
+  const atuais = idsSelecionados();
+  if (atuais.includes(id)) definirSelecao(atuais.filter((x) => x !== id));
+  else definirSelecao(atuais.concat(id), id);
+}
+
+function redesenharSelecao() {
+  renderizarPalcoLayout();
+  renderizarPainelLayout();
+}
+
+// Caixa (mm) que envolve várias caixas.
+function caixaQueEnvolve(caixas) {
+  const x1 = Math.min(...caixas.map((c) => c.x)), y1 = Math.min(...caixas.map((c) => c.y));
+  const x2 = Math.max(...caixas.map((c) => c.x + c.w)), y2 = Math.max(...caixas.map((c) => c.y + c.h));
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+// Grava as caixas novas de vários elementos numa gravação só (um desfazer).
+function gravarCaixasEmLote(m, novas) {
+  const els = elementosNoEditor();
+  return emLoteEditor(() => {
+    novas.forEach(({ id, caixa }) => {
+      const el = els.find((e) => e.id === id);
+      if (el) gravarCaixaLayout(el, m, caixa);
+    });
+  }).then(redesenharSelecao);
+}
+
+// Alinhar ou distribuir os selecionados entre si (ou na peça, com um só).
+function alinharSelecionados(como) {
+  const m = medidasLayout();
+  const els = elementosSelecionados().filter((e) => !elementoNoEditor(e).travado);
+  if (!m || !els.length) return;
+  const caixas = els.map((e) => ({ id: e.id, c: caixaNoEditor(e, m) }));
+  const g = caixas.length > 1 ? caixaQueEnvolve(caixas.map((x) => x.c)) : { x: 0, y: 0, w: m.dim.w, h: m.dim.h };
+  let novas;
+  if (como === "distribuirH" || como === "distribuirV") {
+    if (caixas.length < 3) { estadoSalvarLayout("Distribuir precisa de 3 ou mais elementos"); return; }
+    const [p, t] = como === "distribuirH" ? ["x", "w"] : ["y", "h"];
+    const ord = caixas.slice().sort((a, b) => (a.c[p] + a.c[t] / 2) - (b.c[p] + b.c[t] / 2));
+    const ocupado = ord.reduce((s, x) => s + x.c[t], 0);
+    const vao = (g[t] - ocupado) / (ord.length - 1);
+    let pos = g[p];
+    novas = ord.map((x) => {
+      const c = { ...x.c, [p]: pos };
+      pos += x.c[t] + vao;
+      return { id: x.id, caixa: c };
+    });
+  } else {
+    novas = caixas.map(({ id, c }) => {
+      const n = { ...c };
+      if (como === "esquerda") n.x = g.x;
+      else if (como === "centroH") n.x = g.x + (g.w - c.w) / 2;
+      else if (como === "direita") n.x = g.x + g.w - c.w;
+      else if (como === "topo") n.y = g.y;
+      else if (como === "meio") n.y = g.y + (g.h - c.h) / 2;
+      else if (como === "base") n.y = g.y + g.h - c.h;
+      return { id, caixa: n };
+    });
+  }
+  gravarCaixasEmLote(m, novas);
+}
+
+function excluirSelecionados() {
+  const els = elementosSelecionados();
+  if (els.length < 2) { if (els[0]) excluirElementoLayout(els[0]); return; }
+  layoutElSel = "";
+  emLoteEditor(() => els.forEach((e) => excluirElementoLayout(e, true)))
+    .then(() => { estadoSalvarLayout(`${els.length} elementos ${layoutModo ? "excluídos/ocultos" : "excluídos"} — Ctrl+Z desfaz`); desenharEditorLayout(); });
+}
+
+function duplicarSelecionados(lista) {
+  const els = lista || elementosSelecionados();
+  if (!els.length) return;
+  if (els.length === 1) { duplicarElementoLayout(els[0]); return; }
+  const novos = [];
+  emLoteEditor(() => els.forEach((e) => novos.push(duplicarElementoLayout(e, undefined, true))))
+    .then(() => { definirSelecao(novos.filter(Boolean)); desenharEditorLayout(); });
+}
+
+function travarSelecionados(travar) {
+  const els = elementosSelecionados();
+  emLoteEditor(() => els.forEach((e) => gravarEstiloElemento(e.id, "travado", travar, true)))
+    .then(redesenharSelecao);
+}
+
+// Laço: arrastar no fundo do palco desenha um retângulo e seleciona o que
+// ele tocar (Shift: soma à seleção). Clique sem arrastar solta a seleção.
+function selecionarPorLaco(ev, fundo) {
+  const palco = document.getElementById("layoutPalco");
+  const m = medidasLayout();
+  if (!palco || !m) return;
+  const r0 = palco.getBoundingClientRect();
+  const somar = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+  const antes = somar ? idsSelecionados() : [];
+  const p0 = { x: ev.clientX - r0.left, y: ev.clientY - r0.top };
+  let laco = null, ids = antes;
+  fundo.setPointerCapture(ev.pointerId);
+  const mover = (e) => {
+    const r = palco.getBoundingClientRect();
+    const p1 = { x: e.clientX - r.left, y: e.clientY - r.top };
+    if (!laco && Math.hypot(p1.x - p0.x, p1.y - p0.y) < 4) return;
+    if (!laco) {
+      laco = document.createElement("div");
+      laco.className = "laco-selecao";
+      palco.appendChild(laco);
+    }
+    const x = Math.min(p0.x, p1.x), y = Math.min(p0.y, p1.y), w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
+    Object.assign(laco.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px" });
+    const sel = { x: x / m.s, y: y / m.s, w: w / m.s, h: h / m.s };
+    const dentro = elementosNoEditor().filter((el) => {
+      const c = caixaNoEditor(el, m);
+      return c.x < sel.x + sel.w && c.x + c.w > sel.x && c.y < sel.y + sel.h && c.y + c.h > sel.y;
+    }).map((el) => el.id);
+    ids = antes.concat(dentro.filter((id) => !antes.includes(id)));
+    palco.querySelectorAll(".arte-el").forEach((d) => d.classList.toggle("selecionado-junto", ids.includes(d.dataset.id)));
+  };
+  const soltar = () => {
+    fundo.removeEventListener("pointermove", mover);
+    fundo.removeEventListener("pointerup", soltar);
+    fundo.removeEventListener("pointercancel", soltar);
+    if (laco) {
+      laco.remove();
+      definirSelecao(ids, ids.includes(layoutElSel) ? layoutElSel : undefined);
+      if (ids.length > 1) estadoSalvarLayout(`${ids.length} elementos selecionados`);
+      redesenharSelecao();
+    } else if (layoutElSel && !somar) {
+      layoutElSel = "";
+      redesenharSelecao();
+    }
+  };
+  fundo.addEventListener("pointermove", mover);
+  fundo.addEventListener("pointerup", soltar);
+  fundo.addEventListener("pointercancel", soltar);
+}
+
+// Zoom do palco: 100% = a peça inteira cabendo na tela. Com `ev` (rodinha),
+// o ponto embaixo do mouse fica parado.
+let zoomPendente = null;
+function mudarZoomLayout(novo, ev) {
+  const z = Math.min(4, Math.max(0.25, novo));
+  if (!zoomPendente) {
+    const palco = document.getElementById("layoutPalco");
+    const fundo = palco && palco.closest(".estudio-palco-fundo");
+    const r = palco && palco.getBoundingClientRect();
+    zoomPendente = { de: layoutZoom, ancora: ev && r ? { x: ev.clientX - r.left, y: ev.clientY - r.top, fundo } : null };
+    requestAnimationFrame(() => {
+      const pend = zoomPendente;
+      zoomPendente = null;
+      renderizarPalcoLayout();
+      const v = elEditorLayout && elEditorLayout.querySelector(".estudio-zoom-valor");
+      if (v) v.textContent = Math.round(layoutZoom * 100) + "%";
+      if (pend.ancora && pend.ancora.fundo) {
+        const k = layoutZoom / pend.de - 1;
+        pend.ancora.fundo.scrollLeft += pend.ancora.x * k;
+        pend.ancora.fundo.scrollTop += pend.ancora.y * k;
+      }
+    });
+  }
+  layoutZoom = Math.round(z * 100) / 100;
+}
+
+// Lista de atalhos (tecla ?).
+function mostrarAtalhosEditor() {
+  if (document.querySelector(".atalhos-editor")) return;
+  const linhas = [
+    ["Clique", "Seleciona"], ["Shift + clique", "Põe ou tira da seleção"], ["Arrastar no fundo", "Seleciona vários (laço)"],
+    ["Ctrl + A", "Seleciona tudo da peça"], ["Esc", "Solta a seleção"],
+    ["← ↑ → ↓", "Move 1 mm (Shift: 10 mm)"], ["Alt ao arrastar", "Sem guias magnéticas"],
+    ["Ctrl + Z / Ctrl + Y", "Desfaz / refaz"], ["Ctrl + C / Ctrl + V", "Copia / cola"], ["Ctrl + D", "Duplica"],
+    ["Delete", "Exclui (no time: oculta)"], ["] / [", "Uma camada para frente / para trás"],
+    ["Ctrl + ] / Ctrl + [", "Para a frente de tudo / para trás de tudo"], ["Ctrl + Shift + L", "Trava ou destrava"],
+    ["Ctrl + rodinha", "Zoom no ponto do mouse"], ["+ / − / 0", "Aumenta / diminui / ajusta à tela"]
+  ];
+  const caixa = document.createElement("div");
+  caixa.className = "atalhos-editor";
+  caixa.setAttribute("role", "dialog");
+  caixa.setAttribute("aria-label", "Atalhos do editor");
+  caixa.innerHTML = `<div class="atalhos-editor-caixa"><h3>Atalhos do editor</h3><dl>${linhas.map(([k, v]) =>
+    `<dt>${k.split(" / ").map((t) => `<kbd>${escapeHtmlAdmin(t)}</kbd>`).join(" / ")}</dt><dd>${escapeHtmlAdmin(v)}</dd>`).join("")}</dl>
+    <button type="button" class="secundario">Fechar</button></div>`;
+  const fechar = () => { caixa.remove(); document.removeEventListener("keydown", tecla, true); };
+  const tecla = (e) => { if (e.key === "Escape" || e.key === "?") { e.preventDefault(); e.stopPropagation(); fechar(); } };
+  caixa.addEventListener("click", (e) => { if (e.target === caixa || e.target.tagName === "BUTTON") fechar(); });
+  document.addEventListener("keydown", tecla, true);
+  document.body.appendChild(caixa);
+  caixa.querySelector("button").focus();
+}
 
 // ---------------- Elementos só do time (no "Editar arte" do pedido) ----------------
 // Além de ajustar os do layout geral, o pedido pode ter elementos próprios:
@@ -3102,7 +3396,7 @@ function elementoSelecionado() {
   return elementosNoEditor().find((e) => e.id === layoutElSel) || null;
 }
 
-function duplicarElementoLayout(el, deslocar) {
+function duplicarElementoLayout(el, deslocar, semDesenhar) {
   // No pedido, a cópia leva o que vale no time (posição e estilo próprios).
   const base = layoutModo && !ehExtra(el.id) ? elementoNoEditor(el) : el;
   const copia = limparParaFirestore(base);
@@ -3115,26 +3409,35 @@ function duplicarElementoLayout(el, deslocar) {
   copia.caixa = { ...caixaBase, x: arred1(caixaBase.x + d), y: arred1(caixaBase.y + d) };
   delete copia.ajustes;
   delete copia.travado;
+  if (semDesenhar) {
+    if (layoutModo) mudarExtrasTime((lista) => lista.push(copia));
+    else { elementosDaPeca(layoutPeca).push(copia); salvarLayout(true); }
+    return copia.id;
+  }
   layoutElSel = copia.id;
   if (layoutModo) {
-    mudarExtrasTime((lista) => lista.push(copia)).then(() => renderizarEditorLayout());
-    return;
+    mudarExtrasTime((lista) => lista.push(copia)).then(() => desenharEditorLayout());
+    return copia.id;
   }
   elementosDaPeca(layoutPeca).push(copia);
   salvarLayout(true);
-  renderizarEditorLayout();
+  desenharEditorLayout();
+  return copia.id;
 }
 
-function excluirElementoLayout(el) {
+function excluirElementoLayout(el, semDesenhar) {
   if (layoutModo) {
     if (ehExtra(el.id)) {
       layoutElSel = "";
-      mudarExtrasTime((lista) => lista.splice(lista.findIndex((x) => x.id === el.id), 1))
-        .then(() => { estadoSalvarLayout("Excluído — Ctrl+Z desfaz"); renderizarEditorLayout(); });
+      const p = mudarExtrasTime((lista) => { const i = lista.findIndex((x) => x.id === el.id); if (i >= 0) lista.splice(i, 1); });
+      if (!semDesenhar) p.then(() => { estadoSalvarLayout("Excluído — Ctrl+Z desfaz"); desenharEditorLayout(); });
     } else {
       // Do layout geral não se apaga no pedido: oculta só neste time.
-      gravarAjusteTime(el.id, (a) => { a.oculto = true; }).then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
-      estadoSalvarLayout("Oculto neste time — Ctrl+Z desfaz");
+      const p = gravarAjusteTime(el.id, (a) => { a.oculto = true; });
+      if (!semDesenhar) {
+        p.then(() => { renderizarPalcoLayout(); renderizarPainelLayout(); });
+        estadoSalvarLayout("Oculto neste time — Ctrl+Z desfaz");
+      }
     }
     return;
   }
@@ -3144,8 +3447,9 @@ function excluirElementoLayout(el) {
   els.splice(i, 1);
   layoutElSel = "";
   salvarLayout(true);
+  if (semDesenhar) return;
   estadoSalvarLayout("Excluído — Ctrl+Z desfaz");
-  renderizarEditorLayout();
+  desenharEditorLayout();
 }
 
 // Ordem das camadas: o fim da lista fica por cima. `para`: "frente",
@@ -3185,29 +3489,51 @@ document.addEventListener("keydown", (ev) => {
 
   if (ctrl && tecla === "z") { ev.preventDefault(); (ev.shiftKey ? refazerEditor : desfazerEditor)(); return; }
   if (ctrl && tecla === "y") { ev.preventDefault(); refazerEditor(); return; }
-  if (ctrl && tecla === "c" && el) {
-    elementoCopiado = limparParaFirestore(layoutModo ? elementoNoEditor(el) : el);
-    estadoSalvarLayout("Copiado — Ctrl+V cola");
+  const sel = elementosSelecionados();
+  if (ctrl && tecla === "a") {
+    ev.preventDefault();
+    definirSelecao(elementosNoEditor().map((e) => e.id), layoutElSel);
+    estadoSalvarLayout(`${idsSelecionados().length} elementos selecionados`);
+    redesenharSelecao();
     return;
   }
-  if (ctrl && tecla === "v" && elementoCopiado) { ev.preventDefault(); duplicarElementoLayout(elementoCopiado); return; }
-  if (ctrl && tecla === "d" && el) { ev.preventDefault(); duplicarElementoLayout(el); return; }
+  if (ctrl && tecla === "c" && sel.length) {
+    elementoCopiado = sel.map((e) => limparParaFirestore(layoutModo ? elementoNoEditor(e) : e));
+    estadoSalvarLayout(sel.length > 1 ? `${sel.length} copiados — Ctrl+V cola` : "Copiado — Ctrl+V cola");
+    return;
+  }
+  if (ctrl && tecla === "v" && elementoCopiado) { ev.preventDefault(); duplicarSelecionados([].concat(elementoCopiado)); return; }
+  if (ctrl && tecla === "d" && sel.length) { ev.preventDefault(); duplicarSelecionados(); return; }
+  if (ctrl && ev.shiftKey && tecla === "l" && sel.length) {
+    ev.preventDefault();
+    travarSelecionados(!sel.every((e) => elementoNoEditor(e).travado));
+    return;
+  }
+  if ((ev.key === "]" || ev.key === "[") && el && sel.length === 1) {
+    ev.preventDefault();
+    moverCamadaLayout(el, ev.key === "]" ? (ctrl ? "topo" : "frente") : (ctrl ? "fundo" : "tras"));
+    return;
+  }
   if (ctrl) return;
 
+  if (ev.key === "?") { ev.preventDefault(); mostrarAtalhosEditor(); return; }
+  if (ev.key === "+" || ev.key === "=") { ev.preventDefault(); mudarZoomLayout(layoutZoom * 1.25); return; }
+  if (ev.key === "-" || ev.key === "_") { ev.preventDefault(); mudarZoomLayout(layoutZoom * 0.8); return; }
+  if (ev.key === "0") { ev.preventDefault(); mudarZoomLayout(1); return; }
   if (ev.key === "Escape") {
     if (contaGotasAlvo) { sairContaGotas(); return; }
     if (layoutElSel) { layoutElSel = ""; renderizarPalcoLayout(); renderizarPainelLayout(); }
     return;
   }
-  if ((ev.key === "Delete" || ev.key === "Backspace") && el) {
+  if ((ev.key === "Delete" || ev.key === "Backspace") && sel.length) {
     ev.preventDefault();
-    excluirElementoLayout(el);
+    excluirSelecionados();
     return;
   }
   const passos = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  if (!passos[ev.key] || !el) return;
+  if (!passos[ev.key] || !sel.length) return;
   ev.preventDefault();
-  if (elementoNoEditor(el).travado) { estadoSalvarLayout("Elemento travado"); return; }
+  if (sel.every((e) => elementoNoEditor(e).travado)) { estadoSalvarLayout(sel.length > 1 ? "Elementos travados" : "Elemento travado"); return; }
   const k = ev.shiftKey ? 10 : 1;
   empurrarSelecionado(passos[ev.key][0] * k, passos[ev.key][1] * k);
 });
@@ -3406,14 +3732,122 @@ function porDigitosPuxado(elT, n, ini, c, lado, dx, dy) {
   return { ...(elT.porDigitos || {}), [n]: { w: pct(w, c.w), h: pct(h, c.h), esticar: true } };
 }
 
+// Guias magnéticas: bordas e centro da peça e dos outros elementos (os
+// de `fora` não contam — são os que estão sendo mexidos).
+function alvosDeEncaixe(m, fora) {
+  const alvos = { x: [0, m.dim.w / 2, m.dim.w], y: [0, m.dim.h / 2, m.dim.h] };
+  elementosNoEditor().forEach((o) => {
+    if (fora.includes(o.id)) return;
+    const aj = ajusteNoEditor(layoutPeca, o.id);
+    if (!EPS.elementoDoTime(o, aj) || ocultoNoEditor(o, aj)) return;
+    const c = caixaNoEditor(o, m);
+    alvos.x.push(c.x, c.x + c.w / 2, c.x + c.w);
+    alvos.y.push(c.y, c.y + c.h / 2, c.y + c.h);
+  });
+  return alvos;
+}
+
+// Desenha e encaixa nas guias. encaixar(pontos, "x"|"y") devolve o
+// deslocamento (mm) até a guia mais perto (ou 0) e desenha a linha.
+function guiasDoPalco(m, alvos) {
+  const palco = document.getElementById("layoutPalco");
+  const tolerancia = 6 / m.s; // 6 px na tela, em mm
+  const linhas = [];
+  return {
+    limpar() { linhas.forEach((g) => g.remove()); linhas.length = 0; },
+    encaixar(pontos, eixo) {
+      let melhor = null;
+      pontos.forEach((p) => alvos[eixo].forEach((l) => {
+        const d = l - p;
+        if (Math.abs(d) <= tolerancia && (!melhor || Math.abs(d) < Math.abs(melhor.d))) melhor = { d, l };
+      }));
+      if (!melhor || !palco) return 0;
+      const g = document.createElement("div");
+      g.className = eixo === "x" ? "guia-v" : "guia-h";
+      if (eixo === "x") g.style.left = melhor.l * m.s + "px";
+      else g.style.top = melhor.l * m.s + "px";
+      palco.appendChild(g);
+      linhas.push(g);
+      return melhor.d;
+    }
+  };
+}
+
+// Arrastar vários selecionados juntos (os travados ficam). Clique sem
+// mover num deles deixa só ele selecionado.
+function arrastarGrupo(ev, div, ids, elId) {
+  const m = medidasLayout();
+  const palco = document.getElementById("layoutPalco");
+  if (!m || !palco) return;
+  const moveis = elementosNoEditor().filter((e) => ids.includes(e.id) && !elementoNoEditor(e).travado);
+  const ini = moveis.map((e) => ({ id: e.id, c: caixaNoEditor(e, m), div: palco.querySelector(`.arte-el[data-id="${CSS.escape(e.id)}"]`) }));
+  const g0 = ini.length ? caixaQueEnvolve(ini.map((x) => x.c)) : null;
+  const guias = guiasDoPalco(m, alvosDeEncaixe(m, ids));
+  const x0 = ev.clientX, y0 = ev.clientY;
+  let dx = 0, dy = 0, moveu = false;
+  layoutArrastando = true;
+  div.setPointerCapture(ev.pointerId);
+  const mover = (e) => {
+    if (!g0) return;
+    dx = (e.clientX - x0) / m.s;
+    dy = (e.clientY - y0) / m.s;
+    if (!moveu && Math.hypot(e.clientX - x0, e.clientY - y0) < 3) return;
+    moveu = true;
+    guias.limpar();
+    if (!e.altKey) {
+      dx += guias.encaixar([g0.x + dx, g0.x + dx + g0.w / 2, g0.x + dx + g0.w], "x");
+      dy += guias.encaixar([g0.y + dy, g0.y + dy + g0.h / 2, g0.y + dy + g0.h], "y");
+    }
+    ini.forEach((x) => {
+      if (!x.div) return;
+      x.div.style.left = (x.c.x + dx) * m.s + "px";
+      x.div.style.top = (x.c.y + dy) * m.s + "px";
+    });
+    estadoSalvarLayout(`${ini.length} elementos: ${dx >= 0 ? "+" : ""}${dx.toFixed(1)} × ${dy >= 0 ? "+" : ""}${dy.toFixed(1)} mm`);
+  };
+  const soltar = () => {
+    div.removeEventListener("pointermove", mover);
+    div.removeEventListener("pointerup", soltar);
+    div.removeEventListener("pointercancel", soltar);
+    guias.limpar();
+    layoutArrastando = false;
+    if (moveu && (dx || dy)) {
+      gravarCaixasEmLote(m, ini.map((x) => ({ id: x.id, caixa: { ...x.c, x: x.c.x + dx, y: x.c.y + dy } })));
+    } else {
+      definirSelecao([elId]);
+      redesenharSelecao();
+    }
+  };
+  div.addEventListener("pointermove", mover);
+  div.addEventListener("pointerup", soltar);
+  div.addEventListener("pointercancel", soltar);
+}
+
 function ligarArrasteLayout(div, alca, el, alcaGiro) {
   div.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 || contaGotasAlvo) return; // conta-gotas: quem trata é o palco
     ev.preventDefault();
     ev.stopPropagation();
-    if (layoutElSel !== el.id) {
-      layoutElSel = el.id;
-      document.querySelectorAll("#layoutPalco .arte-el").forEach((d) => d.classList.toggle("selecionado", d === div));
+    // Shift+clique: põe ou tira da seleção (sem mover).
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+      alternarNaSelecao(el.id);
+      redesenharSelecao();
+      return;
+    }
+    const sel = idsSelecionados();
+    const ehAlca = ev.target === alca || ev.target === alcaGiro || !!(ev.target.dataset && ev.target.dataset.lado);
+    if (sel.length > 1 && sel.includes(el.id) && !ehAlca) {
+      arrastarGrupo(ev, div, sel, el.id);
+      return;
+    }
+    if (layoutElSel !== el.id || sel.length > 1) {
+      definirSelecao([el.id]);
+      document.querySelectorAll("#layoutPalco .arte-el").forEach((d) => {
+        d.classList.toggle("selecionado", d === div);
+        d.classList.remove("selecionado-junto");
+      });
+      const palcoSel = document.getElementById("layoutPalco");
+      if (palcoSel) palcoSel.classList.remove("varios-selecionados");
       renderizarPainelLayout();
     }
     const elT = elementoNoEditor(el);
@@ -3501,52 +3935,30 @@ function ligarArrasteLayout(div, alca, el, alcaGiro) {
     }
 
     const redimensionar = ev.target === alca;
-    // Guias magnéticas: bordas e centro da peça e dos outros elementos.
-    const palco = document.getElementById("layoutPalco");
-    const alvos = { x: [0, m.dim.w / 2, m.dim.w], y: [0, m.dim.h / 2, m.dim.h] };
-    elementosNoEditor().forEach((o) => {
-      if (o.id === el.id) return;
-      const oT = EPS.elementoDoTime(o, ajusteNoEditor(layoutPeca, o.id));
-      if (!oT) return;
-      const c = caixaNoEditor(o, m);
-      alvos.x.push(c.x, c.x + c.w / 2, c.x + c.w);
-      alvos.y.push(c.y, c.y + c.h / 2, c.y + c.h);
-    });
-    const tolerancia = 6 / m.s; // 6 px na tela, em mm
-    const guias = [];
-    const limparGuias = () => { guias.forEach((g) => g.remove()); guias.length = 0; };
-    const guia = (eixo, valor) => {
-      const g = document.createElement("div");
-      g.className = "guia-" + eixo;
-      if (eixo === "v") g.style.left = valor * m.s + "px";
-      else g.style.top = valor * m.s + "px";
-      palco.appendChild(g);
-      guias.push(g);
-    };
-    const encaixar = (pontos, lista) => {
-      let melhor = null;
-      pontos.forEach((p) => lista.forEach((l) => {
-        const d = l - p;
-        if (Math.abs(d) <= tolerancia && (!melhor || Math.abs(d) < Math.abs(melhor.d))) melhor = { d, l };
-      }));
-      return melhor;
-    };
+    // Guias magnéticas (ao mover e ao redimensionar; Alt desliga).
+    const guias = guiasDoPalco(m, alvosDeEncaixe(m, [el.id]));
+    const limparGuias = () => guias.limpar();
 
     const mover = (e) => {
       const dx = (e.clientX - x0) / m.s, dy = (e.clientY - y0) / m.s;
       limparGuias();
       if (redimensionar) {
-        const w = Math.max(2, ini.w + dx);
+        let w = Math.max(2, ini.w + dx);
         // Imagem com proporção travada acompanha a largura; livre, estica.
-        const livre = EPS.imagemLivre(elT);
-        atual = { x: ini.x, y: ini.y, w, h: ehCaixaImagem(el) && !livre ? w / prop : Math.max(2, ini.h + dy) };
+        const travada = ehCaixaImagem(el) && !EPS.imagemLivre(elT);
+        let h = travada ? w / prop : Math.max(2, ini.h + dy);
+        if (!e.altKey) {
+          w = Math.max(2, w + guias.encaixar([ini.x + w], "x"));
+          if (travada) h = w / prop;
+          else h = Math.max(2, h + guias.encaixar([ini.y + h], "y"));
+        }
+        atual = { x: ini.x, y: ini.y, w, h };
+        estadoSalvarLayout(`${w.toFixed(1)} × ${h.toFixed(1)} mm`);
       } else {
         atual = { x: ini.x + dx, y: ini.y + dy, w: ini.w, h: ini.h };
         if (!e.altKey) {
-          const sx = encaixar([atual.x, atual.x + atual.w / 2, atual.x + atual.w], alvos.x);
-          const sy = encaixar([atual.y, atual.y + atual.h / 2, atual.y + atual.h], alvos.y);
-          if (sx) { atual.x += sx.d; guia("v", sx.l); }
-          if (sy) { atual.y += sy.d; guia("h", sy.l); }
+          atual.x += guias.encaixar([atual.x, atual.x + atual.w / 2, atual.x + atual.w], "x");
+          atual.y += guias.encaixar([atual.y, atual.y + atual.h / 2, atual.y + atual.h], "y");
         }
       }
       div.style.left = atual.x * m.s + "px";
@@ -3579,10 +3991,10 @@ function elementoNoEditor(el) {
 
 // Grava um estilo (cor, giro, efeito, travado...) de um elemento da peça
 // aberta: no layout geral muda o elemento; no time, o estilo próprio dele.
-function gravarEstiloElemento(elId, k, v) {
+function gravarEstiloElemento(elId, k, v, semDesenhar) {
   const el = elementosNoEditor().find((e) => e.id === elId);
   if (!el) return Promise.resolve();
-  const redesenhar = () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
+  const redesenhar = semDesenhar ? () => {} : () => { renderizarPalcoLayout(); renderizarPainelLayout(); };
   if (layoutModo && ehExtra(elId)) {
     return mudarExtra(elId, (e) => { e[k] = v; }).then(redesenhar);
   }
@@ -3690,12 +4102,12 @@ async function adicionarImagemLayout() {
   layoutElSel = el.id;
   if (layoutModo) {
     await mudarExtrasTime((lista) => lista.push(el));
-    renderizarEditorLayout();
+    desenharEditorLayout();
     return;
   }
   elementosDaPeca(layoutPeca).push(el);
   salvarLayout(true);
-  renderizarEditorLayout();
+  desenharEditorLayout();
 }
 
 function adicionarElementoLayout(tipo) {
@@ -3737,12 +4149,12 @@ function adicionarElementoLayout(tipo) {
   }
   layoutElSel = el.id;
   if (layoutModo) {
-    mudarExtrasTime((lista) => lista.push(el)).then(() => renderizarEditorLayout());
+    mudarExtrasTime((lista) => lista.push(el)).then(() => desenharEditorLayout());
     return;
   }
   elementosDaPeca(layoutPeca).push(el);
   salvarLayout(true);
-  renderizarEditorLayout();
+  desenharEditorLayout();
 }
 
 // ---------------- Número: tamanho por quantidade de dígitos ----------------
@@ -3936,6 +4348,7 @@ function renderizarPainelLayout() {
   // Elemento só do time: no pedido ele se edita inteiro, como no layout geral.
   const extra = !!(el && layoutModo && ehExtra(el.id));
   const edicaoCompleta = !layoutModo || extra;
+  const selIds = idsSelecionados();
   painel.innerHTML = `
     <div class="painel-cabecalho"><span class="ativo">Design</span></div>
     <section class="painel-secao">
@@ -3945,7 +4358,7 @@ function renderizarPainelLayout() {
         const ajE = doTime ? undefined : ajusteNoEditor(layoutPeca, e.id);
         const eT = EPS.elementoDoTime(e, ajE) || { ...e, ...((ajE && ajE.estilo) || {}) };
         const ocE = !doTime && ocultoNoEditor(e, ajE);
-        return `<li class="${e.id === layoutElSel ? "ativo" : ""}${ocE ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
+        return `<li class="${e.id === layoutElSel ? "ativo" : selIds.includes(e.id) ? "ativo junto" : ""}${ocE ? " apagado" : ""}" data-id="${escAttr(e.id)}" tabindex="0" role="button">` +
           `<span class="el-icone">${iconeElementoLayout(e)}</span><span class="el-nome">${escapeHtmlAdmin(rotuloElementoLayout(e))}</span>` +
           `${seloAjusteTime(ajE)}` +
           (doTime ? (layoutAluno ? ' <span class="badge selo-do-time" title="Elemento só desta camiseta">só desta camiseta</span>'
@@ -3981,12 +4394,17 @@ function renderizarPainelLayout() {
     };
   });
   painel.querySelectorAll("li[data-id]").forEach((li) => {
-    li.onclick = () => { layoutElSel = li.dataset.id; renderizarPalcoLayout(); renderizarPainelLayout(); };
+    li.onclick = (ev) => {
+      if (ev.shiftKey || ev.ctrlKey || ev.metaKey) alternarNaSelecao(li.dataset.id);
+      else definirSelecao([li.dataset.id]);
+      redesenharSelecao();
+    };
     li.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); } };
   });
   const m = medidasLayout();
   if (!el && layoutPeca === "etiquetaTam" && !layoutModo) renderizarPainelEtiqueta();
   if (!el || !m) return;
+  if (selIds.length > 1) { renderizarPainelVarios(selIds); return; }
   const aj = ajusteNoEditor(layoutPeca, el.id);
   // Numa versão, os botões de "voltar" desfazem só o ajuste dela.
   const ajProprio = layoutAluno ? ajusteProprioIndividual(layoutPeca, el.id)
@@ -4171,13 +4589,6 @@ function renderizarPainelLayout() {
     };
   });
   box.querySelectorAll("[data-espelhar]").forEach((b) => (b.onclick = () => gravarEstilo(b.dataset.espelhar, !elT[b.dataset.espelhar])));
-  // Deslizante e número do mesmo efeito andam juntos.
-  box.querySelectorAll('input[type="range"][data-p]').forEach((r) => {
-    r.oninput = () => {
-      const par = r.parentElement.querySelector('input[type="number"]');
-      if (par) par.value = r.value;
-    };
-  });
   const chkOculto = box.querySelector("[data-oculto]");
   if (chkOculto) {
     chkOculto.onchange = () => {
@@ -4219,6 +4630,48 @@ function renderizarPainelLayout() {
     inp.onchange = () => {
       gravarEstilo(inp.dataset.p, inp.type === "checkbox" ? inp.checked : inp.type === "number" || inp.type === "range" ? Number(inp.value) || 0 : inp.value);
     };
+  });
+  // Prévia ao vivo: enquanto se arrasta um deslizante ou se digita um número,
+  // o desenho acompanha; grava só no "change" (soltar / sair do campo).
+  const previaEstilo = (k, v) => {
+    if (k === "rotacao") {
+      const div = document.querySelector(`#layoutPalco .arte-el[data-id="${CSS.escape(el.id)}"]`);
+      if (div) div.style.transform = `rotate(${Number(v) || 0}deg)`;
+      return;
+    }
+    previaElementoNoPalco(el.id, { ...elT, [k]: v }, c);
+  };
+  box.querySelectorAll('input[data-p]').forEach((inp) => {
+    if (inp.type !== "number" && inp.type !== "range") return;
+    inp.addEventListener("input", () => {
+      const par = inp.parentElement.querySelector(`input[data-p="${inp.dataset.p}"]:not([type="${inp.type}"])`);
+      if (par) par.value = inp.value;
+      previaEstilo(inp.dataset.p, Number(inp.value) || 0);
+    });
+  });
+  box.querySelectorAll("[data-cx]").forEach((inp) => {
+    inp.addEventListener("input", () => {
+      const v = Number(inp.value);
+      if (!(v > 0) && inp.dataset.cx !== "x" && inp.dataset.cx !== "y") return;
+      previaElementoNoPalco(el.id, elT, { ...c, [inp.dataset.cx]: v || 0 });
+    });
+  });
+  box.querySelectorAll("[data-cor-rgb]").forEach((inp) => {
+    inp.addEventListener("input", () => {
+      previaEstilo(inp.dataset.corRgb, hexParaCmyk(inp.value));
+      const amostra = inp.closest(".arte-amostra-cor");
+      if (amostra) amostra.style.background = inp.value;
+    });
+  });
+  box.querySelectorAll("[data-cor]").forEach((grupo) => {
+    grupo.querySelectorAll("input[data-i]").forEach((inp) => {
+      inp.addEventListener("input", () => {
+        const v = [0, 1, 2, 3].map((i) => Math.max(0, Math.min(100, Number(grupo.querySelector(`[data-i="${i}"]`).value) || 0)));
+        previaEstilo(grupo.dataset.cor, v);
+        const amostra = grupo.querySelector(".arte-amostra-cor");
+        if (amostra) amostra.style.background = cmykParaCss(v);
+      });
+    });
   });
   ligarPainelPorDigitos(box, el, elT, c);
   // Amostra: seletor de cor; conta-gotas: pega a cor de um ponto da arte.
@@ -4264,6 +4717,66 @@ function renderizarPainelLayout() {
         return;
       }
       redesenhar();
+    };
+  });
+}
+
+// Painel com vários elementos selecionados: alinhar e distribuir entre si,
+// travar, duplicar e excluir todos juntos.
+function renderizarPainelVarios(ids) {
+  const box = document.getElementById("layoutPainelEl");
+  if (!box) return;
+  const els = elementosSelecionados();
+  const travados = els.filter((e) => elementoNoEditor(e).travado).length;
+  const todosTravados = travados === els.length;
+  const alinhar = [["esquerda", "align-start-vertical", "Alinhar as bordas esquerdas"], ["centroH", "align-center-vertical", "Centralizar na largura (entre si)"],
+    ["direita", "align-end-vertical", "Alinhar as bordas direitas"], ["topo", "align-start-horizontal", "Alinhar os topos"],
+    ["meio", "align-center-horizontal", "Centralizar na altura (entre si)"], ["base", "align-end-horizontal", "Alinhar as bases"]];
+  const algumExcluivel = !layoutModo || els.some((e) => ehExtra(e.id));
+  box.innerHTML = `
+    <section class="painel-secao painel-selecionado">
+      <div class="painel-el-topo">
+        <span class="el-icone">${icone("layers")}</span>
+        <strong>${els.length} elementos</strong>
+        <button type="button" class="painel-fechar" data-v="soltar" title="Soltar a seleção (Esc)" aria-label="Soltar a seleção">${icone("x")}</button>
+      </div>
+      <p class="pix-ajuda">Arraste qualquer um para mover todos. Shift+clique põe ou tira um da seleção.${travados ? ` ${travados} travado${travados > 1 ? "s" : ""} não se mexe${travados > 1 ? "m" : ""}.` : ""}</p>
+    </section>
+    <section class="painel-secao">
+      <h4 class="painel-titulo">${icone("layout-grid")} Alinhar entre si</h4>
+      <div class="linha-icones" role="group" aria-label="Alinhar entre si">${alinhar.map(([v, ic, t]) =>
+        `<button type="button" data-v-alinhar="${v}" title="${t}" aria-label="${t}">${icone(ic)}</button>`).join("")}</div>
+      <div class="linha-icones" role="group" aria-label="Distribuir">
+        <button type="button" data-v-alinhar="distribuirH" title="Distribuir na largura (mesmo espaço entre eles)" aria-label="Distribuir na largura"${els.length < 3 ? " disabled" : ""}>${icone("align-horizontal-space-around")}</button>
+        <button type="button" data-v-alinhar="distribuirV" title="Distribuir na altura (mesmo espaço entre eles)" aria-label="Distribuir na altura"${els.length < 3 ? " disabled" : ""}>${icone("align-vertical-space-around")}</button>
+        <button type="button" data-v="centroPeca" title="Centralizar o grupo na largura da peça" aria-label="Centralizar o grupo na peça">${icone("move-horizontal")}</button>
+      </div>
+      ${els.length < 3 ? '<p class="pix-ajuda">Distribuir precisa de 3 ou mais elementos.</p>' : ""}
+      <label class="interruptor"><input type="checkbox" data-v-travar ${todosTravados ? "checked" : ""} /> <span>${icone("lock")} Travar todos</span></label>
+    </section>
+    <section class="painel-secao painel-rodape">
+      <button type="button" class="secundario" data-v="duplicar" title="Ctrl+D">${icone("copy")} Duplicar${layoutModo ? " (só neste time)" : ""}</button>
+      ${algumExcluivel || layoutModo ? `<button type="button" class="perigo" data-v="excluir" title="Delete">${icone("trash-2")} ${layoutModo ? "Excluir / ocultar" : "Excluir"}</button>` : ""}
+    </section>`;
+  box.querySelectorAll("[data-v-alinhar]").forEach((b) => (b.onclick = () => alinharSelecionados(b.dataset.vAlinhar)));
+  box.querySelector("[data-v-travar]").onchange = (ev) => travarSelecionados(ev.target.checked);
+  box.querySelectorAll("[data-v]").forEach((b) => {
+    b.onclick = () => {
+      const a = b.dataset.v;
+      if (a === "soltar") { layoutElSel = ""; redesenharSelecao(); }
+      else if (a === "duplicar") duplicarSelecionados();
+      else if (a === "excluir") {
+        if (!layoutModo && !confirm(`Excluir ${els.length} elementos da peça ${nomePecaProducao(layoutPeca)}? Vale para todos os times.`)) return;
+        excluirSelecionados();
+      } else if (a === "centroPeca") {
+        const m = medidasLayout();
+        const moveis = els.filter((e) => !elementoNoEditor(e).travado);
+        if (!m || !moveis.length) return;
+        const cx = moveis.map((e) => ({ id: e.id, c: caixaNoEditor(e, m) }));
+        const g = caixaQueEnvolve(cx.map((x) => x.c));
+        const d = (m.dim.w - g.w) / 2 - g.x;
+        gravarCaixasEmLote(m, cx.map((x) => ({ id: x.id, caixa: { ...x.c, x: x.c.x + d } })));
+      }
     };
   });
 }

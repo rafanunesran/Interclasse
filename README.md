@@ -748,13 +748,26 @@ exemplo, no tamanho base dos moldes. As imagens são PNGs enviados ao Drive e gu
 ### Ferramentas do editor
 
 - **Desfazer/refazer** (botões no topo, <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), **copiar/colar/duplicar**
-  (<kbd>Ctrl+C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, no layout geral), <kbd>Delete</kbd> apaga (no time: oculta só nele),
+  (<kbd>Ctrl+C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>), <kbd>Delete</kbd> apaga (no time: oculta só nele),
   setas movem 1 mm (<kbd>Shift</kbd>: 10 mm).
 - **Camadas**: a lista mostra o que fica por cima primeiro; cadeado **trava** o elemento (não mexe ao
   arrastar) e, no time, o olho oculta. **Organizar**: alinhar na peça (esquerda, centro, direita, topo,
   meio, base) e a ordem das camadas.
-- **Guias magnéticas** ao arrastar (bordas e centro da peça e dos outros elementos; segure <kbd>Alt</kbd>
-  para soltar livre) e **réguas** em mm.
+- **Vários elementos de uma vez**: <kbd>Shift</kbd>+clique (no desenho ou nas Camadas), <kbd>Ctrl+A</kbd> ou
+  arrastar um retângulo no fundo do palco. Arrastar qualquer um move todos; setas, duplicar, copiar/colar,
+  excluir e travar valem para todos. O painel ganha **alinhar entre si** (bordas, centros) e **distribuir**
+  na largura ou na altura (3 ou mais). Tudo isso grava uma vez só e volta com um só <kbd>Ctrl+Z</kbd>.
+- **Guias magnéticas** ao arrastar e ao redimensionar (bordas e centro da peça e dos outros elementos;
+  segure <kbd>Alt</kbd> para soltar livre) e **réguas** em mm.
+- **Zoom** de 25% a 400%: botões, <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> ou <kbd>Ctrl</kbd>+rodinha (no ponto do
+  mouse). Camadas: <kbd>]</kbd>/<kbd>[</kbd> (com <kbd>Ctrl</kbd>: para a frente/trás de tudo);
+  <kbd>Ctrl+Shift+L</kbd> trava. A tecla <kbd>?</kbd> (ou o botão **?** no rodapé) mostra todos os atalhos.
+- **Prévia ao vivo**: deslizantes (arco, itálico), números (giro, contorno, medidas) e cores mudam o
+  desenho enquanto se mexe; grava ao soltar ou sair do campo.
+- **Desempenho**: as atualizações do Firestore (de qualquer time, cliente ou tamanho) chegam juntas num
+  redesenho só; o editor escondido não é redesenhado, e quando nada mudou em volta só o palco e o painel
+  são refeitos. No pedido, o editor aberto é reaproveitado quando a tela do time é atualizada (não perde
+  seleção, zoom nem rolagem).
 - **Girar e espelhar** (campo em graus, ±90°, espelho horizontal/vertical ou a bolinha em cima da caixa).
 - **Efeitos no texto**: arco (negativo curva para baixo), itálico, sombra e segundo contorno. Com arco ou
   itálico o texto é reencaixado e continua sem sair da caixa.

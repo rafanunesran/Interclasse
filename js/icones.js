@@ -18,6 +18,8 @@ const ICONES = {
   "align-right": "<path d=\"M21 12H9\" /> <path d=\"M21 18H7\" /> <path d=\"M21 6H3\" />",
   "align-start-horizontal": "<rect width=\"6\" height=\"16\" x=\"4\" y=\"6\" rx=\"2\" /> <rect width=\"6\" height=\"9\" x=\"14\" y=\"6\" rx=\"2\" /> <path d=\"M22 2H2\" />",
   "align-start-vertical": "<rect width=\"9\" height=\"6\" x=\"6\" y=\"14\" rx=\"2\" /> <rect width=\"16\" height=\"6\" x=\"6\" y=\"4\" rx=\"2\" /> <path d=\"M2 2v20\" />",
+  "align-horizontal-space-around": "<rect width=\"6\" height=\"10\" x=\"9\" y=\"7\" rx=\"2\" /> <path d=\"M4 22V2\" /> <path d=\"M20 22V2\" />",
+  "align-vertical-space-around": "<rect width=\"10\" height=\"6\" x=\"7\" y=\"9\" rx=\"2\" /> <path d=\"M22 20H2\" /> <path d=\"M22 4H2\" />",
   "archive": "<rect width=\"20\" height=\"5\" x=\"2\" y=\"3\" rx=\"1\" /> <path d=\"M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8\" /> <path d=\"M10 12h4\" />",
   "arrow-left": "<path d=\"m12 19-7-7 7-7\" /> <path d=\"M19 12H5\" />",
   "arrow-right": "<path d=\"M5 12h14\" /> <path d=\"m12 5 7 7-7 7\" />",

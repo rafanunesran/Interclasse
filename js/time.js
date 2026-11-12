@@ -270,7 +270,7 @@ function renderizarGaleria() {
 // girar a camiseta em 3D. O three.js, os modelos e as texturas só são
 // baixados ao tocar no botão (js/mockup3d.js).
 
-const VERSAO_MOCKUP3D = "20261112b";
+const VERSAO_MOCKUP3D = "20261112c";
 let botao3d = null;
 
 // Texturas do 3D da oficial (versao "") ou de outra versão do time.

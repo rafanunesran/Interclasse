@@ -1889,11 +1889,15 @@ function renderizarEditarArteTime(timeId) {
     'A folha EPS, a prévia e o mockup já saem com estes ajustes.</p>';
   // Oficial ou outra versão (o mesmo seletor da aba Arquivos).
   if (typeof criarSeletorVariante === "function") card.appendChild(criarSeletorVariante(timeId, true));
-  const host = document.createElement("div");
+  // Cada atualização do time redesenha esta tela: o editor que já estava
+  // aberto é reaproveitado (não refaz tudo nem perde a seleção e o zoom).
+  const anterior = typeof editorDoPedidoAberto === "function" ? editorDoPedidoAberto(timeId) : null;
+  const host = anterior || document.createElement("div");
   host.className = "editor-layout-pedido";
   card.appendChild(host);
   elListaTimesAdmin.appendChild(card);
-  if (typeof montarEditorLayout === "function") montarEditorLayout(host, timeId);
+  if (anterior) renderizarEditorLayout();
+  else if (typeof montarEditorLayout === "function") montarEditorLayout(host, timeId);
   else host.innerHTML = '<p class="pix-ajuda">Editor indisponível.</p>';
 }
 
